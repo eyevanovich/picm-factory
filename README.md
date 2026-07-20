@@ -25,7 +25,7 @@ When a folder already has workspace architecture, prefer `/picm-adopt` over `/pi
 
 ## Status
 
-PiCM Factory `0.1.0` is the initial public release. The feature set is implemented, fixture-backed, and checked with `npm run check`.
+PiCM Factory `0.1.1` is the current public release. The feature set is implemented, fixture-backed, and checked with `npm run check`.
 
 Distribution is project-local from GitHub. npm publishing is not part of this release; `@eyevanovich/picm-factory` remains reserved as a possible future package name.
 
@@ -52,7 +52,7 @@ PiCM Factory should be installed **project-locally** so PiCM resources only load
 ```bash
 mkdir my-workflow
 cd my-workflow
-pi install -l git:github.com/eyevanovich/picm-factory@v0.1.0
+pi install -l git:github.com/eyevanovich/picm-factory@v0.1.1
 pi
 ```
 
@@ -75,7 +75,7 @@ pi
 
 ```bash
 cd existing-icm-project
-pi install -l git:github.com/eyevanovich/picm-factory@v0.1.0
+pi install -l git:github.com/eyevanovich/picm-factory@v0.1.1
 pi
 ```
 
@@ -105,7 +105,7 @@ Recommended `.gitignore` entries for sensitive material are included in this rep
 ```text
 picm-factory/
 ├── extensions/              # Thin Pi command extension
-├── prompts/                 # Prompt-template fallbacks/backing prompts
+├── prompts/                 # Backing prompts; not separately registered as commands
 ├── skills/picm-factory/     # Methodology skill, references, templates, and fixtures
 ├── docs/                    # QA scenarios and public methodology references
 ├── qa-runner/               # Interactive Pi/Zellij QA specialist context

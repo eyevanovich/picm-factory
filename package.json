@@ -1,6 +1,6 @@
 {
   "name": "@eyevanovich/picm-factory",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": true,
   "description": "Project-local Pi package for creating, adopting, and maintaining PiCM folder-agent workspaces.",
   "type": "module",
@@ -24,7 +24,7 @@
   "pi": {
     "extensions": ["./extensions"],
     "skills": ["./skills"],
-    "prompts": ["./prompts"]
+    "prompts": []
   },
   "scripts": {
     "check": "node scripts/check-package.mjs"

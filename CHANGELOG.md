@@ -2,6 +2,12 @@
 
 All notable changes to PiCM Factory will be documented here.
 
+## [0.1.1] - 2026-07-19
+
+### Fixed
+
+- Prevented duplicate `/picm-*` command entries by keeping the same-named backing prompts out of Pi's prompt-template registry.
+
 ## [0.1.0] - 2026-07-19
 
 Initial public release.

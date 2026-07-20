@@ -20,7 +20,7 @@ You are working on PiCM Factory, a project-local Pi package for creating, adopti
 
 ## Repository structure
 - `extensions/picm-factory.ts` — slash-command registration and skill dispatch only.
-- `prompts/` — prompt-template fallbacks/backing prompts.
+- `prompts/` — backing prompt text only; package prompt discovery stays disabled to avoid duplicating extension commands.
 - `skills/picm-factory/SKILL.md` — main behavior contract.
 - `skills/picm-factory/references/` — detailed methodology guidance.
 - `skills/picm-factory/templates/` — scaffold templates.

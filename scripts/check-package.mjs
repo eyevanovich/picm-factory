@@ -35,6 +35,10 @@ if (!pkg.pi?.extensions || !pkg.pi?.skills || !pkg.pi?.prompts) {
   console.error("package.json must declare pi.extensions, pi.skills, and pi.prompts");
   process.exit(1);
 }
+if (pkg.pi.prompts.length !== 0) {
+  console.error("Backing prompts must not autoload alongside same-named extension commands");
+  process.exit(1);
+}
 
 const skill = readFileSync(join(root, "skills/picm-factory/SKILL.md"), "utf8");
 if (!skill.startsWith("---\n")) {
@@ -147,8 +151,8 @@ for (const signal of forbiddenExtensionRuntimeSignals) {
 
 const releaseDocs = {
   "README.md": [
-    "initial public release",
-    "git:github.com/eyevanovich/picm-factory@v0.1.0",
+    "current public release",
+    "git:github.com/eyevanovich/picm-factory@v0.1.1",
     "GitHub Issues",
   ],
   "CHANGELOG.md": ["## [0.1.0] - 2026-07-19", "Initial public release"],
