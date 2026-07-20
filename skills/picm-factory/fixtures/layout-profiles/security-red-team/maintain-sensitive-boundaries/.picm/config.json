@@ -1,0 +1,20 @@
+{
+  "version": 1,
+  "generatedBy": "picm-factory",
+  "adoption": {
+    "status": "adopted",
+    "readiness": "ready",
+    "report": ".picm/adoption-report.md"
+  },
+  "profile": "custom-existing",
+  "routing": {
+    "source": "AGENTS.md",
+    "status": "preserved-existing",
+    "coexistence": "single-routing-file"
+  },
+  "paths": {
+    "rootInstructions": "AGENTS.md",
+    "rootContext": "CONTEXT.md",
+    "workflowFolders": ["workflows", "source", "reference", "output"]
+  }
+}

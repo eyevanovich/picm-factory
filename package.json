@@ -1,0 +1,45 @@
+{
+  "name": "@eyevanovich/picm-factory",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Project-local Pi package for creating, adopting, and maintaining PiCM folder-agent workspaces.",
+  "type": "module",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/eyevanovich/picm-factory.git"
+  },
+  "homepage": "https://github.com/eyevanovich/picm-factory#readme",
+  "bugs": {
+    "url": "https://github.com/eyevanovich/picm-factory/issues"
+  },
+  "keywords": [
+    "pi-package",
+    "pi-coding-agent",
+    "picm",
+    "icm",
+    "folder-architecture",
+    "agent-skills"
+  ],
+  "pi": {
+    "extensions": ["./extensions"],
+    "skills": ["./skills"],
+    "prompts": ["./prompts"]
+  },
+  "scripts": {
+    "check": "node scripts/check-package.mjs"
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "*"
+  },
+  "files": [
+    "extensions",
+    "skills",
+    "prompts",
+    "docs",
+    "README.md",
+    "CHANGELOG.md",
+    "CONTRIBUTING.md",
+    "LICENSE"
+  ]
+}

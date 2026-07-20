@@ -1,0 +1,3 @@
+# Intentionally incomplete for red-team QA.
+# Expected maintainer suggestion: add `.env`, secret files, and private source dumps.
+.DS_Store
