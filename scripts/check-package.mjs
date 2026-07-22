@@ -196,7 +196,6 @@ for (const signal of forbiddenExtensionRuntimeSignals) {
 
 const releaseDocs = {
   "README.md": [
-    "current public release",
     "git:github.com/eyevanovich/picm-factory@v0.1.1",
     "GitHub Issues",
   ],

@@ -11,7 +11,7 @@ You are working on PiCM Factory, a project-local Pi package for creating, adopti
 
 ## Product rules
 - PiCM Factory is project-local by default. Install with `pi install -l ...`.
-- Keep the extension thin. Methodology belongs in skills, prompts, references, and templates.
+- Keep the extension thin. Runtime methodology belongs in the skill, references, and templates; backing prompts remain repository-only.
 - Do not build a custom TUI or workflow executor without clear evidence it is necessary.
 - Be non-destructive by default. Preview file changes before writing.
 - Security first: never copy secrets, credentials, tokens, private keys, regulated data, or sensitive client material into context files or examples.
@@ -27,6 +27,20 @@ You are working on PiCM Factory, a project-local Pi package for creating, adopti
 - `test/fixtures/` — synthetic QA fixtures; repository-only and excluded from releases.
 - `docs/` — QA scenarios and public methodology references.
 - `qa-runner/CONTEXT.md` — interactive Pi/Zellij QA guidance.
+
+## Task routing
+
+| Task | Start here | Supporting files |
+| --- | --- | --- |
+| Change slash-command registration or dispatch | `extensions/picm-factory.ts` | Pi extension documentation |
+| Change scaffold, adoption, maintenance, or help behavior | `skills/picm-factory/SKILL.md` | The relevant file under `skills/picm-factory/references/` |
+| Change generated workspace content | `skills/picm-factory/templates/` | `skills/picm-factory/references/layout-profiles.md` |
+| Change npm packaging or release validation | `package.json` | `scripts/check-package.mjs`, `README.md`, `CHANGELOG.md` |
+| Change automated fixture coverage | `test/fixtures/` | `docs/layout-fixture-qa.md` |
+| Run interactive command QA | `qa-runner/CONTEXT.md` | `docs/layout-fixture-qa.md` |
+| Change public guidance or attribution | `README.md` | `docs/`, `CONTRIBUTING.md` |
+
+Normal task routing should skip `.picm/`; it contains only maintainer metadata.
 
 ## Quality gate
 Run before committing package changes:

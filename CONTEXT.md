@@ -10,14 +10,14 @@ PiCM Factory is a project-local Pi Coding Agent package that helps users create,
 
 ## Core principles
 - Install project-locally with `pi install -l ...`; do not bloat unrelated Pi projects.
-- Keep methodology in skills/prompts; keep the extension thin.
+- Keep runtime methodology in the skill's references and templates; keep the extension thin.
 - Be non-destructive by default. Preview writes before applying them.
 - Treat security as a first-class requirement: secrets, client data, and private material must not be copied into context files or committed without explicit user approval.
 - Use `.pi/` for Pi config and `.picm/` for minimal PiCM metadata/reports.
 - The visible folder structure and context files remain the source of truth.
 - `.picm/` is maintainer-only context and should not be read during normal workflow execution.
 
-## Initial release commands
+## Current commands
 - `/picm-new` — interview-led minimal scaffold for new workspaces.
 - `/picm-adopt` — non-invasive read-first adoption flow for existing ICM projects.
 - `/picm-maintain` — validation/maintenance rubric with Pass/Warning/Suggestion output.
@@ -26,9 +26,14 @@ PiCM Factory is a project-local Pi Coding Agent package that helps users create,
 ## Specialist folders
 - `qa-runner/` — project QA specialist for interactive Pi/Zellij command smoke tests. Use it when running visible `/picm-*` sessions; send any Pi chat text and the explicit `Enter` key separately.
 
-## Outside the initial release
-- npm publishing or package-registry distribution
+## Current release direction
+- `0.1.1` is the current public GitHub release.
+- npm publication is planned; package validation must keep the installed payload limited to runtime resources.
+- GitHub is the canonical public repository and issue tracker.
+
+## Deliberately out of scope
 - custom TUI wizard
+- workflow executor or orchestrator
 - deterministic validator
 - Docker/portable agents
 - starter repo
