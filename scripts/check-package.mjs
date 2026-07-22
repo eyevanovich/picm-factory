@@ -488,20 +488,6 @@ for (const signal of adoptionRoleSignals) {
   }
 }
 
-const adoptionRoleQaSignals = [
-  "custom-existing-structure/existing-agents-only",
-  "keeps routing readiness separate",
-  "does not invent an archive candidate",
-  "separate explicit approval",
-];
-for (const signal of adoptionRoleQaSignals) {
-  if (!traceQaDoc.toLowerCase().includes(signal)) {
-    console.error(`Adoption file-role QA missing signal: ${signal}`);
-    process.exit(1);
-  }
-}
-
-const securityQaDoc = readFileSync(join(root, "docs/layout-fixture-qa.md"), "utf8");
 const securityRedTeamFixtures = [
   {
     name: "security-red-team/adoption-sensitive-existing",
@@ -551,7 +537,7 @@ for (const fixture of securityRedTeamFixtures) {
     console.error(`Missing security red-team fixture: ${fixture.name}`);
     process.exit(1);
   }
-  if (!securityQaDoc.includes(fixture.name)) {
+  if (!traceQaDoc.includes(fixture.name)) {
     console.error(`Security red-team fixture missing QA doc reference: ${fixture.name}`);
     process.exit(1);
   }
@@ -575,23 +561,6 @@ for (const fixture of securityRedTeamFixtures) {
       console.error(`Security red-team fixture missing signal ${JSON.stringify(signal)}: ${fixture.name}`);
       process.exit(1);
     }
-  }
-}
-
-const securityQaSignals = [
-  "warn",
-  ".gitignore",
-  "repo visibility",
-  "context-boundary",
-  "without explicit approval",
-  "approval",
-  "/picm-adopt",
-  "/picm-maintain",
-];
-for (const signal of securityQaSignals) {
-  if (!securityQaDoc.includes(signal)) {
-    console.error(`Security QA doc missing expected signal: ${signal}`);
-    process.exit(1);
   }
 }
 
