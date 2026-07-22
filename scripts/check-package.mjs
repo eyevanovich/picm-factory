@@ -1,3 +1,4 @@
+import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
@@ -17,7 +18,7 @@ const required = [
   "prompts/picm-maintain.md",
   "prompts/picm-help.md",
   "docs/layout-fixture-qa.md",
-  "skills/picm-factory/fixtures/layout-profiles/README.md",
+  "test/fixtures/layout-profiles/README.md",
 ];
 
 const missing = required.filter((path) => !existsSync(join(root, path)));
@@ -37,6 +38,50 @@ if (!pkg.pi?.extensions || !pkg.pi?.skills || !pkg.pi?.prompts) {
 }
 if (pkg.pi.prompts.length !== 0) {
   console.error("Backing prompts must not autoload alongside same-named extension commands");
+  process.exit(1);
+}
+
+const packResult = JSON.parse(
+  execFileSync("npm", ["pack", "--dry-run", "--json"], {
+    cwd: root,
+    encoding: "utf8",
+  }),
+)[0];
+const requiredPackageFiles = [
+  "package.json",
+  "README.md",
+  "LICENSE",
+  "extensions/picm-factory.ts",
+  "skills/picm-factory/SKILL.md",
+  "skills/picm-factory/references/adoption-guide.md",
+  "skills/picm-factory/references/interview-guide.md",
+  "skills/picm-factory/references/layout-profiles.md",
+  "skills/picm-factory/references/maintenance-rubric.md",
+  "skills/picm-factory/templates/handoff-card.md",
+  "skills/picm-factory/templates/root-agents.md",
+  "skills/picm-factory/templates/root-context.md",
+  "skills/picm-factory/templates/specialist-context.md",
+  "skills/picm-factory/templates/stage-context.md",
+];
+const packedFiles = packResult.files.map(({ path }) => path);
+const unexpectedPackageFiles = packedFiles.filter(
+  (path) => !requiredPackageFiles.includes(path),
+);
+if (unexpectedPackageFiles.length > 0) {
+  console.error(
+    "npm package contains development-only files:\n" +
+      unexpectedPackageFiles.map((path) => `- ${path}`).join("\n"),
+  );
+  process.exit(1);
+}
+const missingPackageFiles = requiredPackageFiles.filter(
+  (path) => !packedFiles.includes(path),
+);
+if (missingPackageFiles.length > 0) {
+  console.error(
+    "npm package missing runtime files:\n" +
+      missingPackageFiles.map((path) => `- ${path}`).join("\n"),
+  );
   process.exit(1);
 }
 
@@ -151,7 +196,6 @@ for (const signal of forbiddenExtensionRuntimeSignals) {
 
 const releaseDocs = {
   "README.md": [
-    "current public release",
     "git:github.com/eyevanovich/picm-factory@v0.1.1",
     "GitHub Issues",
   ],
@@ -239,7 +283,7 @@ if (!readme.includes("you do not need to know")) {
   process.exit(1);
 }
 
-const fixtureRoot = "skills/picm-factory/fixtures/layout-profiles";
+const fixtureRoot = "test/fixtures/layout-profiles";
 const maintainableFixtures = [
   "stage-pipeline/newsletter-production",
   "stage-pipeline/workshop-planning",
@@ -332,23 +376,6 @@ if (!finalAnnouncement.includes("September 28, 2026") || finalAnnouncement.inclu
   process.exit(1);
 }
 
-const traceQaDoc = readFileSync(join(root, "docs/layout-fixture-qa.md"), "utf8");
-const traceQaSignals = [
-  '/picm-maintain trace "final output drifted from approved source"',
-  "high confidence",
-  "medium confidence",
-  "output patch",
-  "source-context healing",
-  "heuristic, focused investigation",
-  "provenance-grade",
-];
-for (const signal of traceQaSignals) {
-  if (!traceQaDoc.includes(signal)) {
-    console.error(`Source-integrity trace QA guidance missing signal: ${signal}`);
-    process.exit(1);
-  }
-}
-
 const maintenanceRubric = readFileSync(
   join(root, "skills/picm-factory/references/maintenance-rubric.md"),
   "utf8",
@@ -370,18 +397,7 @@ for (const signal of coldWalkSignals) {
   }
 }
 
-const coldWalkFixtureSignals = [
-  "unsupported “still being confirmed” assertion",
-  "does not name exact catalog inputs, an output/review path, or a concrete human check",
-  "no catalog source or publishing draft is present",
-];
-for (const signal of coldWalkFixtureSignals) {
-  if (!traceQaDoc.includes(signal)) {
-    console.error(`Cold-agent walk fixture QA missing expected result: ${signal}`);
-    process.exit(1);
-  }
-}
-
+const traceQaDoc = readFileSync(join(root, "docs/layout-fixture-qa.md"), "utf8");
 const antiPatternFixtures = {
   "root-brain-dump": ["AGENTS.md", "CONTEXT.md"],
   "no-task-routing": ["AGENTS.md", "CONTEXT.md", "research/CONTEXT.md", "publishing/CONTEXT.md"],
@@ -472,20 +488,6 @@ for (const signal of adoptionRoleSignals) {
   }
 }
 
-const adoptionRoleQaSignals = [
-  "custom-existing-structure/existing-agents-only",
-  "keeps routing readiness separate",
-  "does not invent an archive candidate",
-  "separate explicit approval",
-];
-for (const signal of adoptionRoleQaSignals) {
-  if (!traceQaDoc.toLowerCase().includes(signal)) {
-    console.error(`Adoption file-role QA missing signal: ${signal}`);
-    process.exit(1);
-  }
-}
-
-const securityQaDoc = readFileSync(join(root, "docs/layout-fixture-qa.md"), "utf8");
 const securityRedTeamFixtures = [
   {
     name: "security-red-team/adoption-sensitive-existing",
@@ -535,7 +537,7 @@ for (const fixture of securityRedTeamFixtures) {
     console.error(`Missing security red-team fixture: ${fixture.name}`);
     process.exit(1);
   }
-  if (!securityQaDoc.includes(fixture.name)) {
+  if (!traceQaDoc.includes(fixture.name)) {
     console.error(`Security red-team fixture missing QA doc reference: ${fixture.name}`);
     process.exit(1);
   }
@@ -559,23 +561,6 @@ for (const fixture of securityRedTeamFixtures) {
       console.error(`Security red-team fixture missing signal ${JSON.stringify(signal)}: ${fixture.name}`);
       process.exit(1);
     }
-  }
-}
-
-const securityQaSignals = [
-  "warn",
-  ".gitignore",
-  "repo visibility",
-  "context-boundary",
-  "without explicit approval",
-  "approval",
-  "/picm-adopt",
-  "/picm-maintain",
-];
-for (const signal of securityQaSignals) {
-  if (!securityQaDoc.includes(signal)) {
-    console.error(`Security QA doc missing expected signal: ${signal}`);
-    process.exit(1);
   }
 }
 

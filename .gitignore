@@ -6,7 +6,6 @@ coverage/
 # Local env/secrets
 .env
 .env.*
-!.env.example
 .mcp.json
 *.pem
 *.key
