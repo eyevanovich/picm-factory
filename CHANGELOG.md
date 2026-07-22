@@ -2,6 +2,15 @@
 
 All notable changes to PiCM Factory will be documented here.
 
+## [0.1.2] - 2026-07-21
+
+### Added
+
+- Public npm distribution under `@eyevanovich/picm-factory`.
+- Token-free GitHub Actions releases through npm trusted publishing.
+- npm provenance attestations for automated releases.
+- Automatic eligibility for the pi.dev package gallery through the `pi-package` keyword.
+
 ## [0.1.1] - 2026-07-19
 
 ### Fixed
@@ -34,4 +43,3 @@ Initial public release.
 ### Distribution
 
 - Project-local installation from the public GitHub repository.
-- npm publication is deferred.
