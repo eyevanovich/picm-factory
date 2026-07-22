@@ -11,6 +11,7 @@ const required = [
   "AGENTS.md",
   "CONTEXT.md",
   "LICENSE",
+  ".github/workflows/publish.yml",
   "extensions/picm-factory.ts",
   "skills/picm-factory/SKILL.md",
   "prompts/picm-new.md",
@@ -18,6 +19,7 @@ const required = [
   "prompts/picm-maintain.md",
   "prompts/picm-help.md",
   "docs/layout-fixture-qa.md",
+  "docs/releasing.md",
   "test/fixtures/layout-profiles/README.md",
 ];
 
@@ -28,6 +30,14 @@ if (missing.length > 0) {
 }
 
 const pkg = JSON.parse(readFileSync(join(root, "package.json"), "utf8"));
+if (pkg.name !== "@eyevanovich/picm-factory") {
+  console.error("package.json must use the expected public npm package name");
+  process.exit(1);
+}
+if (pkg.repository?.url !== "git+https://github.com/eyevanovich/picm-factory.git") {
+  console.error("package.json repository must match the trusted publishing repository");
+  process.exit(1);
+}
 if (!pkg.keywords?.includes("pi-package")) {
   console.error("package.json must include keyword: pi-package");
   process.exit(1);
@@ -38,6 +48,18 @@ if (!pkg.pi?.extensions || !pkg.pi?.skills || !pkg.pi?.prompts) {
 }
 if (pkg.pi.prompts.length !== 0) {
   console.error("Backing prompts must not autoload alongside same-named extension commands");
+  process.exit(1);
+}
+if (pkg.private === true) {
+  console.error("package.json must allow npm publication");
+  process.exit(1);
+}
+if (pkg.publishConfig?.access !== "public") {
+  console.error("Scoped npm package must publish with public access");
+  process.exit(1);
+}
+if (pkg.scripts?.prepublishOnly !== "npm run check") {
+  console.error("npm publication must run the package check first");
   process.exit(1);
 }
 
@@ -196,11 +218,21 @@ for (const signal of forbiddenExtensionRuntimeSignals) {
 
 const releaseDocs = {
   "README.md": [
-    "git:github.com/eyevanovich/picm-factory@v0.1.1",
+    "pi install -l npm:@eyevanovich/picm-factory",
     "GitHub Issues",
   ],
-  "CHANGELOG.md": ["## [0.1.0] - 2026-07-19", "Initial public release"],
-  "CONTRIBUTING.md": ["GitHub Issues", "npm run check", "Interactive `/picm-*` QA is manual"],
+  "CHANGELOG.md": ["Public npm distribution"],
+  "CONTRIBUTING.md": [
+    "GitHub Issue",
+    "npm run check",
+    "Interactive `/picm-*` QA is manual",
+    "docs/releasing.md",
+  ],
+  "docs/releasing.md": [
+    "npm trusted publishing",
+    "Workflow filename: `publish.yml`",
+    "https://pi.dev/packages/@eyevanovich/picm-factory",
+  ],
   "docs/references.md": ["https://arxiv.org/abs/2603.16021", "Pi documentation"],
 };
 for (const [file, signals] of Object.entries(releaseDocs)) {
@@ -211,6 +243,50 @@ for (const [file, signals] of Object.entries(releaseDocs)) {
       process.exit(1);
     }
   }
+}
+
+const changelog = readFileSync(join(root, "CHANGELOG.md"), "utf8");
+const escapedPackageVersion = pkg.version.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+const currentReleaseHeading = changelog.match(
+  new RegExp(`^## \\[${escapedPackageVersion}\\] - (\\d{4}-\\d{2}-\\d{2})$`, "m"),
+);
+if (!currentReleaseHeading) {
+  console.error(`CHANGELOG.md must include a dated heading for version ${pkg.version}`);
+  process.exit(1);
+}
+const releaseDate = currentReleaseHeading[1];
+if (new Date(`${releaseDate}T00:00:00Z`).toISOString().slice(0, 10) !== releaseDate) {
+  console.error(`CHANGELOG.md has an invalid release date for version ${pkg.version}`);
+  process.exit(1);
+}
+
+const publishWorkflow = readFileSync(
+  join(root, ".github/workflows/publish.yml"),
+  "utf8",
+);
+const publishWorkflowSignals = [
+  "push:",
+  'github.ref_name != \'v0.1.2\'',
+  "id-token: write",
+  "actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6",
+  "actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6",
+  "npm publish",
+  'gh release create "$RELEASE_TAG" --verify-tag --generate-notes',
+  "needs: publish",
+];
+for (const signal of publishWorkflowSignals) {
+  if (!publishWorkflow.includes(signal)) {
+    console.error(`npm publish workflow missing signal: ${signal}`);
+    process.exit(1);
+  }
+}
+if (/NPM_(TOKEN|AUTH_TOKEN)/.test(publishWorkflow)) {
+  console.error("npm publish workflow must use trusted publishing, not a stored npm token");
+  process.exit(1);
+}
+if (/^\s+release:\s*$/m.test(publishWorkflow.slice(0, publishWorkflow.indexOf("jobs:")))) {
+  console.error("npm publish workflow must create releases from tags, not consume release events");
+  process.exit(1);
 }
 
 const publicTextFiles = [
@@ -224,6 +300,7 @@ const publicTextFiles = [
   "docs/layout-fixture-qa.md",
   "docs/picm-new-scenarios.md",
   "docs/references.md",
+  "docs/releasing.md",
   "qa-runner/CONTEXT.md",
 ];
 const forbiddenPrivateSignals = [

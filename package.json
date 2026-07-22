@@ -1,7 +1,6 @@
 {
   "name": "@eyevanovich/picm-factory",
-  "version": "0.1.1",
-  "private": true,
+  "version": "0.1.2",
   "description": "Project-local Pi package for creating, adopting, and maintaining PiCM folder-agent workspaces.",
   "type": "module",
   "license": "MIT",
@@ -22,15 +21,23 @@
     "agent-skills"
   ],
   "pi": {
-    "extensions": ["./extensions"],
-    "skills": ["./skills"],
+    "extensions": [
+      "./extensions"
+    ],
+    "skills": [
+      "./skills"
+    ],
     "prompts": []
   },
   "scripts": {
-    "check": "node scripts/check-package.mjs"
+    "check": "node scripts/check-package.mjs",
+    "prepublishOnly": "npm run check"
   },
   "peerDependencies": {
     "@earendil-works/pi-coding-agent": "*"
+  },
+  "publishConfig": {
+    "access": "public"
   },
   "files": [
     "extensions/picm-factory.ts",

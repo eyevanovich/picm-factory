@@ -27,7 +27,7 @@ PiCM Factory is a project-local Pi Coding Agent package that helps users create,
 - `qa-runner/` — project QA specialist for interactive Pi/Zellij command smoke tests. Use it when running visible `/picm-*` sessions; send any Pi chat text and the explicit `Enter` key separately.
 
 ## Current release direction
-- npm publication is planned; package validation must keep the installed payload limited to runtime resources.
+- npm publication and maintainer release procedures are documented in `docs/releasing.md`; package validation must keep the installed payload limited to runtime resources.
 - GitHub is the canonical public repository and issue tracker; `CHANGELOG.md` owns release history.
 
 ## Deliberately out of scope

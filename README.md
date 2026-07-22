@@ -44,9 +44,11 @@ PiCM Factory should be installed **project-locally** so PiCM resources only load
 ```bash
 mkdir my-workflow
 cd my-workflow
-pi install -l git:github.com/eyevanovich/picm-factory@v0.1.1
+pi install -l npm:@eyevanovich/picm-factory
 pi
 ```
+
+To pin a reproducible version, append `@0.1.2` to the npm package name.
 
 Inside Pi:
 
@@ -67,7 +69,7 @@ pi
 
 ```bash
 cd existing-icm-project
-pi install -l git:github.com/eyevanovich/picm-factory@v0.1.1
+pi install -l npm:@eyevanovich/picm-factory
 pi
 ```
 
