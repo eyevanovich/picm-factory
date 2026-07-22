@@ -271,6 +271,7 @@ const publishWorkflowSignals = [
   "actions/setup-node@v6",
   "npm publish",
   "github.event.release.tag_name",
+  "github.event.release.tag_name != 'v0.1.2'",
 ];
 for (const signal of publishWorkflowSignals) {
   if (!publishWorkflow.includes(signal)) {
