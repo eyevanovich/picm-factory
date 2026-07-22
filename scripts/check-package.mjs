@@ -280,9 +280,18 @@ for (const signal of forbiddenExtensionRuntimeSignals) {
     process.exit(1);
   }
 }
-if (!extension.includes('value: "coding"')) {
-  console.error("PiCM extension must offer the coding adoption/maintenance completion");
-  process.exit(1);
+const codingCompletionLists = [
+  "adoptArgumentCompletions",
+  "maintainArgumentCompletions",
+];
+for (const listName of codingCompletionLists) {
+  const list = extension.match(
+    new RegExp(`const ${listName} = \\[([\\s\\S]*?)\\n\\];`),
+  )?.[1];
+  if (!list?.includes('value: "coding"')) {
+    console.error(`PiCM extension ${listName} must offer the coding completion`);
+    process.exit(1);
+  }
 }
 
 const releaseDocs = {
