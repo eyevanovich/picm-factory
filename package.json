@@ -33,13 +33,9 @@
     "@earendil-works/pi-coding-agent": "*"
   },
   "files": [
-    "extensions",
-    "skills",
-    "prompts",
-    "docs",
-    "README.md",
-    "CHANGELOG.md",
-    "CONTRIBUTING.md",
-    "LICENSE"
+    "extensions/picm-factory.ts",
+    "skills/picm-factory/SKILL.md",
+    "skills/picm-factory/references",
+    "skills/picm-factory/templates"
   ]
 }

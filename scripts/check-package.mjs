@@ -1,3 +1,4 @@
+import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
@@ -17,7 +18,7 @@ const required = [
   "prompts/picm-maintain.md",
   "prompts/picm-help.md",
   "docs/layout-fixture-qa.md",
-  "skills/picm-factory/fixtures/layout-profiles/README.md",
+  "test/fixtures/layout-profiles/README.md",
 ];
 
 const missing = required.filter((path) => !existsSync(join(root, path)));
@@ -37,6 +38,50 @@ if (!pkg.pi?.extensions || !pkg.pi?.skills || !pkg.pi?.prompts) {
 }
 if (pkg.pi.prompts.length !== 0) {
   console.error("Backing prompts must not autoload alongside same-named extension commands");
+  process.exit(1);
+}
+
+const packResult = JSON.parse(
+  execFileSync("npm", ["pack", "--dry-run", "--json"], {
+    cwd: root,
+    encoding: "utf8",
+  }),
+)[0];
+const requiredPackageFiles = [
+  "package.json",
+  "README.md",
+  "LICENSE",
+  "extensions/picm-factory.ts",
+  "skills/picm-factory/SKILL.md",
+  "skills/picm-factory/references/adoption-guide.md",
+  "skills/picm-factory/references/interview-guide.md",
+  "skills/picm-factory/references/layout-profiles.md",
+  "skills/picm-factory/references/maintenance-rubric.md",
+  "skills/picm-factory/templates/handoff-card.md",
+  "skills/picm-factory/templates/root-agents.md",
+  "skills/picm-factory/templates/root-context.md",
+  "skills/picm-factory/templates/specialist-context.md",
+  "skills/picm-factory/templates/stage-context.md",
+];
+const packedFiles = packResult.files.map(({ path }) => path);
+const unexpectedPackageFiles = packedFiles.filter(
+  (path) => !requiredPackageFiles.includes(path),
+);
+if (unexpectedPackageFiles.length > 0) {
+  console.error(
+    "npm package contains development-only files:\n" +
+      unexpectedPackageFiles.map((path) => `- ${path}`).join("\n"),
+  );
+  process.exit(1);
+}
+const missingPackageFiles = requiredPackageFiles.filter(
+  (path) => !packedFiles.includes(path),
+);
+if (missingPackageFiles.length > 0) {
+  console.error(
+    "npm package missing runtime files:\n" +
+      missingPackageFiles.map((path) => `- ${path}`).join("\n"),
+  );
   process.exit(1);
 }
 
@@ -239,7 +284,7 @@ if (!readme.includes("you do not need to know")) {
   process.exit(1);
 }
 
-const fixtureRoot = "skills/picm-factory/fixtures/layout-profiles";
+const fixtureRoot = "test/fixtures/layout-profiles";
 const maintainableFixtures = [
   "stage-pipeline/newsletter-production",
   "stage-pipeline/workshop-planning",

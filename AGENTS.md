@@ -24,7 +24,7 @@ You are working on PiCM Factory, a project-local Pi package for creating, adopti
 - `skills/picm-factory/SKILL.md` — main behavior contract.
 - `skills/picm-factory/references/` — detailed methodology guidance.
 - `skills/picm-factory/templates/` — scaffold templates.
-- `skills/picm-factory/fixtures/` — synthetic QA fixtures.
+- `test/fixtures/` — synthetic QA fixtures; repository-only and excluded from releases.
 - `docs/` — QA scenarios and public methodology references.
 - `qa-runner/CONTEXT.md` — interactive Pi/Zellij QA guidance.
 

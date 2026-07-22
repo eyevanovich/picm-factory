@@ -5,7 +5,8 @@ Thanks for helping improve PiCM Factory.
 ## Before changing behavior
 
 - Read `AGENTS.md` and `skills/picm-factory/SKILL.md`.
-- Keep the extension thin; methodology belongs in skills, prompts, references, templates, and fixtures.
+- Keep the extension thin; runtime methodology belongs in the skill's references and templates.
+- Keep fixtures and QA tooling repository-only; do not add them to the npm package.
 - Preserve preview-before-write, non-destructive adoption, project-local installation, and security-first context handling.
 - Treat layout profiles as recommendations rather than schemas.
 

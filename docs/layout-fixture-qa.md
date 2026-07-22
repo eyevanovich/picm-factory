@@ -9,7 +9,7 @@ Interactive command tests should run in a visible Zellij pane. Do not rely on a 
 From the PiCM Factory repository:
 
 ```bash
-FIXTURE="skills/picm-factory/fixtures/layout-profiles/stage-pipeline/newsletter-production"
+FIXTURE="test/fixtures/layout-profiles/stage-pipeline/newsletter-production"
 TARGET="/tmp/picm-fixture-newsletter-production"
 rm -rf "$TARGET"
 cp -R "$FIXTURE" "$TARGET"
