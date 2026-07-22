@@ -2,7 +2,7 @@
 
 Use this guide for `/picm-adopt`.
 
-Adoption is for existing ICM/folder-agent projects. It is a compatibility-enablement flow, not a conversion flow: first scan read-only, then propose the smallest user-approved changes that make the repo usable by PiCM and `/picm-maintain` while preserving existing conventions.
+Adoption is for existing ICM/folder-agent and coding repositories. It is a compatibility-enablement flow, not an automatic conversion flow: first scan read-only, then propose the smallest user-approved changes that make the repo usable by PiCM and `/picm-maintain` while preserving existing conventions.
 
 ## Goals
 
@@ -11,6 +11,7 @@ Adoption is for existing ICM/folder-agent projects. It is a compatibility-enable
 - Use existing routing files as the source of truth when they are adequate.
 - Suggest stronger ICM compatibility carefully and optionally.
 - Add minimal `.picm/` metadata/reports only after confirmation.
+- Offer a first-class Coding Repository profile for code-primary repos and a composable codebase-map capability for hybrid workspaces.
 
 ## Status model
 
@@ -45,6 +46,8 @@ Start read-only. Look for:
 
 Also note likely stable-reference areas vs per-run working artifacts or outputs. Do not copy sensitive/private source content into the report or config.
 
+If a shallow Git-ignore-aware path check suggests a coding repository, offer coding adoption without reading source merely to classify it. When selected, load `coding-adoption-guide.md` before further scanning. Its Git-ignore boundary is mandatory: require a Git worktree for automatic scans, derive candidate paths through Git, and run `git check-ignore --no-index` before every read. Never inspect ignored file contents, even when tracked.
+
 ## Optional file-role inventory
 
 For a complex, cluttered, or unfamiliar workspace—or when the user asks—add a compact path-to-role-to-rationale table to the read-only adoption report. This is an orientation aid, not a migration map, and should cover representative files or areas rather than mechanically listing every file.
@@ -78,6 +81,28 @@ Rules:
 - Keep sensitive material generic. Do not quote contents, and avoid reproducing filenames or paths that themselves reveal protected information; use a safe area label such as “private source area” when needed.
 - Omit the table when it would add noise to a small, already legible workspace.
 
+## Coding adoption branch
+
+`/picm-adopt coding` enters this branch directly; normal `/picm-adopt` reaches the same branch after the user accepts a safe shallow coding-repository classification.
+
+Offer:
+
+- **Primary Coding Repository profile** when software development is the repo's main operating shape.
+- **Codebase-map capability** alongside the inferred Stage Pipeline, Specialist Folder, Team / Role OS, or Custom / Existing Structure profile for a hybrid workspace.
+
+Then ask for:
+
+1. root map, distributed map, or scan and recommend;
+2. additive or curated adoption;
+3. Light, Balanced, or Strict maintenance (Balanced default);
+4. optional user hints about meaningful boundaries and hidden constraints.
+
+Root/distributed describes the resulting map. Scan and recommend is only the analysis path. Coding and workflow scopes may overlap.
+
+Additive mode preserves existing documentation and adds only missing routing/map context. Curated mode may produce a full documentation consolidation/restructure proposal, but every merge, move, rewrite, archive candidate, or deletion remains a separately previewed, explicitly approved action.
+
+Use `CONTEXT-MAP.md` for a substantial dedicated map; keep a small map in root routing or reuse adequate existing architecture docs when that avoids duplication. Root instructions own behavior/task routing, the map indexes repository context, and local `CONTEXT.md` files provide selected boundary detail.
+
 ## Routing readiness
 
 Pi can load `AGENTS.md` and/or `CLAUDE.md` from the current directory and parent directories. A file existing is not the same as adequate routing.
@@ -90,6 +115,7 @@ Adequate visible routing should at least:
 4. Identify important local context boundaries if folders have their own contracts.
 5. Exclude `.picm/` from normal workflow context.
 6. Include safety/privacy boundaries if sensitive material is present or likely.
+7. For coding adoption, route to the repository map/equivalent, meaningful component context, entry/verification sources, and generated/do-not-edit boundaries without requiring a whole-repo scan.
 
 Classify routing quality:
 
@@ -134,6 +160,8 @@ When routing is missing, partial, or conflicting, offer alternatives rather than
 - **Option 1 — Minimal PiCM compatibility**: smallest patch/create proposal that gives adequate root routing, points to existing context/workflow files, and excludes `.picm/`.
 - **Option 2 — Stronger ICM routing**: more opinionated route map inferred from the visible workflow, such as stage/role/specialist paths, local contracts, handoffs, stable references, and outputs.
 - **Option 3 — Scanned only for now**: write only report/scanned metadata after approval; do not mark adopted.
+
+For coding adoption, present Additive and Curated as proposal-depth choices in addition to readiness options. Curated mode can recommend canonical docs and compatibility pointers, but it does not weaken exact preview/write approval.
 
 Never write routing/context edits until the user is satisfied with the proposal and explicitly approves exact changes. Treat option selection as design intent, not write approval. If the user says “preview,” “show exact files,” or “do not write yet,” stop after the preview and ask for a separate explicit approval such as “approve writing these files.”
 
@@ -200,6 +228,8 @@ Scanned-only example:
 
 Keep `scanSummary` brief. Put detailed findings in `.picm/adoption-report.md`.
 
+When coding mapping is enabled, preserve one primary `profile` and add a minimal optional `capabilities.codebaseMap` object with the resulting `shape` (`root` or `distributed`), approved `roots`, map/equivalent path, selected local contexts, and maintenance preset. A Coding Repository profile implies this capability; a hybrid retains its workflow profile and adds the same capability. Roots may overlap workflow folders.
+
 Even `.picm/` writes require the same two-step gate as visible routing edits:
 
 1. user chooses a path or asks for a preview;
@@ -237,6 +267,7 @@ Use this structure:
 - Inferred layout profile:
 - Existing routing source:
 - Adoption status:
+- Coding Repository profile or codebase-map capability, if selected:
 
 ## Existing structure detected
 
@@ -251,6 +282,14 @@ Use this structure:
 - `.picm/config.json` status
 
 ## Optional ICM improvements
+
+## Coding adoption
+- Mapping approach and resulting shape
+- Approved code roots and local-context boundaries
+- Maintenance preset
+- Evidence, confidence, and unknowns
+
+## Documentation consolidation proposal
 
 ## Optional file-role inventory
 
@@ -281,3 +320,5 @@ Do not do these without explicit user approval for the exact action:
 - treat an inventory classification as permission to move, rename, archive, delete, merge, or rewrite a file
 - label a file dead or obsolete when visible evidence only supports “unclear”
 - treat an option choice or preview request as write approval
+- read a Git-ignored file during coding detection, adoption, or maintenance
+- bypass ignore rules through direct reads, `git show`, broad traversal, another worktree, or tracked-file status

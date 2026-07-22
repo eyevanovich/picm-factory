@@ -16,8 +16,10 @@ private/
 
 # Pi/user-local runtime state
 .pi/sessions/
+.pi-subagents/
 
 # Optional local issue-tracker state
 .beads/
 .dolt/
 *.db
+/.pi/hindsight

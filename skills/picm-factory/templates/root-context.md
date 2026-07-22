@@ -27,6 +27,7 @@ Include this section only when the user has named a relevant local script, MCP s
 ## Security / privacy
 - Sensitive material: [yes/no/unknown]
 - Handling rule: [private repo, ignore paths, approval requirement]
+- Coding scan rule, when applicable: Git-ignored paths are never read; candidate paths are checked with `git check-ignore --no-index` before inspection.
 
 ## Maintenance notes
 Run `/picm-maintain` after the first real workflow or whenever the process changes.

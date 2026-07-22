@@ -41,7 +41,8 @@ during a general `/picm-maintain` smoke. Record fixture-specific observations he
 Expected behavior:
 
 - Uses plain situations rather than requiring PiCM/ICM terminology.
-- Routes new or mostly empty folders to `/picm-new` and existing agent/workflow/Claude-style folders to the read-only `/picm-adopt` flow.
+- Routes new or mostly empty folders to `/picm-new` and existing source-code, agent/workflow, or Claude-style folders to the read-only `/picm-adopt` flow.
+- Presents `/picm-adopt coding` as an optional shortcut for a known repository or monorepo while explaining that regular `/picm-adopt` can offer the same Coding Repository profile.
 - Routes general workspace health/drift to `/picm-maintain` and one concrete symptom to `/picm-maintain trace "describe what drifted"`.
 - Recommends `/picm-adopt` when the user is unsure whether an existing folder should use new or adopt.
 - Explains project-local install, preview-before-write, non-destructive adoption, git/security safety, and `.pi/` versus `.picm/`.
@@ -53,7 +54,119 @@ Observed smoke: 2026-07-19 in a visible Zellij/Pi pane against an empty disposab
 - Required previews and explicit approval for writes, preserved existing files by default, and included git and secrets guidance.
 - Wrote no project files beyond the expected local `.pi/` package installation.
 
+## Coding Repository smoke checks
+
+Fixtures:
+
+- `test/fixtures/coding-repository/small-service`
+- `test/fixtures/coding-repository/monorepo-distributed`
+- `test/fixtures/coding-repository/hybrid-release-code`
+- `test/fixtures/coding-repository/existing-doc-duplication`
+- `test/fixtures/coding-repository/ignored-secrets-existing`
+
+### Coding adoption entry paths
+
+Run both regular and explicit entry paths against disposable Git copies:
+
+```text
+/picm-adopt
+/picm-adopt coding
+```
+
+Expected behavior:
+
+- Regular `/picm-adopt` uses only shallow Git-ignore-aware path signals before offering the Coding Repository profile; it does not require the shortcut.
+- `/picm-adopt coding` skips the initial classification question but preserves the same security, scan, preview, and approval rules.
+- The flow offers root, distributed, and scan-and-recommend mapping; additive and curated adoption; and Light, Balanced, or Strict maintenance.
+- The user can choose Coding Repository as the primary profile or add codebase mapping to another primary profile.
+- No files are written without an exact preview and separate approval.
+
+### Root and distributed maps
+
+Expected behavior:
+
+- `small-service` recognizes that the concise map can remain in `AGENTS.md`; it does not manufacture `CONTEXT-MAP.md` or local context for every folder.
+- `monorepo-distributed` routes through `AGENTS.md` → `CONTEXT-MAP.md` → the selected app/package `CONTEXT.md`.
+- Distributed mapping treats `apps/api` and `packages/shared` as meaningful boundaries because they have distinct responsibilities, entry points, and tests—not merely because they are workspace members.
+- The map points to authoritative manifests/tests rather than copying large command or dependency inventories.
+
+### Hybrid composition
+
+Expected behavior for `hybrid-release-code`:
+
+- Keeps Stage Pipeline as the primary profile and recognizes `capabilities.codebaseMap` as composable support.
+- Allows `workflows/release` and coding scope to overlap.
+- Routes ordinary code work through `CONTEXT-MAP.md`, release work through `workflows/release/CONTEXT.md`, and release-related code changes through both.
+- Does not force every directory into exclusive coding or workflow ownership.
+
+### Curated documentation adoption
+
+Run read-only against `existing-doc-duplication` and choose Curated.
+
+Expected behavior:
+
+- Identifies `AGENTS.md`, `CLAUDE.md`, `docs/ARCHITECTURE.md`, and `docs/development.md` as overlapping/conflicting guidance.
+- Treats `src/main.js` as the evidence-backed entry point and calls the `src/index.js` references stale/uncertain without rewriting anything.
+- Proposes canonical fact homes and thin compatibility pointers.
+- Separately highlights proposed rewrites, merges, moves, archive candidates, or deletions.
+- Treats choosing Curated as permission to draft a proposal, not permission to apply it.
+
+### Git-ignore read boundary
+
+Prepare the ignored-file fixture in a disposable Git repository:
+
+```bash
+FIXTURE="test/fixtures/coding-repository/ignored-secrets-existing"
+TARGET="/tmp/picm-coding-ignore-smoke"
+rm -rf "$TARGET"
+cp -R "$FIXTURE" "$TARGET"
+cd "$TARGET"
+git init
+printf 'SYNTHETIC_TRACKED_IGNORED=do-not-read\n' > .env.tracked
+git add .
+git add -f .env.tracked
+ln -s .env ignored-target-link
+git add ignored-target-link
+git -c user.name="PiCM Fixture" -c user.email="fixture@example.invalid" commit -m "fixture"
+printf 'SYNTHETIC_ONLY=do-not-read\n' > .env
+mkdir -p secrets
+printf 'SYNTHETIC FAKE KEY - DO NOT READ\n' > secrets/fake-key.pem
+pi install -l /path/to/picm-factory
+pi
+```
+
+Expected behavior:
+
+- Requires/uses the Git worktree for the automatic coding scan.
+- Derives candidates through Git and runs `git check-ignore --no-index` before reading each candidate.
+- Does not open, quote, summarize, hash, or otherwise inspect untracked ignored `.env`, tracked ignored `.env.tracked`, or `secrets/fake-key.pem`, including through `git show`, broad traversal, or another worktree.
+- Does not follow `ignored-target-link` to the ignored `.env` target.
+- Visible Pi tool logs contain no read of any ignored file or symlink target.
+- Still asks whether tracked files or other approved paths contain secrets; ignore rules are not treated as proof that every remaining path is safe.
+- If a submodule is explicitly included, treats it as a separate worktree and repeats privacy confirmation, Git candidate listing, and per-path ignore checks without initializing/fetching it automatically.
+
+Observed smoke: 2026-07-22 in visible Zellij/Pi panes against `/tmp/picm-coding-ignore-smoke`.
+
+- `/picm-adopt coding` entered Coding Repository directly with Root/Additive/Light choices, derived candidates through Git, reported that ignored content was not opened and symlinks were not followed, produced an exact additive preview, and applied no changes.
+- Regular `/picm-adopt` first performed path-only Git-aware classification from `package.json`, `src/`, and `test/`, offered/selected Coding Repository without needing the shortcut, and asked the tracked-data security question before content inspection.
+- The regular flow recognized the repo was small enough to keep its root map in `AGENTS.md` rather than manufacture `CONTEXT-MAP.md`.
+- It reported `.env.tracked` as ignored and unread, did not follow `ignored-target-link`, did not list or quote ignored contents, created no `.picm/` metadata, and left the Git diff empty. Only the expected project-local `.pi/settings.json` from package installation remained untracked.
+
 ## `/picm-maintain` smoke checks
+
+### Coding Repository
+
+Run `/picm-maintain` against the three adopted coding fixtures.
+
+Expected behavior:
+
+- Reads the configured Light/Balanced/Strict preset and states the inspected roots and omissions.
+- Uses coding cold walks: root routing → map/equivalent → owning boundary → entry point → authoritative tests/checks.
+- `small-service` accepts the root map in `AGENTS.md`.
+- `monorepo-distributed` checks root/local responsibility agreement and manifest-level workspace coverage without attempting a full semantic dependency graph.
+- `hybrid-release-code` checks both coding and workflow routes for mixed release-related changes.
+- Preserves human-authored map content and proposes the smallest evidence-backed patch rather than regenerating whole files.
+- Applies the Git-ignore read boundary before every coding scan.
 
 ### Stage Pipeline
 
@@ -305,6 +418,8 @@ Last checked: 2026-05-25 in visible Zellij/Pi panes against `/tmp/picm-fvs-new-s
 
 Fixtures:
 
+- `../coding-repository/existing-doc-duplication`
+- `../coding-repository/ignored-secrets-existing`
 - `custom-existing-structure/existing-claude-only`
 - `custom-existing-structure/existing-agents-only`
 - `custom-existing-structure/existing-both-agent-files`
@@ -325,6 +440,7 @@ Expected behavior:
 - Marks `.picm/config.json` as `adoption.status: "adopted"` only when visible routing is adequate.
 - May write scanned-only `.picm/config.json`/`.picm/adoption-report.md` after approval, with a report link or brief scan summary for future `/picm-maintain` guidance.
 - Adoption report includes existing routing source, inferred layout profile, PiCM compatibility, optional ICM improvements, security/privacy notes, optional `.picm` artifacts, and a `Preserved as-is` section.
+- Coding adoption reports whether Coding Repository is primary or codebase mapping is composable, the selected mapping/adoption modes, resulting root/distributed shape, maintenance preset, proposed boundaries, evidence, and unknowns.
 
 ### Optional file-role inventory
 

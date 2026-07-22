@@ -4,12 +4,20 @@ type CommandName = "picm-new" | "picm-adopt" | "picm-maintain" | "picm-help";
 
 const commandDescriptions: Record<CommandName, string> = {
   "picm-new": "Create a new PiCM folder-agent workspace through an interview-led setup flow",
-  "picm-adopt": "Analyze an existing ICM/folder-agent project and add PiCM support non-invasively",
-  "picm-maintain": "Check and improve a PiCM/ICM workspace using the maintenance rubric",
+  "picm-adopt": "Adopt an existing workflow or coding repository non-invasively",
+  "picm-maintain": "Check workflow and coding-context health using the maintenance rubric",
   "picm-help": "Show PiCM Factory setup and command guidance",
 };
 
+const adoptArgumentCompletions = [
+  {
+    value: "coding",
+    label: "coding — adopt as a Coding Repository or add codebase mapping",
+  },
+];
+
 const maintainArgumentCompletions = [
+  { value: "coding", label: "coding — check repository context-map drift" },
   {
     value: 'trace "final output drifted from approved source"',
     label: 'trace "drift symptom"',
@@ -39,11 +47,15 @@ export default function picmFactoryExtension(pi: ExtensionAPI) {
   for (const command of Object.keys(commandDescriptions) as CommandName[]) {
     pi.registerCommand(command, {
       description: commandDescriptions[command],
-      ...(command === "picm-maintain"
+      ...(command === "picm-adopt" || command === "picm-maintain"
         ? {
             getArgumentCompletions: (prefix: string) => {
               const normalizedPrefix = prefix.trimStart().toLowerCase();
-              const completions = maintainArgumentCompletions.filter((item) =>
+              const items =
+                command === "picm-adopt"
+                  ? adoptArgumentCompletions
+                  : maintainArgumentCompletions;
+              const completions = items.filter((item) =>
                 item.value.toLowerCase().startsWith(normalizedPrefix),
               );
 

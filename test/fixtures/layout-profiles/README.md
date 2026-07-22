@@ -7,6 +7,7 @@ Each micro-fixture is a self-contained workspace unless its name begins with `ex
 
 Profiles covered:
 
+- `../coding-repository/` — code-primary root/distributed maps, a hybrid workflow-and-code workspace, curated documentation consolidation, and Git-ignore boundary adoption fixtures.
 - `stage-pipeline/` — ordered workflow stages, including root-numbered and nested `stages/` shapes plus an intentional source-integrity drift fixture for heuristic trace QA.
 - `specialist-folder/` — one reusable expert/helper, with `examples.md` present in one fixture and absent in another.
 - `team-role-os/` — multiple role folders with handoffs and shared reference.
@@ -14,6 +15,6 @@ Profiles covered:
 - `security-red-team/` — synthetic sensitive-material fixtures for `/picm-adopt` and `/picm-maintain` safety checks.
 - `anti-patterns/` — synthetic, non-sensitive workspaces with one primary maintenance defect each: root brain dump, missing task routing, missing stage outputs/review gates, mixed reference/working artifacts, stale context, normal routing through `.picm/`, or incomplete handoff.
 
-Security red-team fixtures use fake token-looking strings and labeled private/client-looking material only. They must never contain real secrets, credentials, client data, regulated data, or private personal data.
+Coding-repository and security red-team fixtures use fake token-looking strings and labeled private/client-looking material only. They must never contain real secrets, credentials, client data, regulated data, or private personal data.
 
 See `docs/layout-fixture-qa.md` for smoke-test instructions.

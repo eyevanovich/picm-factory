@@ -1,0 +1,8 @@
+{
+  "name": "synthetic-hybrid-repo",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --test packages/core/test/*.test.js"
+  }
+}

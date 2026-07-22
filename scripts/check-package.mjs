@@ -1,5 +1,13 @@
-import { execFileSync } from "node:child_process";
-import { existsSync, readFileSync } from "node:fs";
+import { execFileSync, spawnSync } from "node:child_process";
+import {
+  existsSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 const root = process.cwd();
@@ -20,6 +28,7 @@ const required = [
   "prompts/picm-help.md",
   "docs/layout-fixture-qa.md",
   "docs/releasing.md",
+  "test/fixtures/coding-repository/README.md",
   "test/fixtures/layout-profiles/README.md",
 ];
 
@@ -76,9 +85,13 @@ const requiredPackageFiles = [
   "extensions/picm-factory.ts",
   "skills/picm-factory/SKILL.md",
   "skills/picm-factory/references/adoption-guide.md",
+  "skills/picm-factory/references/coding-adoption-guide.md",
+  "skills/picm-factory/references/coding-maintenance-rubric.md",
   "skills/picm-factory/references/interview-guide.md",
   "skills/picm-factory/references/layout-profiles.md",
   "skills/picm-factory/references/maintenance-rubric.md",
+  "skills/picm-factory/templates/code-boundary-context.md",
+  "skills/picm-factory/templates/context-map.md",
   "skills/picm-factory/templates/handoff-card.md",
   "skills/picm-factory/templates/root-agents.md",
   "skills/picm-factory/templates/root-context.md",
@@ -202,6 +215,58 @@ for (const [file, signals] of Object.entries(mechanicalWorkGuidance)) {
   }
 }
 
+const codingGuidance = {
+  "skills/picm-factory/SKILL.md": [
+    "Git ignored means unreadable during coding scans",
+    "/picm-adopt coding",
+    "Coding Repository",
+    "codebase-map capability",
+    "Light/Balanced/Strict",
+  ],
+  "skills/picm-factory/references/coding-adoption-guide.md": [
+    "git check-ignore --no-index",
+    "Root map",
+    "Distributed map",
+    "Scan and recommend",
+    "Additive",
+    "Curated",
+    "CONTEXT-MAP.md",
+    "Do not follow symlinks during automatic scans",
+    "Treat each submodule as a separate repository boundary",
+  ],
+  "skills/picm-factory/references/coding-maintenance-rubric.md": [
+    "### Light",
+    "### Balanced",
+    "### Strict",
+    "Coding cold-agent walk",
+    "Future automation boundary",
+  ],
+  "skills/picm-factory/references/layout-profiles.md": [
+    "## Coding Repository",
+    "composable codebase-map capability",
+    "CONTEXT-MAP.md",
+  ],
+  "skills/picm-factory/templates/context-map.md": [
+    "# Repository Context Map",
+    "## Context boundaries",
+    "## Unknowns",
+  ],
+  "skills/picm-factory/templates/code-boundary-context.md": [
+    "# Component Context",
+    "## Verification",
+    "## Known unknowns",
+  ],
+};
+for (const [file, signals] of Object.entries(codingGuidance)) {
+  const text = readFileSync(join(root, file), "utf8");
+  for (const signal of signals) {
+    if (!text.includes(signal)) {
+      console.error(`Coding-repository guidance ${file} missing signal: ${signal}`);
+      process.exit(1);
+    }
+  }
+}
+
 const extension = readFileSync(join(root, "extensions/picm-factory.ts"), "utf8");
 const forbiddenExtensionRuntimeSignals = [
   "node:child_process",
@@ -212,6 +277,19 @@ const forbiddenExtensionRuntimeSignals = [
 for (const signal of forbiddenExtensionRuntimeSignals) {
   if (extension.includes(signal)) {
     console.error(`PiCM extension must remain thin; found runtime signal: ${signal}`);
+    process.exit(1);
+  }
+}
+const codingCompletionLists = [
+  "adoptArgumentCompletions",
+  "maintainArgumentCompletions",
+];
+for (const listName of codingCompletionLists) {
+  const list = extension.match(
+    new RegExp(`const ${listName} = \\[([\\s\\S]*?)\\n\\];`),
+  )?.[1];
+  if (!list?.includes('value: "coding"')) {
+    console.error(`PiCM extension ${listName} must offer the coding completion`);
     process.exit(1);
   }
 }
@@ -297,6 +375,8 @@ const publicTextFiles = [
   "CLAUDE.md",
   "CONTEXT.md",
   "skills/picm-factory/SKILL.md",
+  "skills/picm-factory/references/coding-adoption-guide.md",
+  "skills/picm-factory/references/coding-maintenance-rubric.md",
   "docs/layout-fixture-qa.md",
   "docs/picm-new-scenarios.md",
   "docs/references.md",
@@ -352,6 +432,12 @@ for (const file of commandDecisionGuidanceFiles) {
       process.exit(1);
     }
   }
+  for (const signal of ["/picm-adopt coding", "coding repository"]) {
+    if (!text.includes(signal)) {
+      console.error(`Coding command guidance ${file} missing signal: ${signal}`);
+      process.exit(1);
+    }
+  }
 }
 
 const readme = readFileSync(join(root, "README.md"), "utf8").toLowerCase();
@@ -361,6 +447,7 @@ if (!readme.includes("you do not need to know")) {
 }
 
 const fixtureRoot = "test/fixtures/layout-profiles";
+const codingFixtureRoot = "test/fixtures/coding-repository";
 const maintainableFixtures = [
   "stage-pipeline/newsletter-production",
   "stage-pipeline/workshop-planning",
@@ -475,6 +562,193 @@ for (const signal of coldWalkSignals) {
 }
 
 const traceQaDoc = readFileSync(join(root, "docs/layout-fixture-qa.md"), "utf8");
+const codingFixtures = {
+  "small-service": [
+    ".gitignore",
+    ".picm/config.json",
+    "AGENTS.md",
+    "CONTEXT.md",
+    "package.json",
+    "src/greeting.js",
+    "test/greeting.test.js",
+  ],
+  "monorepo-distributed": [
+    ".gitignore",
+    ".picm/config.json",
+    "AGENTS.md",
+    "CONTEXT.md",
+    "CONTEXT-MAP.md",
+    "package.json",
+    "apps/api/CONTEXT.md",
+    "packages/shared/CONTEXT.md",
+  ],
+  "hybrid-release-code": [
+    ".gitignore",
+    ".picm/config.json",
+    "AGENTS.md",
+    "CONTEXT.md",
+    "CONTEXT-MAP.md",
+    "package.json",
+    "packages/core/CONTEXT.md",
+    "workflows/release/CONTEXT.md",
+  ],
+  "existing-doc-duplication": [
+    ".gitignore",
+    "AGENTS.md",
+    "CLAUDE.md",
+    "README.md",
+    "docs/ARCHITECTURE.md",
+    "docs/development.md",
+    "package.json",
+    "src/main.js",
+  ],
+  "ignored-secrets-existing": [
+    ".gitignore",
+    "AGENTS.md",
+    "README.md",
+    "package.json",
+    "src/status.js",
+  ],
+};
+for (const [fixture, files] of Object.entries(codingFixtures)) {
+  const fixturePath = join(root, codingFixtureRoot, fixture);
+  if (!existsSync(fixturePath)) {
+    console.error(`Missing coding-repository fixture: ${fixture}`);
+    process.exit(1);
+  }
+  if (!traceQaDoc.includes(`coding-repository/${fixture}`)) {
+    console.error(`Coding-repository fixture missing QA doc reference: ${fixture}`);
+    process.exit(1);
+  }
+  for (const file of files) {
+    if (!existsSync(join(fixturePath, file))) {
+      console.error(`Coding-repository fixture ${fixture} missing ${file}`);
+      process.exit(1);
+    }
+  }
+  try {
+    execFileSync("npm", ["test"], {
+      cwd: fixturePath,
+      encoding: "utf8",
+      stdio: "pipe",
+    });
+  } catch (error) {
+    console.error(`Coding-repository fixture tests failed: ${fixture}`);
+    console.error(error.stdout ?? error.message);
+    process.exit(1);
+  }
+}
+
+const codingMapSignals = {
+  "small-service": ["src/greeting.js", "test/greeting.test.js"],
+  "monorepo-distributed": [
+    "apps/api/src/server.js",
+    "apps/api/test/",
+    "packages/shared/src/format.js",
+    "packages/shared/test/",
+  ],
+  "hybrid-release-code": [
+    "packages/core/src/version.js",
+    "packages/core/test/",
+    "workflows/release/CONTEXT.md",
+  ],
+};
+for (const [fixture, mapSignals] of Object.entries(codingMapSignals)) {
+  const fixturePath = join(root, codingFixtureRoot, fixture);
+  const config = JSON.parse(
+    readFileSync(join(fixturePath, ".picm/config.json"), "utf8"),
+  );
+  const codebaseMap = config.capabilities?.codebaseMap;
+  if (!codebaseMap) {
+    console.error(`Coding-repository fixture missing codebaseMap capability: ${fixture}`);
+    process.exit(1);
+  }
+  if (!["root", "distributed"].includes(codebaseMap.shape)) {
+    console.error(`Coding-repository fixture has invalid map shape: ${fixture}`);
+    process.exit(1);
+  }
+  if (!["light", "balanced", "strict"].includes(codebaseMap.maintenancePreset)) {
+    console.error(`Coding-repository fixture has invalid maintenance preset: ${fixture}`);
+    process.exit(1);
+  }
+  for (const path of [codebaseMap.map, ...codebaseMap.roots, ...codebaseMap.localContexts]) {
+    if (!existsSync(join(fixturePath, path))) {
+      console.error(`Coding-repository fixture ${fixture} config points to missing path: ${path}`);
+      process.exit(1);
+    }
+  }
+  const mapText = readFileSync(join(fixturePath, codebaseMap.map), "utf8");
+  for (const signal of mapSignals) {
+    if (!mapText.includes(signal)) {
+      console.error(`Coding-repository fixture ${fixture} map missing pointer: ${signal}`);
+      process.exit(1);
+    }
+  }
+}
+
+const ignoreBoundary = readFileSync(
+  join(root, codingFixtureRoot, "ignored-secrets-existing", ".gitignore"),
+  "utf8",
+);
+for (const signal of [".env", "secrets/", "*.pem"]) {
+  if (!ignoreBoundary.includes(signal)) {
+    console.error(`Coding ignore-boundary fixture missing pattern: ${signal}`);
+    process.exit(1);
+  }
+}
+
+const ignoreSmokeRoot = mkdtempSync(join(tmpdir(), "picm-ignore-check-"));
+try {
+  writeFileSync(join(ignoreSmokeRoot, ".gitignore"), ".env\n.env.*\n", "utf8");
+  writeFileSync(join(ignoreSmokeRoot, ".env"), "SYNTHETIC_ONLY=do-not-read\n", "utf8");
+  writeFileSync(
+    join(ignoreSmokeRoot, ".env.tracked"),
+    "SYNTHETIC_TRACKED_IGNORED=do-not-read\n",
+    "utf8",
+  );
+  execFileSync("git", ["init", "-q"], { cwd: ignoreSmokeRoot });
+  execFileSync("git", ["add", ".gitignore"], { cwd: ignoreSmokeRoot });
+  execFileSync("git", ["add", "-f", ".env.tracked"], { cwd: ignoreSmokeRoot });
+
+  if (process.platform !== "win32") {
+    symlinkSync(".env", join(ignoreSmokeRoot, "ignored-target-link"));
+    execFileSync("git", ["add", "ignored-target-link"], { cwd: ignoreSmokeRoot });
+  }
+
+  execFileSync(
+    "git",
+    [
+      "-c",
+      "user.name=PiCM Fixture",
+      "-c",
+      "user.email=fixture@example.invalid",
+      "commit",
+      "-qm",
+      "fixture",
+    ],
+    { cwd: ignoreSmokeRoot },
+  );
+
+  const ignoreStatus = (path) =>
+    spawnSync("git", ["check-ignore", "--no-index", "-q", "--", path], {
+      cwd: ignoreSmokeRoot,
+    }).status;
+
+  for (const path of [".env", ".env.tracked"]) {
+    if (ignoreStatus(path) !== 0) {
+      throw new Error(`Git ignore smoke failed to exclude: ${path}`);
+    }
+  }
+
+  if (process.platform !== "win32") {
+    if (ignoreStatus("ignored-target-link") !== 1 || ignoreStatus(".env") !== 0) {
+      throw new Error("Git ignore smoke did not reproduce the symlink-target boundary");
+    }
+  }
+} finally {
+  rmSync(ignoreSmokeRoot, { recursive: true, force: true });
+}
+
 const antiPatternFixtures = {
   "root-brain-dump": ["AGENTS.md", "CONTEXT.md"],
   "no-task-routing": ["AGENTS.md", "CONTEXT.md", "research/CONTEXT.md", "publishing/CONTEXT.md"],

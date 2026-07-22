@@ -1,11 +1,11 @@
 # PiCM Factory
 
-PiCM Factory is a project-local [Pi Coding Agent](https://pi.dev) package for creating, adopting, and maintaining PiCM / ICM-style folder-agent workspaces.
+PiCM Factory is a project-local [Pi Coding Agent](https://pi.dev) package for creating, adopting, and maintaining PiCM / ICM-style folder-agent workspaces and agent-readable coding repositories.
 
 It gives Pi four project-local commands:
 
 - `/picm-new` — create a new folder-agent workspace through an interview-led setup flow
-- `/picm-adopt` — inspect an existing ICM-style project and add PiCM support non-invasively
+- `/picm-adopt` — inspect an existing workflow or coding repository and add PiCM support non-invasively (`/picm-adopt coding` is an optional shortcut)
 - `/picm-maintain` — check routing/context health and suggest improvements
 - `/picm-help` — show setup and command guidance
 
@@ -16,9 +16,10 @@ You do not need to know PiCM or ICM terminology. Choose based on what is already
 | Situation | Command | What it does |
 | --- | --- | --- |
 | You are starting a new workflow in a new or mostly empty folder. | `/picm-new` | Interviews you, previews a minimal workspace, and writes it only after approval. |
-| The folder already contains agent instructions, workflows, stages, reference material, or a Claude/ICM-style setup. | `/picm-adopt` | Starts read-only, preserves the existing structure, and proposes optional PiCM support without converting the project. |
-| You want a health check for an existing folder-agent workspace. | `/picm-maintain` | Reviews routing, local instructions, outputs, handoffs, drift, and safety; findings are advisory. |
+| The folder already contains source code, manifests, agent instructions, workflows, stages, reference material, or a Claude/ICM-style setup. | `/picm-adopt` | Starts read-only, safely detects likely coding repositories, preserves existing structure, and proposes optional PiCM support without converting the project. |
+| You want a health check for an existing workflow or coding-repository workspace. | `/picm-maintain` | Reviews routing, local instructions, coding maps, outputs, handoffs, drift, and safety; findings are advisory. |
 | One specific result or handoff looks wrong. | `/picm-maintain trace "describe what drifted"` | Runs a focused, heuristic investigation and reports likely causes without promising deterministic provenance. |
+| You know this is a repository or monorepo and want to skip the initial classification. | `/picm-adopt coding` | Enters the same coding-adoption flow that regular `/picm-adopt` can offer. |
 | You are still unsure. | `/picm-help` | Repeats this guide and the safety/install model. |
 
 When a folder already has workspace architecture, prefer `/picm-adopt` over `/picm-new`. Adoption does not mean conversion: it scans and reports first, then requires an exact preview and separate approval before writing or restructuring anything.
@@ -65,7 +66,7 @@ pi install -l /path/to/picm-factory
 pi
 ```
 
-## Add PiCM to an existing ICM project
+## Add PiCM to an existing workflow or coding repository
 
 ```bash
 cd existing-icm-project
@@ -81,6 +82,16 @@ Inside Pi:
 
 `/picm-adopt` is non-invasive by default. It scans, reports, and suggests. It should not rename, move, rewrite, or restructure existing files unless you explicitly approve the exact action.
 
+For coding repositories, regular `/picm-adopt` can safely detect repository signals and offer a first-class **Coding Repository** profile. `/picm-adopt coding` is only a shortcut. Coding adoption supports:
+
+- root, distributed, or scan-and-recommend mapping;
+- additive adoption or a curated documentation-consolidation proposal;
+- `CONTEXT-MAP.md` for substantial maps and selected local `CONTEXT.md` files for meaningful boundaries;
+- Light, Balanced, or Strict manual maintenance;
+- hybrid workspaces where codebase mapping overlaps Stage Pipeline, Specialist Folder, Team / Role OS, or custom layouts.
+
+Coding scans treat Git ignore rules as a hard read boundary. PiCM derives scan candidates through Git, checks each candidate with `git check-ignore --no-index`, and does not inspect ignored file contents—even when an ignored file was previously tracked. Automatic scans do not follow symlinks; explicitly included submodules are treated as separate worktrees with the same checks. Automatic coding scans require a Git worktree.
+
 ## Safety model
 
 PiCM Factory is intentionally conservative:
@@ -89,6 +100,7 @@ PiCM Factory is intentionally conservative:
 - Non-destructive by default: preview planned edits before writing.
 - Git encouraged, but no automatic commits.
 - Secrets-first handling: do not commit `.env`, keys, tokens, credentials, or sensitive client data accidentally.
+- Git-ignore-safe coding scans: ignored file contents are never read during coding adoption or maintenance.
 - `.pi/` belongs to Pi package configuration and controls which project-local Pi resources load.
 - `.picm/` belongs to small PiCM metadata/reports. It is maintainer-only context, not the normal workflow or source of truth.
 
@@ -111,7 +123,7 @@ See [`docs/references.md`](docs/references.md) for more detail about how these s
 picm-factory/
 ├── extensions/              # Thin Pi command extension
 ├── prompts/                 # Repository-only backing prompts
-├── skills/picm-factory/     # Runtime skill, references, and templates
+├── skills/picm-factory/     # Runtime skill, workflow/coding references, and templates
 ├── test/fixtures/           # Repository-only synthetic QA fixtures
 ├── docs/                    # QA scenarios and public methodology references
 ├── qa-runner/               # Interactive Pi/Zellij QA specialist context
