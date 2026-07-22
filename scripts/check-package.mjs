@@ -221,7 +221,7 @@ const releaseDocs = {
     "pi install -l npm:@eyevanovich/picm-factory",
     "GitHub Issues",
   ],
-  "CHANGELOG.md": ["## [0.1.2] - 2026-07-21", "Public npm distribution"],
+  "CHANGELOG.md": ["Public npm distribution"],
   "CONTRIBUTING.md": [
     "GitHub Issue",
     "npm run check",
@@ -243,6 +243,21 @@ for (const [file, signals] of Object.entries(releaseDocs)) {
       process.exit(1);
     }
   }
+}
+
+const changelog = readFileSync(join(root, "CHANGELOG.md"), "utf8");
+const escapedPackageVersion = pkg.version.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+const currentReleaseHeading = changelog.match(
+  new RegExp(`^## \\[${escapedPackageVersion}\\] - (\\d{4}-\\d{2}-\\d{2})$`, "m"),
+);
+if (!currentReleaseHeading) {
+  console.error(`CHANGELOG.md must include a dated heading for version ${pkg.version}`);
+  process.exit(1);
+}
+const releaseDate = currentReleaseHeading[1];
+if (new Date(`${releaseDate}T00:00:00Z`).toISOString().slice(0, 10) !== releaseDate) {
+  console.error(`CHANGELOG.md has an invalid release date for version ${pkg.version}`);
+  process.exit(1);
 }
 
 const publishWorkflow = readFileSync(

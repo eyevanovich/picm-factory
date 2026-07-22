@@ -29,9 +29,11 @@ jobs:
 
       - name: Verify release tag matches package version
         shell: bash
+        env:
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
         run: |
           package_version="$(node --print "require('./package.json').version")"
-          if [[ "${{ github.event.release.tag_name }}" != "v${package_version}" ]]; then
+          if [[ "$RELEASE_TAG" != "v${package_version}" ]]; then
             echo "Release tag must be v${package_version}." >&2
             exit 1
           fi
