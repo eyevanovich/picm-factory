@@ -100,13 +100,25 @@ PiCM Factory is intentionally conservative:
 
 Recommended `.gitignore` entries for sensitive material are included in this repo and should be suggested to generated/adopted projects when relevant.
 
+## Acknowledgments
+
+PiCM Factory is an independent adaptation for Pi, built on ideas and work shared by others:
+
+- **Jake Van Clief and David McDermott** — their paper, [*Interpretable Context Methodology: Folder Structure as Agentic Architecture*](https://arxiv.org/abs/2603.16021), is the primary methodology source for the folder-based stages, scoped context, inspectable intermediate outputs, and human review gates used here.
+- **Jake Van Clief and the [Clief Notes community](https://www.skool.com/cliefnotes)** — a place to learn more about Jake's ICM methodology and follow the ongoing discussion around it.
+- **[`RinDig/icm-architect`](https://github.com/RinDig/icm-architect)** — its cold-agent walk test and file-role inventory concepts informed independently adapted parts of PiCM Factory's maintenance and adoption guidance.
+- **[Pi Coding Agent](https://github.com/earendil-works/pi)** by Mario Zechner — the extensible coding-agent platform and package system that PiCM Factory runs on.
+
+See [`docs/references.md`](docs/references.md) for more detail about how these sources informed the project.
+
 ## Repository layout
 
 ```text
 picm-factory/
 ├── extensions/              # Thin Pi command extension
-├── prompts/                 # Backing prompts; not separately registered as commands
-├── skills/picm-factory/     # Methodology skill, references, templates, and fixtures
+├── prompts/                 # Repository-only backing prompts
+├── skills/picm-factory/     # Runtime skill, references, and templates
+├── test/fixtures/           # Repository-only synthetic QA fixtures
 ├── docs/                    # QA scenarios and public methodology references
 ├── qa-runner/               # Interactive Pi/Zellij QA specialist context
 └── scripts/                 # Development checks
