@@ -12,7 +12,9 @@ Do not use hard failures unless the project is unreadable or dangerous.
 
 ## Maintainer posture
 
-`/picm-maintain` is a heuristic health report and focused drift-investigation helper for folder-agent workspaces. It should keep the workspace aligned over time, but it must not silently rewrite the user's system or imply provenance-grade causal tracing.
+`/picm-maintain` is a heuristic health report and focused drift-investigation helper for folder-agent and coding-repository workspaces. It should keep the workspace aligned over time, but it must not silently rewrite the user's system or imply provenance-grade causal tracing.
+
+When the Coding Repository profile, `capabilities.codebaseMap`, or visible `CONTEXT-MAP.md` is present, load `coding-maintenance-rubric.md`. Its Light/Balanced/Strict checks extend this rubric, and its Git-ignore-safe read boundary applies before any coding scan.
 
 For every non-trivial Warning or Suggestion, include a healing path:
 
@@ -79,7 +81,7 @@ Trace mode should not require rigid syntax. Natural-language symptoms are valid;
 
 Run this bounded, advisory test during a general health check. Choose one representative task or ask the user which task to test, then approach the workspace from its root as if you have no prior conversation or memory. Do not require a specific folder name, numbering scheme, or contract heading.
 
-1. **Orient from root.** Starting with the root routing file, can you identify the workspace and reach the relevant local contract within a few purposeful reads? Count the routing chain, not the task inputs and references the contract intentionally names.
+1. **Orient from root.** Starting with the root routing file, can you identify the workspace and reach the relevant local contract within a few purposeful reads? For coding tasks, the route may be root instructions → `CONTEXT-MAP.md`/equivalent → owning boundary. Count the routing chain, not the task inputs and references the contract intentionally names.
 2. **Recover the local contract.** Can you identify the task's exact input paths, its job, its named output or review surface, and the concrete human check before downstream use?
 3. **Read visible status.** From the named outputs or equivalent visible artifacts, can you state what is present, missing, blocked, or awaiting review? Read artifact content when needed; existence alone does not prove correctness, approval, execution history, or causal provenance.
 4. **Check routing weight.** Do root and intermediate routing files mainly point to local context instead of carrying task payload, history, or large reference material?
@@ -121,11 +123,12 @@ Typical findings:
 
 Checks:
 
-- Does each stage/specialist/role have nearby instructions?
+- Does each stage/specialist/role or meaningful coding boundary have nearby instructions when local context is actually needed?
 - Do local context files explain purpose, inputs, process, outputs, and constraints?
 - For stage pipelines, do stage contracts distinguish stable reference material from per-run working artifacts where useful?
 - Is there a `Verify`, `Quality checks`, or equivalent section for cross-stage alignment when output quality depends on prior decisions?
 - Can the agent act without reading the entire repo?
+- For coding repositories, can it locate the owning component, supported entry point, and authoritative verification source without guessing?
 
 Typical findings:
 
@@ -187,6 +190,7 @@ Checks:
 - stale context risk
 - missing update notes where useful
 - context contradicts current folder structure or generated/adopted `.picm/config.json`
+- coding maps contradict current manifests, component paths, entry points, or verification sources
 - stage/role handoffs no longer match current folders or outputs
 - learnings from real use not captured
 - repeated human corrections that should become source-level context
@@ -234,6 +238,7 @@ Healing paths:
 
 Checks:
 
+- coding scans derive candidates through Git and run `git check-ignore --no-index` before every read; ignored paths are never opened, even when tracked
 - `.gitignore` covers obvious secrets
 - context/examples do not contain credentials or sensitive data by accident
 - private/client material is handled intentionally
@@ -244,6 +249,7 @@ Typical findings:
 - committed `.env`/keys/tokens: Warning.
 - sensitive client data copied into examples without need: Warning.
 - missing `.env.example`: Suggestion.
+- coding scan reads or bypasses a Git-ignored path: Warning; stop the scan, disclose the boundary failure without quoting content, and do not continue until the user confirms a safe recovery path.
 
 ## Output format
 

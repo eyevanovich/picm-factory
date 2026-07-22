@@ -1,0 +1,31 @@
+{
+  "version": 1,
+  "generatedBy": "picm-factory",
+  "adoption": {
+    "status": "adopted",
+    "readiness": "ready"
+  },
+  "profile": "coding-repository",
+  "routing": {
+    "source": "AGENTS.md",
+    "status": "created-for-adoption",
+    "coexistence": "single-routing-file"
+  },
+  "paths": {
+    "rootInstructions": "AGENTS.md",
+    "rootContext": "CONTEXT.md",
+    "workflowFolders": []
+  },
+  "capabilities": {
+    "codebaseMap": {
+      "shape": "distributed",
+      "roots": ["apps", "packages"],
+      "map": "CONTEXT-MAP.md",
+      "localContexts": [
+        "apps/api/CONTEXT.md",
+        "packages/shared/CONTEXT.md"
+      ],
+      "maintenancePreset": "balanced"
+    }
+  }
+}

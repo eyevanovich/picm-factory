@@ -2,6 +2,22 @@
 
 All notable changes to PiCM Factory will be documented here.
 
+## [Unreleased]
+
+### Added
+
+- First-class Coding Repository profile for repository and monorepo onboarding.
+- Composable codebase-map capability for hybrid workflow-and-code workspaces.
+- Root, distributed, and scan-and-recommend mapping with additive or curated adoption.
+- `CONTEXT-MAP.md` and local coding-boundary templates.
+- Light, Balanced, and Strict manual coding-map maintenance presets.
+- `/picm-adopt coding` shortcut while preserving automatic discovery through regular `/picm-adopt`.
+
+### Safety
+
+- Git-ignore-aware coding scans that never read ignored file contents, including ignored tracked files.
+- Exact preview and approval boundaries for curated documentation consolidation.
+
 ## [0.1.2] - 2026-07-21
 
 ### Added

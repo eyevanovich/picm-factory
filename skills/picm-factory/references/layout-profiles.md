@@ -4,6 +4,8 @@ Layout profiles are recommendations, not validation laws. Users can organize dif
 
 When a workflow has mixed signals, recommend one primary profile for legibility and borrow a secondary pattern sparingly. Do not default to Custom just because the workflow has both stages and a specialist or both roles and reference material.
 
+**Coding Repository** is both a first-class primary profile and the source of a composable codebase-map capability. Use the profile when coding is the workspace's primary operating shape. In hybrid workspaces, retain the primary workflow profile and enable codebase mapping alongside it. Coding and workflow scopes may overlap; root routing decides which context a task loads.
+
 ## Stage Pipeline
 
 Best for repeatable workflows with ordered steps.
@@ -117,6 +119,59 @@ For roles likely to run as independent Pi/subagent working directories, consider
 
 First-run ending guidance for this profile should name the first role/folder to use, the handoff card or agreed handoff artifact to create/update before another role acts, and the receiving role/folder that consumes it. The handoff review point should require a human to check summary, facts/decisions, confidence, blockers/risks, gaps/unknowns, and next action. Tell the user to keep uncertainty visible instead of smoothing it into confident instructions; downstream roles should work from the reviewed handoff, not chat memory.
 
+## Coding Repository
+
+Best for source-code repositories and monorepos where an agent must find the correct architectural boundary, entry point, constraints, and verification source without loading the whole repo.
+
+Common small-repo shape:
+
+```text
+AGENTS.md              # rules and coding-task routing, with a concise map when small
+src/
+tests/
+docs/
+```
+
+Common larger or hybrid shape:
+
+```text
+AGENTS.md              # tells the agent when to load coding/workflow context
+CONTEXT-MAP.md         # repository boundary and context index
+apps/
+├── web/
+│   └── CONTEXT.md     # only when this boundary benefits from local context
+└── api/
+    └── CONTEXT.md
+packages/
+└── shared/
+workflows/             # optional overlapping ICM workflow layout
+```
+
+Use when:
+
+- the repository's primary work is software development;
+- the agent needs progressive context loading across apps/services/packages;
+- entry points, public surfaces, tests, generated code, or dependency boundaries matter;
+- a monorepo is difficult to navigate from root instructions alone.
+
+Mapping choices during adoption:
+
+- **Root map** for a small/cohesive repository.
+- **Distributed map** for user-confirmed meaningful boundaries, not every package.
+- **Scan and recommend** when the user wants a broader read-only topology assessment before choosing.
+
+Map placement is adaptive:
+
+- keep a genuinely small map in the canonical root routing file;
+- use `CONTEXT-MAP.md` for substantial or hybrid maps;
+- reuse an adequate existing `ARCHITECTURE.md` or equivalent rather than duplicating it.
+
+`AGENTS.md`/canonical `CLAUDE.md` owns behavior and task routing. `CONTEXT-MAP.md` indexes areas, responsibilities, authoritative context, entry points, and verification sources. Local `CONTEXT.md` files hold boundary-specific detail. Do not duplicate the same instructions across all three.
+
+The first-run checklist should route one real coding task from root → map/equivalent → owning boundary → entry point → authoritative tests/checks. Review the code diff and check result, keep cross-boundary effects and unknowns visible, and run `/picm-maintain` after the first real change or when repository boundaries/manifests/verification sources change.
+
+For coding scans and maintenance, ignored files are unreadable: derive candidates through Git and run `git check-ignore --no-index` before each read. Load `coding-adoption-guide.md` or `coding-maintenance-rubric.md` for the full boundary.
+
 ## Custom / Existing Structure
 
 Best when the user already has a working organization or the workflow does not match a standard profile.
@@ -141,7 +196,7 @@ First-run ending guidance for this profile should follow the visible routing sou
 
 ## Local context vs local instructions
 
-Default scaffolds should use one root `AGENTS.md` plus local `CONTEXT.md` files. Pi auto-loads `AGENTS.md`/`CLAUDE.md` from the current directory and parent directories, while `CONTEXT.md` is read because the root routing file tells the agent when to read it.
+Default scaffolds should use one root `AGENTS.md` plus local `CONTEXT.md` files. Pi auto-loads `AGENTS.md`/`CLAUDE.md` from the current directory and parent directories, while `CONTEXT.md` and `CONTEXT-MAP.md` are read because the root routing file tells the agent when to read them.
 
 Create local/buried `AGENTS.md` only when a folder needs hard local behavior rules or is likely to be used as an independent Pi/subagent working directory. Examples:
 

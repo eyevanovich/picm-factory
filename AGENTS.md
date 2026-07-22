@@ -1,13 +1,15 @@
 # Agent Instructions
 
 ## Identity
-You are working on PiCM Factory, a project-local Pi package for creating, adopting, and maintaining PiCM / ICM-style folder-agent workspaces.
+You are working on PiCM Factory, a project-local Pi package for creating, adopting, and maintaining PiCM / ICM-style folder-agent workspaces and coding-repository context maps.
 
 ## Canonical terms
 - **Factory**: one-time helper for creating a new baseline workspace.
 - **Maintainer**: ongoing helper for checking and improving an existing workspace.
-- **Adoption**: non-invasive flow for adding PiCM support to an existing ICM-style project.
-- **Layout profile**: a recommended workspace shape, not a rigid schema.
+- **Adoption**: non-invasive flow for adding PiCM support to an existing workflow or coding repository.
+- **Layout profile**: a recommended primary workspace shape, not a rigid schema.
+- **Coding Repository**: first-class profile for code-primary workspaces.
+- **Codebase-map capability**: composable coding context mapping that may overlap another primary profile.
 
 ## Product rules
 - PiCM Factory is project-local by default. Install with `pi install -l ...`.
@@ -15,6 +17,7 @@ You are working on PiCM Factory, a project-local Pi package for creating, adopti
 - Do not build a custom TUI or workflow executor without clear evidence it is necessary.
 - Be non-destructive by default. Preview file changes before writing.
 - Security first: never copy secrets, credentials, tokens, private keys, regulated data, or sensitive client material into context files or examples.
+- Coding scans must derive candidates through Git, run `git check-ignore --no-index` before every read, and never inspect ignored file contents.
 - `.pi/` is for Pi config. `.picm/` is for minimal PiCM metadata/reports.
 - `.picm/` is maintainer-only context; normal workflow routing should skip it.
 
@@ -34,6 +37,7 @@ You are working on PiCM Factory, a project-local Pi package for creating, adopti
 | --- | --- | --- |
 | Change slash-command registration or dispatch | `extensions/picm-factory.ts` | Pi extension documentation |
 | Change scaffold, adoption, maintenance, or help behavior | `skills/picm-factory/SKILL.md` | The relevant file under `skills/picm-factory/references/` |
+| Change coding adoption or context-map behavior | `skills/picm-factory/references/coding-adoption-guide.md` | `coding-maintenance-rubric.md`, `layout-profiles.md`, coding templates |
 | Change generated workspace content | `skills/picm-factory/templates/` | `skills/picm-factory/references/layout-profiles.md` |
 | Change npm packaging or release validation | `package.json` | `scripts/check-package.mjs`, `README.md`, `CHANGELOG.md` |
 | Change automated fixture coverage | `test/fixtures/` | `docs/layout-fixture-qa.md` |

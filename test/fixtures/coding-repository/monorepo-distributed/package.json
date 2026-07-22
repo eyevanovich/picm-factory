@@ -1,0 +1,12 @@
+{
+  "name": "synthetic-monorepo",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "test": "node --test apps/api/test/*.test.js packages/shared/test/*.test.js"
+  }
+}
