@@ -94,7 +94,14 @@ Recommended `.gitignore` entries for sensitive material are included in this rep
 
 ## Acknowledgments
 
-PiCM Factory acknowledges Jake Van Clief, David McDermott, the Clief Notes community, [`RinDig/icm-architect`](https://github.com/RinDig/icm-architect), and [Pi Coding Agent](https://github.com/earendil-works/pi) creator Mario Zechner. See [`docs/references.md`](docs/references.md) for the authoritative source and adaptation details.
+PiCM Factory is an independent adaptation for Pi, built on ideas and work shared by others:
+
+- **Jake Van Clief and David McDermott** — their paper, [*Interpretable Context Methodology: Folder Structure as Agentic Architecture*](https://arxiv.org/abs/2603.16021), is the primary methodology source for the folder-based stages, scoped context, inspectable intermediate outputs, and human review gates used here.
+- **Jake Van Clief and the [Clief Notes community](https://www.skool.com/cliefnotes)** — a place to learn more about Jake's ICM methodology and follow the ongoing discussion around it.
+- **[`RinDig/icm-architect`](https://github.com/RinDig/icm-architect)** — its cold-agent walk test and file-role inventory concepts informed independently adapted parts of PiCM Factory's maintenance and adoption guidance.
+- **[Pi Coding Agent](https://github.com/earendil-works/pi)** by Mario Zechner — the extensible coding-agent platform and package system that PiCM Factory runs on.
+
+See [`docs/references.md`](docs/references.md) for more detail about how these sources informed the project.
 
 ## Repository layout
 
