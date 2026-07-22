@@ -265,13 +265,14 @@ const publishWorkflow = readFileSync(
   "utf8",
 );
 const publishWorkflowSignals = [
-  "release:",
+  "push:",
+  'github.ref_name != \'v0.1.2\'',
   "id-token: write",
-  "actions/checkout@v6",
-  "actions/setup-node@v6",
+  "actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6",
+  "actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6",
   "npm publish",
-  "github.event.release.tag_name",
-  "github.event.release.tag_name != 'v0.1.2'",
+  'gh release create "$RELEASE_TAG" --verify-tag --generate-notes',
+  "needs: publish",
 ];
 for (const signal of publishWorkflowSignals) {
   if (!publishWorkflow.includes(signal)) {
@@ -281,6 +282,10 @@ for (const signal of publishWorkflowSignals) {
 }
 if (/NPM_(TOKEN|AUTH_TOKEN)/.test(publishWorkflow)) {
   console.error("npm publish workflow must use trusted publishing, not a stored npm token");
+  process.exit(1);
+}
+if (/^\s+release:\s*$/m.test(publishWorkflow.slice(0, publishWorkflow.indexOf("jobs:")))) {
+  console.error("npm publish workflow must create releases from tags, not consume release events");
   process.exit(1);
 }
 
