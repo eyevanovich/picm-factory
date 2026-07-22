@@ -41,7 +41,8 @@ during a general `/picm-maintain` smoke. Record fixture-specific observations he
 Expected behavior:
 
 - Uses plain situations rather than requiring PiCM/ICM terminology.
-- Routes new or mostly empty folders to `/picm-new` and existing agent/workflow/Claude-style folders to the read-only `/picm-adopt` flow.
+- Routes new or mostly empty folders to `/picm-new` and existing source-code, agent/workflow, or Claude-style folders to the read-only `/picm-adopt` flow.
+- Presents `/picm-adopt coding` as an optional shortcut for a known repository or monorepo while explaining that regular `/picm-adopt` can offer the same Coding Repository profile.
 - Routes general workspace health/drift to `/picm-maintain` and one concrete symptom to `/picm-maintain trace "describe what drifted"`.
 - Recommends `/picm-adopt` when the user is unsure whether an existing folder should use new or adopt.
 - Explains project-local install, preview-before-write, non-destructive adoption, git/security safety, and `.pi/` versus `.picm/`.

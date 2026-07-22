@@ -66,7 +66,7 @@ pi install -l /path/to/picm-factory
 pi
 ```
 
-## Add PiCM to an existing ICM project
+## Add PiCM to an existing workflow or coding repository
 
 ```bash
 cd existing-icm-project
