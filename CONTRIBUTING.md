@@ -27,16 +27,7 @@ Create a focused branch and keep unrelated changes separate.
 
 ## Making changes
 
-Start with the files that own the behavior you want to change:
-
-| Change | Start here |
-| --- | --- |
-| Slash-command registration or dispatch | `extensions/picm-factory.ts` |
-| Scaffold, adoption, maintenance, or help behavior | `skills/picm-factory/SKILL.md` |
-| Generated workspace content | `skills/picm-factory/templates/` |
-| Methodology guidance | `skills/picm-factory/references/` |
-| Fixture coverage | `test/fixtures/` and `docs/layout-fixture-qa.md` |
-| Public documentation | `README.md` and `docs/` |
+Use the task-routing table in `AGENTS.md` to find the files that own the behavior you want to change.
 
 Keep documentation, examples, templates, and tests synchronized when behavior changes.
 

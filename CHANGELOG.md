@@ -7,8 +7,8 @@ All notable changes to PiCM Factory will be documented here.
 ### Added
 
 - Public npm distribution under `@eyevanovich/picm-factory`.
-- Token-free GitHub Actions releases through npm trusted publishing.
-- npm provenance attestations for automated releases.
+- Token-free GitHub Actions release automation through npm trusted publishing, beginning after the interactive `0.1.2` bootstrap publication.
+- npm provenance attestations for automated releases beginning with `0.1.3`.
 - Automatic eligibility for the pi.dev package gallery through the `pi-package` keyword.
 
 ## [0.1.1] - 2026-07-19
