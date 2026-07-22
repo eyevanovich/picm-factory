@@ -207,7 +207,7 @@ Command decision guide:
 
 - **New or mostly empty folder; starting a new workflow** → `/picm-new`. It interviews, previews a minimal workspace, and writes only after approval.
 - **Existing folder with source code, manifests, agent instructions, workflows, stages, references, or a Claude/ICM-style setup** → `/picm-adopt`. It safely detects likely coding repositories and offers the Coding Repository profile without requiring a special command. It starts read-only, preserves existing structure, and proposes optional compatibility changes without converting the project.
-- **Existing folder-agent workspace; general health, routing, handoff, safety, or drift check** → `/picm-maintain`.
+- **Existing workflow or coding-repository workspace; general health, routing, handoff, safety, or drift check** → `/picm-maintain`.
 - **One concrete bad result, lost handoff detail, or other specific symptom** → `/picm-maintain trace "describe what drifted"`. Describe this as a focused heuristic investigation, not deterministic provenance.
 - **Known coding repository / monorepo** → `/picm-adopt coding` is a shortcut to coding adoption; regular `/picm-adopt` can reach the same flow after a safe shallow classification.
 - **Unsure between new and adopt** → prefer `/picm-adopt` when workspace architecture or source code already exists; adoption's read-only scan is safer than scaffolding over existing work.

@@ -17,7 +17,7 @@ You do not need to know PiCM or ICM terminology. Choose based on what is already
 | --- | --- | --- |
 | You are starting a new workflow in a new or mostly empty folder. | `/picm-new` | Interviews you, previews a minimal workspace, and writes it only after approval. |
 | The folder already contains source code, manifests, agent instructions, workflows, stages, reference material, or a Claude/ICM-style setup. | `/picm-adopt` | Starts read-only, safely detects likely coding repositories, preserves existing structure, and proposes optional PiCM support without converting the project. |
-| You want a health check for an existing folder-agent workspace. | `/picm-maintain` | Reviews routing, local instructions, outputs, handoffs, drift, and safety; findings are advisory. |
+| You want a health check for an existing workflow or coding-repository workspace. | `/picm-maintain` | Reviews routing, local instructions, coding maps, outputs, handoffs, drift, and safety; findings are advisory. |
 | One specific result or handoff looks wrong. | `/picm-maintain trace "describe what drifted"` | Runs a focused, heuristic investigation and reports likely causes without promising deterministic provenance. |
 | You know this is a repository or monorepo and want to skip the initial classification. | `/picm-adopt coding` | Enters the same coding-adoption flow that regular `/picm-adopt` can offer. |
 | You are still unsure. | `/picm-help` | Repeats this guide and the safety/install model. |
