@@ -23,14 +23,6 @@ You do not need to know PiCM or ICM terminology. Choose based on what is already
 
 When a folder already has workspace architecture, prefer `/picm-adopt` over `/picm-new`. Adoption does not mean conversion: it scans and reports first, then requires an exact preview and separate approval before writing or restructuring anything.
 
-## Status
-
-PiCM Factory `0.1.1` is the current public release. The feature set is implemented, fixture-backed, and checked with `npm run check`.
-
-Distribution is project-local from GitHub. npm publishing is not part of this release; `@eyevanovich/picm-factory` remains reserved as a possible future package name.
-
-See [`CHANGELOG.md`](CHANGELOG.md) for the initial release contents.
-
 ## Install Pi
 
 Pi is distributed through npm:
