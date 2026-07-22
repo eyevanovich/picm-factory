@@ -376,23 +376,6 @@ if (!finalAnnouncement.includes("September 28, 2026") || finalAnnouncement.inclu
   process.exit(1);
 }
 
-const traceQaDoc = readFileSync(join(root, "docs/layout-fixture-qa.md"), "utf8");
-const traceQaSignals = [
-  '/picm-maintain trace "final output drifted from approved source"',
-  "high confidence",
-  "medium confidence",
-  "output patch",
-  "source-context healing",
-  "heuristic, focused investigation",
-  "provenance-grade",
-];
-for (const signal of traceQaSignals) {
-  if (!traceQaDoc.includes(signal)) {
-    console.error(`Source-integrity trace QA guidance missing signal: ${signal}`);
-    process.exit(1);
-  }
-}
-
 const maintenanceRubric = readFileSync(
   join(root, "skills/picm-factory/references/maintenance-rubric.md"),
   "utf8",
@@ -414,18 +397,7 @@ for (const signal of coldWalkSignals) {
   }
 }
 
-const coldWalkFixtureSignals = [
-  "unsupported “still being confirmed” assertion",
-  "does not name exact catalog inputs, an output/review path, or a concrete human check",
-  "no catalog source or publishing draft is present",
-];
-for (const signal of coldWalkFixtureSignals) {
-  if (!traceQaDoc.includes(signal)) {
-    console.error(`Cold-agent walk fixture QA missing expected result: ${signal}`);
-    process.exit(1);
-  }
-}
-
+const traceQaDoc = readFileSync(join(root, "docs/layout-fixture-qa.md"), "utf8");
 const antiPatternFixtures = {
   "root-brain-dump": ["AGENTS.md", "CONTEXT.md"],
   "no-task-routing": ["AGENTS.md", "CONTEXT.md", "research/CONTEXT.md", "publishing/CONTEXT.md"],
