@@ -124,6 +124,37 @@ test("builds changelog sections from releasable commits", () => {
   );
 });
 
+test("uses reviewed What Changed bullets for release notes", () => {
+  const notes = buildReleaseNotes("0.2.0", "2026-07-22", [
+    {
+      subject: "feat: add coding repository profile",
+      body: [
+        "## Intent",
+        "",
+        "Support coding repositories.",
+        "",
+        "## What Changed",
+        "",
+        "- Add root and distributed context maps.",
+        "-    ",
+        "- Harden ignored-file scan boundaries.",
+        "",
+        "## Testing",
+        "",
+        "- npm run check",
+      ].join("\n"),
+    },
+  ]);
+
+  assert.equal(
+    notes,
+    [
+      "## [0.2.0] - 2026-07-22",
+      "### Added\n\n- Add root and distributed context maps.\n- Harden ignored-file scan boundaries.",
+    ].join("\n\n"),
+  );
+});
+
 test("leaves release files unchanged when post-tag commits are not merged pull requests", () => {
   const root = mkdtempSync(join(tmpdir(), "picm-release-direct-test-"));
   try {

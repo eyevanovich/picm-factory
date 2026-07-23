@@ -88,12 +88,32 @@ export function bumpVersion(version, bump) {
   return `${major}.${minor}.${patch}`;
 }
 
+export function extractReleaseDescriptions(body = "") {
+  const heading = /^##[ \t]+What Changed[ \t]*$/im.exec(body);
+  if (!heading) {
+    return [];
+  }
+
+  const remainder = body.slice(heading.index + heading[0].length).replace(/^\r?\n/, "");
+  const nextHeading = remainder.search(/^##[ \t]+/m);
+  const section = nextHeading === -1 ? remainder : remainder.slice(0, nextHeading);
+
+  return section
+    .split(/\r?\n/)
+    .map((line) => line.match(/^-\s+(.+)$/)?.[1]?.trim())
+    .filter(Boolean)
+    .map(formatDescription);
+}
+
 export function buildReleaseNotes(version, date, commits) {
   const entries = { Added: [], Changed: [], Fixed: [] };
   for (const commit of commits) {
     const analyzed = analyzeCommit(commit);
     if (analyzed) {
-      entries[analyzed.category].push(analyzed.description);
+      const descriptions = extractReleaseDescriptions(commit.body);
+      entries[analyzed.category].push(
+        ...(descriptions.length > 0 ? descriptions : [analyzed.description]),
+      );
     }
   }
 
