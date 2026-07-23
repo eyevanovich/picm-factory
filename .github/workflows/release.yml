@@ -27,9 +27,18 @@ jobs:
             exit 1
           fi
 
+      - name: Create release app token
+        id: release-app
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          client-id: ${{ vars.RELEASE_APP_CLIENT_ID }}
+          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+          permission-contents: write
+
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           fetch-depth: 0
+          token: ${{ steps.release-app.outputs.token }}
 
       - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
@@ -50,13 +59,25 @@ jobs:
       - name: Validate prepared release
         run: npm run check
 
+      - name: Resolve release app identity
+        id: release-app-user
+        shell: bash
+        env:
+          GH_TOKEN: ${{ steps.release-app.outputs.token }}
+          RELEASE_APP_SLUG: ${{ steps.release-app.outputs.app-slug }}
+        run: |
+          user_id="$(gh api "/users/${RELEASE_APP_SLUG}[bot]" --jq .id)"
+          echo "id=$user_id" >> "$GITHUB_OUTPUT"
+
       - name: Commit and tag release
         shell: bash
         env:
+          RELEASE_APP_SLUG: ${{ steps.release-app.outputs.app-slug }}
+          RELEASE_APP_USER_ID: ${{ steps.release-app-user.outputs.id }}
           RELEASE_TAG: ${{ steps.prepare.outputs.tag }}
         run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git config user.name "${RELEASE_APP_SLUG}[bot]"
+          git config user.email "${RELEASE_APP_USER_ID}+${RELEASE_APP_SLUG}[bot]@users.noreply.github.com"
           git add package.json CHANGELOG.md
           git commit -m "chore: release $RELEASE_TAG"
           git tag --no-sign "$RELEASE_TAG"
