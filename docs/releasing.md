@@ -17,7 +17,7 @@ The release preparer finds pull requests associated with commits after the lates
 
 Breaking changes always increment the SemVer major version, including before `1.0.0`. From `0.1.2`, a breaking change produces `1.0.0`.
 
-Use a Conventional Commit pull-request title. For detailed changelog entries, add concise top-level bullets under a `## What Changed` section in the PR body; the release preparer uses those reviewed bullets and falls back to the title when the section is absent. Direct commits and pull requests merged into branches other than `main` are excluded from release calculation. The manual workflow remains visible when no release is pending, but fails safely without writing when there are no qualifying unreleased pull requests.
+Use a Conventional Commit pull-request title. For detailed changelog entries, add concise top-level bullets under a `## What Changed` section in the PR body; the release preparer uses those reviewed bullets and falls back to the title when the section is absent, empty, or contains no valid top-level bullets. Direct commits and pull requests merged into branches other than `main` are excluded from release calculation. The manual workflow remains visible when no release is pending, but fails safely without writing when there are no qualifying unreleased pull requests.
 
 ## Standard release
 
