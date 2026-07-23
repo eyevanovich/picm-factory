@@ -138,4 +138,4 @@ Run checks:
 npm run check
 ```
 
-See [`CONTRIBUTING.md`](CONTRIBUTING.md) for development, validation, and pull-request guidance. Use [GitHub Issues](https://github.com/eyevanovich/picm-factory/issues) for public work tracking.
+See [`CONTRIBUTING.md`](CONTRIBUTING.md) for development, validation, and pull-request guidance. Releases are prepared and finalized through the manually triggered GitHub Actions flow documented in [`docs/releasing.md`](docs/releasing.md). Use [GitHub Issues](https://github.com/eyevanovich/picm-factory/issues) for public work tracking.

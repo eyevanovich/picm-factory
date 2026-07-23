@@ -20,6 +20,9 @@ const required = [
   "CONTEXT.md",
   "LICENSE",
   ".github/workflows/publish.yml",
+  ".github/workflows/release.yml",
+  "scripts/prepare-release.mjs",
+  "test/release-preparer.test.mjs",
   "extensions/picm-factory.ts",
   "skills/picm-factory/SKILL.md",
   "prompts/picm-new.md",
@@ -27,6 +30,7 @@ const required = [
   "prompts/picm-maintain.md",
   "prompts/picm-help.md",
   "docs/layout-fixture-qa.md",
+  "docs/release-tagging-actions-research.md",
   "docs/releasing.md",
   "test/fixtures/coding-repository/README.md",
   "test/fixtures/layout-profiles/README.md",
@@ -69,6 +73,10 @@ if (pkg.publishConfig?.access !== "public") {
 }
 if (pkg.scripts?.prepublishOnly !== "npm run check") {
   console.error("npm publication must run the package check first");
+  process.exit(1);
+}
+if (!pkg.scripts?.check?.includes("test/release-preparer.test.mjs")) {
+  console.error("npm run check must exercise the release preparer tests");
   process.exit(1);
 }
 
@@ -309,6 +317,9 @@ const releaseDocs = {
   "docs/releasing.md": [
     "npm trusted publishing",
     "Workflow filename: `publish.yml`",
+    "Actions → Create release",
+    "`feat!:`",
+    "prohibit GitHub Actions from creating or approving pull requests",
     "https://pi.dev/packages/@eyevanovich/picm-factory",
   ],
   "docs/references.md": ["https://arxiv.org/abs/2603.16021", "Pi documentation"],
@@ -323,7 +334,21 @@ for (const [file, signals] of Object.entries(releaseDocs)) {
   }
 }
 
+for (const obsoleteReleasePleaseFile of [
+  "release-please-config.json",
+  ".release-please-manifest.json",
+]) {
+  if (existsSync(join(root, obsoleteReleasePleaseFile))) {
+    console.error(`Obsolete Release Please file must be removed: ${obsoleteReleasePleaseFile}`);
+    process.exit(1);
+  }
+}
+
 const changelog = readFileSync(join(root, "CHANGELOG.md"), "utf8");
+if (changelog.includes("## [Unreleased]")) {
+  console.error("The release preparer owns release notes; do not maintain an Unreleased section");
+  process.exit(1);
+}
 const escapedPackageVersion = pkg.version.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 const currentReleaseHeading = changelog.match(
   new RegExp(`^## \\[${escapedPackageVersion}\\] - (\\d{4}-\\d{2}-\\d{2})$`, "m"),
@@ -343,14 +368,16 @@ const publishWorkflow = readFileSync(
   "utf8",
 );
 const publishWorkflowSignals = [
-  "push:",
-  'github.ref_name != \'v0.1.2\'',
+  "workflow_dispatch:",
+  "release_tag:",
+  "Existing automated release tag to publish",
+  "inputs.release_tag != 'v0.1.2'",
   "id-token: write",
   "actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6",
   "actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6",
+  "Verify GitHub Release",
+  'gh release view "$RELEASE_TAG"',
   "npm publish",
-  'gh release create "$RELEASE_TAG" --verify-tag --generate-notes',
-  "needs: publish",
 ];
 for (const signal of publishWorkflowSignals) {
   if (!publishWorkflow.includes(signal)) {
@@ -362,8 +389,54 @@ if (/NPM_(TOKEN|AUTH_TOKEN)/.test(publishWorkflow)) {
   console.error("npm publish workflow must use trusted publishing, not a stored npm token");
   process.exit(1);
 }
-if (/^\s+release:\s*$/m.test(publishWorkflow.slice(0, publishWorkflow.indexOf("jobs:")))) {
-  console.error("npm publish workflow must create releases from tags, not consume release events");
+if (/^\s+push:\s*$/m.test(publishWorkflow.slice(0, publishWorkflow.indexOf("jobs:")))) {
+  console.error("npm publication must not be triggered by an arbitrary pushed tag");
+  process.exit(1);
+}
+if (publishWorkflow.includes("gh release create")) {
+  console.error("The publisher must require an existing GitHub Release");
+  process.exit(1);
+}
+
+const releaseWorkflow = readFileSync(
+  join(root, ".github/workflows/release.yml"),
+  "utf8",
+);
+const releaseWorkflowSignals = [
+  "workflow_dispatch:",
+  "actions: write",
+  "contents: write",
+  "pull-requests: read",
+  "actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6",
+  "actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6",
+  "node scripts/prepare-release.mjs --require-merged-prs",
+  "npm run check",
+  "git push --atomic origin",
+  "gh release create",
+  "gh workflow run publish.yml",
+  'release_tag="$RELEASE_TAG"',
+];
+for (const signal of releaseWorkflowSignals) {
+  if (!releaseWorkflow.includes(signal)) {
+    console.error(`Release workflow missing signal: ${signal}`);
+    process.exit(1);
+  }
+}
+if (/pull-requests:\s*write|issues:\s*write|release-please-action/.test(releaseWorkflow)) {
+  console.error("The release workflow must not create or manage pull requests");
+  process.exit(1);
+}
+if (/(PERSONAL_ACCESS_TOKEN|GH_PAT|NPM_TOKEN|NPM_AUTH_TOKEN)/.test(releaseWorkflow)) {
+  console.error("Release preparation must use short-lived GitHub workflow credentials");
+  process.exit(1);
+}
+
+const actionUses = [publishWorkflow, releaseWorkflow].flatMap((workflow) =>
+  [...workflow.matchAll(/uses:\s+[^@\s]+@([^\s]+)/g)],
+);
+const unpinnedAction = actionUses.find(([, ref]) => !/^[0-9a-f]{40}$/.test(ref));
+if (unpinnedAction) {
+  console.error(`GitHub Action must be pinned to a commit SHA: ${unpinnedAction[0]}`);
   process.exit(1);
 }
 
@@ -379,6 +452,7 @@ const publicTextFiles = [
   "skills/picm-factory/references/coding-maintenance-rubric.md",
   "docs/layout-fixture-qa.md",
   "docs/picm-new-scenarios.md",
+  "docs/release-tagging-actions-research.md",
   "docs/references.md",
   "docs/releasing.md",
   "qa-runner/CONTEXT.md",

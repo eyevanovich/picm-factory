@@ -1,25 +1,33 @@
-name: Publish package and create release
+name: Publish package
 
 on:
-  push:
-    tags:
-      - "v*"
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: Existing automated release tag to publish
+        required: true
+        type: string
 
 permissions: {}
 
+env:
+  RELEASE_TAG: ${{ inputs.release_tag }}
+
 concurrency:
-  group: release-${{ github.ref_name }}
+  group: release-${{ inputs.release_tag }}
   cancel-in-progress: false
 
 jobs:
   publish:
-    if: ${{ github.ref_name != 'v0.1.2' }}
+    if: ${{ inputs.release_tag != 'v0.1.2' }}
     runs-on: ubuntu-latest
     permissions:
       contents: read
       id-token: write
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ inputs.release_tag }}
 
       - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
@@ -27,28 +35,27 @@ jobs:
           registry-url: https://registry.npmjs.org
           package-manager-cache: false
 
-      - name: Verify release tag matches package version
+      - name: Verify GitHub Release
         shell: bash
         env:
-          RELEASE_TAG: ${{ github.ref_name }}
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
         run: |
+          if [[ ! "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+([+-][0-9A-Za-z.-]+)?$ ]]; then
+            echo "Release tag must be a semantic version beginning with v." >&2
+            exit 1
+          fi
+
           package_version="$(node --print "require('./package.json').version")"
           if [[ "$RELEASE_TAG" != "v${package_version}" ]]; then
             echo "Release tag must be v${package_version}." >&2
             exit 1
           fi
 
-      - run: npm publish
+          release_tag="$(gh release view "$RELEASE_TAG" --json tagName --jq .tagName)"
+          if [[ "$release_tag" != "$RELEASE_TAG" ]]; then
+            echo "GitHub Release $RELEASE_TAG was not found." >&2
+            exit 1
+          fi
 
-  release:
-    needs: publish
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-    steps:
-      - name: Create GitHub Release
-        env:
-          GH_TOKEN: ${{ github.token }}
-          RELEASE_TAG: ${{ github.ref_name }}
-          GH_REPO: ${{ github.repository }}
-        run: gh release create "$RELEASE_TAG" --verify-tag --generate-notes --title "$RELEASE_TAG"
+      - run: npm publish
