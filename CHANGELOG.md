@@ -2,6 +2,17 @@
 
 All notable changes to PiCM Factory will be documented here.
 
+## [0.2.0] - 2026-07-23
+
+### Added
+
+- Automate manually triggered releases.
+- Add coding repository profile.
+
+### Fixed
+
+- Dedicated release app.
+
 ## [0.1.2] - 2026-07-21
 
 ### Added
