@@ -10,7 +10,7 @@ Releases are created by a manually dispatched GitHub Actions workflow after norm
 
 The release preparer finds pull requests associated with commits after the latest reachable `v<version>` tag and reads their titles:
 
-- `feat!:` or another breaking-change marker → major
+- `feat!:` or a `BREAKING CHANGE:`/`BREAKING-CHANGE:` marker in a qualifying PR body → major
 - `feat:` → minor
 - `fix:` → patch
 - other commit types do not trigger a release
@@ -38,13 +38,26 @@ If `main` advances while the workflow is running, the atomic push fails instead 
 ## Security and permissions
 
 - Repository Actions settings must continue to prohibit GitHub Actions from creating or approving pull requests.
-- `release.yml` uses only the repository's short-lived `GITHUB_TOKEN`; no PAT, GitHub App credential, or npm token is required.
-- The release job receives `contents: write`, `actions: write`, and `pull-requests: read`. It does not receive `pull-requests: write` or `issues: write`.
-- The repository must allow the release workflow to push its generated release commit and tag directly to `main`.
-- The repository's selected-actions policy can remain limited to GitHub-owned actions because both workflows use only `actions/checkout` and `actions/setup-node`.
+- A dedicated GitHub App installed only on this repository supplies a short-lived, contents-write token for the atomic release push. The token is revoked after the job.
+- Store the App client ID as the repository variable `RELEASE_APP_CLIENT_ID` and its private key as the encrypted repository secret `RELEASE_APP_PRIVATE_KEY`. Never copy the private key into source, logs, issues, or chat.
+- Keep integrity rules—deletion protection, non-fast-forward protection, and linear history—in `main Law` with no bypass actors.
+- Put the pull-request requirement in a separate default-branch ruleset. Allow only the dedicated release App to bypass that ruleset with **Always allow**.
+- The release job's `GITHUB_TOKEN` receives `contents: write`, `actions: write`, and `pull-requests: read`. It does not receive `pull-requests: write` or `issues: write`; the App token is requested with only `contents: write`.
+- The repository's selected-actions policy can remain limited to GitHub-owned actions because the workflows use `actions/create-github-app-token`, `actions/checkout`, and `actions/setup-node`.
 - `publish.yml` is the only npm trusted-publisher workflow and receives `id-token: write` only in its publish job.
 - The release workflow explicitly dispatches `publish.yml`; the publisher has no tag-push trigger.
 - Pin every referenced action to an immutable commit SHA.
+
+### Dedicated release App setup
+
+1. Register a GitHub App under the repository owner's account with webhooks disabled and repository **Contents: Read and write** as its only non-metadata permission.
+2. Install the App only on `eyevanovich/picm-factory`.
+3. Store its client ID in `RELEASE_APP_CLIENT_ID` and its generated private key in `RELEASE_APP_PRIVATE_KEY`.
+4. Create an active default-branch ruleset containing only the pull-request requirement and add the release App as an **Always allow** bypass actor.
+5. Remove the pull-request requirement from `main Law`, leaving its deletion, non-fast-forward, and linear-history rules active with no bypass.
+6. Leave `release tags Law` unchanged.
+
+Rotate the private key if exposure is suspected and remove old keys from the App after the replacement secret is installed.
 
 npm trusted publishing must remain configured with:
 
