@@ -1,0 +1,90 @@
+name: Create release
+
+on:
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      actions: write
+      contents: write
+      pull-requests: read
+    steps:
+      - name: Require the default branch
+        shell: bash
+        env:
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        run: |
+          if [[ "$GITHUB_REF_NAME" != "$DEFAULT_BRANCH" ]]; then
+            echo "Run this workflow from $DEFAULT_BRANCH, not $GITHUB_REF_NAME." >&2
+            exit 1
+          fi
+
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: "24"
+          package-manager-cache: false
+
+      - name: Validate unreleased source
+        run: npm run check
+
+      - name: Prepare release files
+        id: prepare
+        env:
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+          GH_TOKEN: ${{ github.token }}
+          NOTES_FILE: ${{ runner.temp }}/release-notes.md
+        run: node scripts/prepare-release.mjs --require-merged-prs --notes-file "$NOTES_FILE"
+
+      - name: Validate prepared release
+        run: npm run check
+
+      - name: Commit and tag release
+        shell: bash
+        env:
+          RELEASE_TAG: ${{ steps.prepare.outputs.tag }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add package.json CHANGELOG.md
+          git commit -m "chore: release $RELEASE_TAG"
+          git tag --no-sign "$RELEASE_TAG"
+          git push --atomic origin \
+            "HEAD:refs/heads/$GITHUB_REF_NAME" \
+            "refs/tags/$RELEASE_TAG"
+
+      - name: Create GitHub Release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ steps.prepare.outputs.tag }}
+          NOTES_FILE: ${{ runner.temp }}/release-notes.md
+        run: gh release create "$RELEASE_TAG" --verify-tag --title "$RELEASE_TAG" --notes-file "$NOTES_FILE"
+
+      - name: Dispatch trusted npm publisher
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ steps.prepare.outputs.tag }}
+        run: |
+          gh workflow run publish.yml \
+            --repo "$GITHUB_REPOSITORY" \
+            --ref "$GITHUB_REF_NAME" \
+            --field release_tag="$RELEASE_TAG"
+
+      - name: Summarize result
+        env:
+          RELEASE_TAG: ${{ steps.prepare.outputs.tag }}
+          RELEASE_BUMP: ${{ steps.prepare.outputs.bump }}
+        run: echo "Created $RELEASE_TAG ($RELEASE_BUMP) and dispatched trusted npm publishing." >> "$GITHUB_STEP_SUMMARY"

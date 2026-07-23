@@ -32,7 +32,7 @@
     "prompts": []
   },
   "scripts": {
-    "check": "node scripts/check-package.mjs",
+    "check": "node --test test/release-preparer.test.mjs && node scripts/check-package.mjs",
     "prepublishOnly": "npm run check"
   },
   "peerDependencies": {

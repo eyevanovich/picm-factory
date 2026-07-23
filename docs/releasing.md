@@ -4,25 +4,49 @@ This guide is for PiCM Factory maintainers with npm and GitHub release access.
 
 PiCM Factory is published as `@eyevanovich/picm-factory`. The pi.dev package gallery automatically indexes public npm packages with the `pi-package` keyword.
 
+## Release model
+
+Releases are created by a manually dispatched GitHub Actions workflow after normal pull requests merge into `main`. The workflow never creates a pull request. Do not run `npm publish`, edit package versions, create release tags, or manually maintain an `[Unreleased]` changelog section.
+
+The release preparer finds pull requests associated with commits after the latest reachable `v<version>` tag and reads their titles:
+
+- `feat!:` or another breaking-change marker → major
+- `feat:` → minor
+- `fix:` → patch
+- other commit types do not trigger a release
+
+Breaking changes always increment the SemVer major version, including before `1.0.0`. From `0.1.2`, a breaking change produces `1.0.0`.
+
+Use a Conventional Commit pull-request title. Direct commits and pull requests merged into branches other than `main` are excluded from release calculation. The manual workflow remains visible when no release is pending, but exits without writing when there are no qualifying unreleased pull requests.
+
 ## Standard release
 
-npm releases are published by `.github/workflows/publish.yml` through npm trusted publishing.
-
-1. Update `version` in `package.json` and add the matching `CHANGELOG.md` entry.
-2. Run `npm run check` and merge the release commit to `main`.
-3. Push a `v<package-version>` tag from that commit.
-4. Verify that GitHub Actions publishes the package and creates the GitHub Release.
-5. Verify the release on:
+1. Merge normal feature/fix pull requests with Conventional Commit titles.
+2. Open **Actions → Create release → Run workflow** and select `main`.
+3. The workflow finds the merged `main` pull requests associated with commits after the latest release tag and selects the highest required SemVer bump from their titles.
+4. It updates `package.json` and prepends the generated entry to `CHANGELOG.md`.
+5. It runs `npm run check`, creates a `chore: release v<version>` commit directly on `main`, and atomically pushes that commit with the matching tag.
+6. It creates the GitHub Release and explicitly dispatches `publish.yml`.
+7. `publish.yml` requires that GitHub Release, checks that its tag matches `package.json`, runs package validation through `prepublishOnly`, and publishes through npm trusted publishing. Pushing a tag alone cannot invoke publication.
+8. Verify the release on:
    - `https://www.npmjs.com/package/@eyevanovich/picm-factory`
+   - `https://github.com/eyevanovich/picm-factory/releases`
    - `https://pi.dev/packages/@eyevanovich/picm-factory`
 
-The workflow rejects a tag that does not match `package.json`, publishes through npm trusted publishing, and creates the GitHub Release only after publication succeeds. Do not add an npm token to the repository.
+If `main` advances while the workflow is running, the atomic push fails instead of overwriting newer work. Re-run the workflow from the new `main` after reviewing the additional commits.
 
-## First npm publication
+## Security and permissions
 
-npm requires a package to exist before trusted publishing can be configured. For version `0.1.2` only, the package owner must run `npm publish` interactively from a clean checkout of the release commit, then push the matching `v0.1.2` tag without creating a GitHub Release. Never commit npm credentials.
+- Repository Actions settings must continue to prohibit GitHub Actions from creating or approving pull requests.
+- `release.yml` uses only the repository's short-lived `GITHUB_TOKEN`; no PAT, GitHub App credential, or npm token is required.
+- The release job receives `contents: write`, `actions: write`, and `pull-requests: read`. It does not receive `pull-requests: write` or `issues: write`.
+- The repository must allow the release workflow to push its generated release commit and tag directly to `main`.
+- The repository's selected-actions policy can remain limited to GitHub-owned actions because both workflows use only `actions/checkout` and `actions/setup-node`.
+- `publish.yml` is the only npm trusted-publisher workflow and receives `id-token: write` only in its publish job.
+- The release workflow explicitly dispatches `publish.yml`; the publisher has no tag-push trigger.
+- Pin every referenced action to an immutable commit SHA.
 
-After the bootstrap publication, configure the package's trusted publisher on npm with:
+npm trusted publishing must remain configured with:
 
 - Provider: GitHub Actions
 - Organization or user: `eyevanovich`
@@ -30,4 +54,18 @@ After the bootstrap publication, configure the package's trusted publisher on np
 - Workflow filename: `publish.yml`
 - Allowed action: `npm publish`
 
-The workflow explicitly skips `v0.1.2`. Use the standard automated release process starting with `v0.1.3`. After the workflow publishes successfully, configure npm publishing access to require two-factor authentication and disallow tokens.
+## Recovery
+
+If the GitHub Release exists but publication was not dispatched or failed, use the publisher's manual dispatch as a recovery path only:
+
+1. Open **Actions → Publish package → Run workflow**.
+2. Select `main` and enter the existing tag, such as `v0.2.0`.
+3. Re-run publication.
+
+The publisher refuses tags without an existing GitHub Release and never creates tags or releases itself. npm rejects republishing an already published version, so verify npm before retrying a run that may have completed publication.
+
+If the release commit and tag were pushed but GitHub Release creation failed, create the GitHub Release for that existing tag before using the publisher recovery path. Do not run **Create release** again: `package.json` already matches the latest tag, so there is no new release to prepare.
+
+## Bootstrap release history
+
+Version `0.1.2` was the one-time interactive bootstrap publication required before npm trusted publishing could be configured. The publisher intentionally skips `v0.1.2`. Standard CI-controlled releases begin after that version.
