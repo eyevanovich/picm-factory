@@ -8,7 +8,7 @@ PiCM Factory is published as `@eyevanovich/picm-factory`. The pi.dev package gal
 
 Releases are created by a manually dispatched GitHub Actions workflow after normal pull requests merge into `main`. The workflow never creates a pull request. Do not run `npm publish`, edit package versions, create release tags, or manually maintain an `[Unreleased]` changelog section.
 
-The release preparer finds pull requests associated with commits after the latest reachable `v<version>` tag and reads their titles:
+The release preparer finds pull requests associated with commits after the latest reachable `v<version>` tag and reads their Conventional Commit titles:
 
 - `feat!:` or a `BREAKING CHANGE:`/`BREAKING-CHANGE:` marker in a qualifying PR body → major
 - `feat:` → minor
@@ -17,14 +17,14 @@ The release preparer finds pull requests associated with commits after the lates
 
 Breaking changes always increment the SemVer major version, including before `1.0.0`. From `0.1.2`, a breaking change produces `1.0.0`.
 
-Use a Conventional Commit pull-request title. Direct commits and pull requests merged into branches other than `main` are excluded from release calculation. The manual workflow remains visible when no release is pending, but fails safely without writing when there are no qualifying unreleased pull requests.
+Use a Conventional Commit pull-request title. For detailed changelog entries, add concise top-level bullets under a `## What Changed` section in the PR body; the release preparer uses those reviewed bullets and falls back to the title when the section is absent, empty, or contains no valid top-level bullets. Direct commits and pull requests merged into branches other than `main` are excluded from release calculation. The manual workflow remains visible when no release is pending, but fails safely without writing when there are no qualifying unreleased pull requests.
 
 ## Standard release
 
 1. Merge normal feature/fix pull requests with Conventional Commit titles.
 2. Open **Actions → Create release → Run workflow** and select `main`.
 3. The workflow finds the merged `main` pull requests associated with commits after the latest release tag and selects the highest required SemVer bump from their titles.
-4. It updates `package.json` and prepends the generated entry to `CHANGELOG.md`.
+4. It updates `package.json` and prepends generated notes to `CHANGELOG.md`, preferring each PR's reviewed `## What Changed` bullets over its title.
 5. It runs `npm run check`, creates a `chore: release v<version>` commit directly on `main`, and atomically pushes that commit with the matching tag.
 6. It creates the GitHub Release and explicitly dispatches `publish.yml`.
 7. `publish.yml` requires that GitHub Release, checks that its tag matches `package.json`, runs package validation through `prepublishOnly`, and publishes through npm trusted publishing. Pushing a tag alone cannot invoke publication.

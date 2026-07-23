@@ -18,7 +18,7 @@ This design keeps the repository setting that prohibits GitHub Actions from crea
 
 ## Findings
 
-1. **Conventional pull-request titles provide the release signal.** A Conventional Commit-style title carries the change type, optional scope, and breaking marker. A qualifying PR body may also carry a `BREAKING CHANGE:` or `BREAKING-CHANGE:` marker. The workflow resolves commits after the latest tag to their associated GitHub pull requests, keeps only PRs merged into the default branch, deduplicates multi-commit PRs, and analyzes those PR records. Direct commits and non-Conventional titles are excluded. [Conventional Commits 1.0.0](https://www.conventionalcommits.org/en/v1.0.0/)
+1. **Conventional pull-request titles provide the release signal.** A Conventional Commit-style title carries the change type, optional scope, and breaking marker. A qualifying PR body may also carry a `BREAKING CHANGE:` or `BREAKING-CHANGE:` marker. The workflow resolves commits after the latest tag to their associated GitHub pull requests, keeps only PRs merged into the default branch, deduplicates multi-commit PRs, and analyzes those PR records. Direct commits and non-Conventional titles are excluded. See the [release guide](releasing.md) for the release-note authoring contract. [Conventional Commits 1.0.0](https://www.conventionalcommits.org/en/v1.0.0/)
 
 2. **Literal SemVer requires a major bump for breaking changes under `1.0.0`.** SemVer defines major, minor, and patch increments without substituting a minor bump for a pre-1.0 breaking change. The repository intentionally applies that literal policy. [Semantic Versioning 2.0.0](https://semver.org/)
 
@@ -26,7 +26,7 @@ This design keeps the repository setting that prohibits GitHub Actions from crea
 
 4. **Release Please is not compatible with the selected permission model.** Its normal lifecycle opens or updates a release pull request and creates the release after that PR merges. PiCM Factory intentionally keeps the repository-level prohibition on Actions-created pull requests, so the Release Please lifecycle was rejected. The live selected-actions policy also excludes non-GitHub-owned actions. [Release Please](https://github.com/googleapis/release-please) [Release Please Action](https://github.com/googleapis/release-please-action)
 
-5. **A repository-owned script keeps release logic testable and avoids another action dependency.** `scripts/prepare-release.mjs` handles only deterministic local Git and file operations. Unit and temporary-repository tests cover commit parsing, bump precedence, pre-1.0 major behavior, changelog generation, and version updates.
+5. **A repository-owned script keeps release logic testable and avoids another action dependency.** `scripts/prepare-release.mjs` handles deterministic Git, GitHub PR metadata, and file operations. Unit and temporary-repository tests cover commit parsing, bump precedence, pre-1.0 major behavior, structured `## What Changed` extraction, title fallback, changelog generation, and version updates.
 
 6. **The release commit and tag should move together.** The workflow uses an atomic Git push for the generated commit and tag. A concurrent update to `main` causes the push to fail rather than overwrite newer work. The workflow then creates the GitHub Release from the verified tag.
 
@@ -49,7 +49,7 @@ Use the repository-owned preparer and a one-stage manual workflow:
 
 1. Merge qualifying Conventional Commit-titled pull requests into `main`.
 2. Manually run **Create release** from `main`.
-3. Resolve post-tag commits to merged `main` pull requests, then generate and validate `package.json` and `CHANGELOG.md` updates from those PR titles and breaking markers in their bodies.
+3. Resolve post-tag commits to merged `main` pull requests, then generate and validate `package.json` and `CHANGELOG.md` updates according to the [release guide](releasing.md).
 4. Mint a short-lived token from the dedicated release App, commit directly to `main`, and atomically push the matching tag through the App's PR-rule bypass.
 5. Create the GitHub Release.
 6. Dispatch the trusted npm publisher.

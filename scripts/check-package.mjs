@@ -319,6 +319,7 @@ const releaseDocs = {
     "Workflow filename: `publish.yml`",
     "Actions → Create release",
     "`feat!:`",
+    "`## What Changed`",
     "prohibit GitHub Actions from creating or approving pull requests",
     "`RELEASE_APP_CLIENT_ID`",
     "`RELEASE_APP_PRIVATE_KEY`",
