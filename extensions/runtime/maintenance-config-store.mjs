@@ -42,7 +42,7 @@ export function createMaintenanceConfigStore({
   const directory = join(cwd, ".picm");
   const configPath = join(directory, "config.json");
   const lockPath = `${configPath}.lock`;
-  const recoveryPath = `${lockPath}.recovery`;
+  const recoveryPrefix = "config.json.lock.recovery-";
 
   async function authorize(toolName) {
     const decision = await gate.checkPath(toolName, configPath);
@@ -125,13 +125,17 @@ export function createMaintenanceConfigStore({
   }
 
   async function recoverStaleLock() {
+    let recoveryPath;
     try {
+      for (const entry of await fs.readdir(directory)) {
+        if (entry.startsWith(recoveryPrefix)) {
+          try { await fs.unlink(join(directory, entry)); } catch {}
+        }
+      }
+      recoveryPath = join(directory, `${recoveryPrefix}${processId}-${randomId()}`);
       await fs.link(lockPath, recoveryPath);
     } catch (error) {
-      if (error?.code === "ENOENT") {
-        try { await fs.unlink(recoveryPath); } catch {}
-        return true;
-      }
+      if (error?.code === "ENOENT") return true;
       return false;
     }
     try {
@@ -143,7 +147,11 @@ export function createMaintenanceConfigStore({
         fs.stat(lockPath),
         fs.stat(recoveryPath),
       ]);
-      if (lockStat.dev !== recoveryStat.dev || lockStat.ino !== recoveryStat.ino) return false;
+      if (
+        lockStat.dev !== recoveryStat.dev ||
+        lockStat.ino !== recoveryStat.ino ||
+        recoveryStat.nlink !== 2
+      ) return false;
       await fs.unlink(lockPath);
       return true;
     } catch {

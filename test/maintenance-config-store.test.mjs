@@ -261,5 +261,25 @@ test("serializes concurrent stale-lock recovery without moving a replacement", a
   assert.equal(results.filter((result) => result.changed).length, 1);
   assert.equal(results.filter((result) => result.conflict).length, 1);
   await assert.rejects(fs.access(`${path}.lock`));
-  await assert.rejects(fs.access(`${path}.lock.recovery`));
+  assert.equal((await fs.readdir(join(cwd, ".picm"))).some((entry) => entry.includes(".lock.recovery-")), false);
+});
+
+test("reclaims orphaned unique recovery links", async (t) => {
+  const { cwd, gate } = await repository(t);
+  await fs.mkdir(join(cwd, ".picm"));
+  const path = join(cwd, ".picm/config.json");
+  const lockPath = `${path}.lock`;
+  await fs.writeFile(path, `${JSON.stringify({ version: 1, maintenance: monthly })}\n`);
+  await fs.writeFile(lockPath, `${JSON.stringify({ pid: 41, token: "dead-owner" })}\n`);
+  await fs.link(lockPath, `${lockPath}.recovery-77-orphan`);
+
+  const result = await createMaintenanceConfigStore({
+    cwd,
+    gate,
+    processId: 99,
+    isProcessAlive: (pid) => pid !== 41,
+  }).updateMaintenance({ mode: "manual" });
+
+  assert.equal(result.ok, true);
+  assert.equal((await fs.readdir(join(cwd, ".picm"))).some((entry) => entry.includes(".lock.recovery-")), false);
 });

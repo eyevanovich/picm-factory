@@ -168,6 +168,8 @@ test("refreshes ignored inventory and blocks literal paths and known bash bypass
     assert.match((await gate.checkBash("LC_ALL=C cat ../outside.txt")).reason, /blocked/);
     assert.match((await gate.checkBash("echo safe\ncat ../outside.txt")).reason, /blocked/);
     assert.match((await gate.checkBash("sudo cat ../outside.txt")).reason, /deterministically validated/);
+    assert.match((await gate.checkBash("file --files-from=../outside.txt safe.txt")).reason, /deterministically validated/);
+    assert.match((await gate.checkBash("file -f../outside.txt safe.txt")).reason, /deterministically validated/);
     assert.match((await gate.checkBash("cat missing.txt")).reason, /path resolution failed/);
     assert.match((await gate.checkBash('cat "$TARGET"')).reason, /could not be deterministically validated/);
     assert.match((await gate.checkBash("cat .env")).reason, /ignored inventory path/);
@@ -220,6 +222,30 @@ test("uses isolated Git metadata to honor gitignore without modifying a non-Git 
   assert.match((await gate.checkPath("read", "ignored.txt")).reason, /ignored by Git/);
   assert.match((await gate.checkPath("read", "nested/drop.log")).reason, /ignored by Git/);
   assert.equal(existsSync(join(root, ".git")), false);
+});
+
+test("treats present submodules as separate guarded worktrees", async (t) => {
+  const root = mkdtempSync(join(tmpdir(), "picm-submodule-parent-"));
+  const source = mkdtempSync(join(tmpdir(), "picm-submodule-source-"));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  t.after(() => rmSync(source, { recursive: true, force: true }));
+
+  git(source, "init", "-q");
+  write(join(source, ".gitignore"), "secret.txt\n");
+  write(join(source, "safe.txt"), "safe\n");
+  write(join(source, "secret.txt"), "synthetic ignored\n");
+  git(source, "add", ".gitignore", "safe.txt");
+  git(source, "add", "-f", "secret.txt");
+  git(source, "-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid", "commit", "-qm", "fixture");
+
+  git(root, "init", "-q");
+  git(root, "-c", "protocol.file.allow=always", "submodule", "add", "-q", source, "vendor/lib");
+  const gate = createGitReadGate({ cwd: root, packageRoot: root });
+  t.after(() => gate.dispose());
+
+  assert.equal((await gate.checkPath("read", "vendor/lib/safe.txt")).allowed, true);
+  assert.match((await gate.checkPath("read", "vendor/lib/secret.txt")).reason, /ignored by Git/);
+  assert.match((await gate.checkPath("read", "vendor/lib/.git")).reason, /\.git internals/);
 });
 
 test("isolated Git metadata is removed by gate disposal", async () => {

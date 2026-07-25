@@ -103,6 +103,46 @@ function parseStaticShellWords(command) {
   return words;
 }
 
+function parseReadArguments(executable, argumentsForCommand) {
+  const paths = [];
+  let optionsEnded = false;
+  for (let index = 0; index < argumentsForCommand.length; index += 1) {
+    const argument = argumentsForCommand[index];
+    if (argument === "<" || argument === ">" || argument === ">>") return undefined;
+    if (optionsEnded || !argument.startsWith("-") || argument === "-") {
+      paths.push(argument);
+      continue;
+    }
+    if (argument === "--") {
+      optionsEnded = true;
+      continue;
+    }
+    if (executable === "cat" && (
+      /^-[AETbenstuv]+$/.test(argument) ||
+      ["--number", "--number-nonblank", "--show-all", "--show-ends", "--show-nonprinting", "--show-tabs", "--squeeze-blank"].includes(argument)
+    )) continue;
+    if (["head", "tail"].includes(executable) && (
+      /^-[cn]\d+$/.test(argument) ||
+      /^--(?:bytes|lines)=-?\d+$/.test(argument)
+    )) continue;
+    if (["head", "tail"].includes(executable) && ["-c", "-n", "--bytes", "--lines"].includes(argument)) {
+      if (!/^-?\d+$/.test(argumentsForCommand[index + 1] ?? "")) return undefined;
+      index += 1;
+      continue;
+    }
+    if (executable === "wc" && (
+      /^-[cLmwl]+$/.test(argument) ||
+      ["--bytes", "--chars", "--lines", "--max-line-length", "--words"].includes(argument)
+    )) continue;
+    if (executable === "file" && (
+      /^-[bhi]+$/.test(argument) ||
+      ["--brief", "--mime", "--mime-type", "--no-pad", "--no-buffer", "--preserve-date"].includes(argument)
+    )) continue;
+    return undefined;
+  }
+  return paths;
+}
+
 function staticReadPaths(command) {
   const words = parseStaticShellWords(command);
   if (!words) {
@@ -145,20 +185,9 @@ function staticReadPaths(command) {
     }
     readLike = true;
     if (!STATIC_READ_COMMANDS.has(executable)) return { readLike, unresolved: true };
-    let acceptsOptionValue = false;
-    for (const argument of argumentsForCommand) {
-      if (argument === "<" || argument === ">" || argument === ">>") return { readLike, unresolved: true };
-      if (acceptsOptionValue) {
-        acceptsOptionValue = false;
-        continue;
-      }
-      if (argument === "--") continue;
-      if (argument.startsWith("-")) {
-        acceptsOptionValue = ["-n", "-c", "--lines", "--bytes"].includes(argument);
-        continue;
-      }
-      paths.push(argument);
-    }
+    const commandPaths = parseReadArguments(executable, argumentsForCommand);
+    if (!commandPaths) return { readLike, unresolved: true };
+    paths.push(...commandPaths);
   }
   return { readLike, paths, unresolved: readLike && paths.length === 0 };
 }
@@ -314,6 +343,49 @@ export function createGitReadGate({
     };
   }
 
+  async function inventoryForBoundary(boundaryRoot) {
+    const [candidateResult, ignoredOtherResult, ignoredCachedResult] = await Promise.all([
+      runGit(boundaryRoot, ["ls-files", "-z", "--cached", "--others", "--exclude-standard"]),
+      runGit(boundaryRoot, [
+        "ls-files",
+        "-z",
+        "--others",
+        "--ignored",
+        "--exclude-standard",
+        "--directory",
+        "--no-empty-directory",
+      ]),
+      runGit(boundaryRoot, ["ls-files", "-z", "--cached", "--ignored", "--exclude-standard"]),
+    ]);
+    for (const result of [candidateResult, ignoredOtherResult, ignoredCachedResult]) {
+      if (result.code !== 0) {
+        throw new Error(`Git inventory failed: ${result.stderr.trim() || `exit ${result.code}`}`);
+      }
+    }
+    return {
+      worktree: boundaryRoot,
+      candidates: parseNullList(candidateResult.stdout),
+      ignored: new Set([
+        ...parseNullList(ignoredOtherResult.stdout),
+        ...parseNullList(ignoredCachedResult.stdout),
+      ]),
+      isolated: false,
+    };
+  }
+
+  async function boundaryForPath(canonicalPath) {
+    if (usingIsolatedGit) return undefined;
+    const discoveryCwd = dirname(canonicalPath);
+    const result = await runGit(discoveryCwd, ["rev-parse", "--show-toplevel"]);
+    if (result.code !== 0) return undefined;
+    const nestedRoot = await fs.realpath(resolve(result.stdout.trim()));
+    if (nestedRoot === canonicalWorktree || !isInside(canonicalWorktree, nestedRoot)) return undefined;
+    const parentPath = toGitPath(canonicalWorktree, nestedRoot);
+    const gitlink = await runGit(canonicalWorktree, ["ls-files", "--stage", "--", parentPath]);
+    if (gitlink.code !== 0 || !/^160000\s/m.test(gitlink.stdout)) return undefined;
+    return nestedRoot;
+  }
+
   async function isTrustedPackageRead(path, toolName) {
     if (toolName !== "read") return false;
     canonicalPackageRoot ??= await fs.realpath(packageRoot);
@@ -413,19 +485,31 @@ export function createGitReadGate({
       return { allowed: false, protected: true, reason: "path traverses a symlink" };
     }
 
-    const gitPath = toGitPath(canonicalWorktree, resolvedPath.canonicalPath);
+    const nestedBoundary = await boundaryForPath(resolvedPath.canonicalPath);
+    const boundaryRoot = nestedBoundary ?? canonicalWorktree;
+    const gitPath = toGitPath(boundaryRoot, resolvedPath.canonicalPath);
     if (gitPath === ".git" || gitPath.startsWith(".git/")) {
       return { allowed: false, protected: true, reason: ".git internals are not readable" };
     }
 
-    const inventory = await refreshInventoryUnchecked();
-    const ignoreResult = await runWorkspaceGit([
+    const inventory = nestedBoundary
+      ? await inventoryForBoundary(nestedBoundary)
+      : await refreshInventoryUnchecked();
+    const ignoreResult = nestedBoundary
+      ? await runGit(nestedBoundary, [
+        "check-ignore",
+        "--no-index",
+        "-q",
+        "--",
+        gitPath,
+      ])
+      : await runWorkspaceGit([
       "check-ignore",
       "--no-index",
       "-q",
       "--",
       gitPath,
-    ]);
+      ]);
     if (ignoreResult.code === 0) {
       return { allowed: false, protected: true, reason: "path is ignored by Git" };
     }
@@ -444,7 +528,7 @@ export function createGitReadGate({
         reason: `${toolName} directory traversal is blocked; inspect Git-derived candidate files instead`,
       };
     }
-    if (READ_LIKE_TOOLS.has(toolName) && !candidates.has(gitPath)) {
+    if (READ_LIKE_TOOLS.has(toolName) && !inventory.candidates.has(gitPath)) {
       return { allowed: false, protected: true, reason: "path is not in the Git-derived candidate inventory" };
     }
 
