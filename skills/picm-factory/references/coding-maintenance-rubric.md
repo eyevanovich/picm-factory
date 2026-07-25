@@ -1,19 +1,19 @@
 # Coding Repository Maintenance Rubric
 
-Use this guide when `.picm/config.json` identifies `profile: "coding-repository"`, when `capabilities.codebaseMap` is enabled, when visible routing points to `CONTEXT-MAP.md`, or when the user explicitly requests coding-map maintenance.
+Use this guide inside an explicitly invoked `/picm-maintain` workflow when `.picm/config.json` identifies `profile: "coding-repository"`, when `capabilities.codebaseMap` is enabled, or when visible routing points to `CONTEXT-MAP.md`.
 
-Apply the general `maintenance-rubric.md` posture, severity labels, repair tiers, preview requirements, and report format. This guide adds coding-specific checks; it does not create a deterministic validator or automatic rewrite system.
+Apply the general `maintenance-rubric.md` posture, severity labels, repair tiers, preview requirements, scheduled-maintenance read-only boundary, and report format. This guide adds coding-specific checks; it does not create a deterministic validator or automatic rewrite system. Even an opted-in automatic TUI cycle is advisory only and cannot update maps or reports.
 
 ## Security before maintenance
 
 Apply the coding adoption guide's **Git ignored means unreadable** boundary before any scan:
 
-- require a Git worktree for automatic scans;
-- derive candidates through Git-aware listing;
-- run `git check-ignore --no-index` before reading every candidate;
+- derive candidates through Git-aware listing, using the real worktree when present or the extension's isolated transient Git view when `.git` is absent;
+- honor root and nested `.gitignore` rules in either mode without initializing the user's workspace;
+- begin the authorized scan phase and rely on the extension's immediate `git check-ignore --no-index` gate for built-in path-tool calls;
 - skip ignored paths even if tracked;
-- prohibit broad ignore-bypassing traversal;
-- do not follow symlinks during automatic scans; a separately approved link requires checking both the link and canonical in-worktree target, and out-of-repository targets remain unreadable;
+- prohibit broad ignore-bypassing traversal and any dynamically constructed agent-Bash/custom-tool route the deterministic gate cannot evaluate; user-typed `!bash` remains unrestricted;
+- do not follow symlinks during automatic scans; the extension blocks direct symlink tool paths, and out-of-repository targets remain unreadable;
 - treat an explicitly included submodule as a separate worktree and repeat candidate listing, privacy confirmation, and per-path ignore checks there; never initialize or fetch it automatically;
 - ask about tracked secrets/private areas before content inspection.
 

@@ -1,6 +1,6 @@
 ---
 name: picm-factory
-description: Create, adopt, and maintain PiCM / ICM-style folder-agent workspaces and coding-repository context maps in Pi Coding Agent. Use for /picm-new, /picm-adopt, /picm-adopt coding, /picm-maintain, /picm-help, repository or monorepo onboarding, or when the user wants a folder-architecture workflow scaffold.
+description: Runtime contract for the registered /picm-new, /picm-adopt, /picm-maintain, and /picm-help commands. Load only when an explicit registered command prompt requests picm-factory; do not activate from natural-language requests.
 license: MIT
 ---
 
@@ -18,7 +18,7 @@ PiCM Factory helps users create and maintain folder-agent workflows and coding-r
 ## Hard rules
 
 1. **Security first.** Ask whether the workspace contains secrets, regulated data, client data, or personal/private material before creating or modifying context files.
-2. **Git ignored means unreadable during coding scans.** Build coding-scan candidates through Git, run `git check-ignore --no-index` before reading each candidate, and never inspect ignored file contents—even when already tracked. Do not use broad ignore-bypassing traversal or follow symlinks automatically. Treat an explicitly included submodule as a separate Git worktree with the same checks. If Git is unavailable, do not run an automatic coding scan.
+2. **Explicit activation and guarded scans only.** Run this skill only from an explicit `/picm-new`, `/picm-adopt`, or `/picm-maintain` command prompt (`/picm-help` is guidance only). If a user makes a natural-language PiCM request, ask them to invoke the appropriate command and do not inspect files. The command's first turn is already scan-active. On later interview turns, call `picm_scan_control` with `begin` immediately before any filesystem or agent-initiated Bash scan, `end` when that scan phase finishes, and `complete` when the PiCM workflow is finished. Git ignored means unreadable during active PiCM scan phases: the extension deterministically checks built-in path-tool calls with `git check-ignore --no-index` immediately before execution and conservatively blocks ignored/tracked-ignored paths, symlinks, `.git`, outside-worktree paths, non-candidates, directory traversal, Git content/object commands, literal ignored-path references in agent-initiated Bash, and recognized bypass commands. User-typed `!bash` is an explicit human action and is never intercepted. Outside an explicitly authorized scan phase, the gate is inactive and ordinary Pi tools behave normally. Build coding-scan candidates through Git and never inspect ignored file contents. When `.git` is absent, the extension uses transient isolated Git metadata outside the workspace so Git still derives candidates and honors `.gitignore` without initializing or modifying the user's folder. The gate is not an OS sandbox; dynamically constructed shell paths, unrelated custom filesystem tools, and filesystem time-of-check/time-of-use races remain limitations, so do not use those routes to bypass it. Treat an explicitly included submodule as a separate Git worktree with the same checks. If the Git executable is unavailable, stop the scan because ignore rules cannot be enforced deterministically.
 3. **Non-destructive by default.** Do not move, rename, overwrite, or delete existing files unless the user explicitly approves the exact action.
 4. **Preview before writes.** Show planned file changes before applying them, including brand-new scaffolds in confirmed empty-enough workspaces.
 5. **Project-local install.** PiCM should be loaded through project-local `.pi/settings.json` from `pi install -l ...`. Verify this when relevant; do not recreate Pi package config during normal use.
@@ -27,6 +27,7 @@ PiCM Factory helps users create and maintain folder-agent workflows and coding-r
 8. **Layouts are profiles, not laws.** Recommend structure, but do not fail a user because they organize differently. Coding Repository may be the primary profile, while codebase mapping may also be a composable capability alongside another primary profile.
 9. **Encourage git, never auto-commit.** Check/warn on git status before writes. If no git repo exists, suggest `git init`. Never commit for the user.
 10. **Keep mechanical work out of prompt bloat.** When useful, recommend local scripts or named MCP/tool integrations for deterministic fetching, file movement, formatting, sending, or API work. Keep judgment and review in visible context; do not turn the extension into an executor or orchestrator.
+11. **Scheduled maintenance stays advisory.** Maintenance can remain manual, show a nudge, or run automatically in the first eligible interactive TUI session after it is due. Scheduling requires `.picm/config.json` to be non-ignored and a regular non-symlink file under a regular non-symlink `.picm/` directory. Nothing runs while Pi is closed or in print, JSON, RPC, or headless modes. Automatic cycles may update their opted-in timestamps but must not write reports, repair files, commit, or cause external side effects. For a standalone policy write, pass the `previewId` returned by `picm_maintenance_policy` preview into apply so the confirmed patch reuses the exact previewed timestamps.
 
 ## Reference docs
 
@@ -48,7 +49,7 @@ Goal: create a minimal viable scaffold that is useful immediately and can evolve
 Process:
 
 1. Inspect the current folder lightly.
-   - Use `pwd`, `git status --short` when in a git repo, and a shallow tree/listing.
+   - Use `pwd` and `git status --short` when in a Git worktree, then derive the shallow path sample through Git candidate listing rather than directory traversal. Outside Git, use a shallow non-recursive listing only.
    - Classify the folder as empty enough, source-material-only, or existing workspace architecture.
 2. Apply `/picm-new` safety.
    - Empty enough: `.git/`, `.pi/`, `README.md`, `LICENSE`, `.gitignore`, `.env.example`, package manifests/lockfiles, editor folders, and OS noise are okay.
@@ -64,9 +65,10 @@ Process:
 5. Run the core interview from `references/interview-guide.md`; ask branching follow-ups only when needed. If `/picm-new` arguments were provided, treat them as seed context and ask only missing critical questions. Before proposing extra stages, roles, folders, references, or examples, ask or infer: **What will you run first?**
 6. Recommend a layout profile from `references/layout-profiles.md`, explain why, then present alternatives. For mixed workflows, choose one primary profile and borrow secondary patterns sparingly.
 7. Draft the smallest scaffold that supports that first real run. Include required root routing/context and only the active stages, roles, specialist recipes, references, examples, artifact paths, and user-named scripts/tools needed now. Defer speculative structure until real use proves it useful. For Stage Pipeline workspaces, make each active stage contract answer: what it reads, what it does, what it writes, and where human review happens. Mention a script, MCP server/tool, or other integration in generated routing/contracts only when the user has named it; never invent an integration to fill a template.
-8. Preview files to create/update, including exact append/update proposals for existing safe files such as `README.md` or `.gitignore`.
-9. After approval, write files.
-10. End with a tailored first-run checklist for the selected layout. Name where to start, where the first output or handoff should land, what the human should inspect/edit before downstream work consumes it, what gaps/unknowns must stay visible, and when to run `/picm-maintain`.
+8. Near the final config preview, offer maintenance cadence: manual, a recommended monthly nudge, or automatic advisory maintenance in the first eligible interactive TUI session after it is due. Accept a positive integer interval in days, weeks, or months. If skipped/declined, leave maintenance manual with no policy object. Use `picm_maintenance_policy` with `action: "preview"` to calculate the exact object and include it in the existing `.picm/config.json` preview. Choosing cadence is not file-write approval.
+9. Preview files to create/update, including exact append/update proposals for existing safe files such as `README.md` or `.gitignore`.
+10. After approval, write files.
+11. End with a tailored first-run checklist for the selected layout. Name where to start, where the first output or handoff should land, what the human should inspect/edit before downstream work consumes it, what gaps/unknowns must stay visible, and when to run `/picm-maintain`.
 
 Typical files for a new scaffold:
 
@@ -79,7 +81,7 @@ Typical files for a new scaffold:
 - Existing or planned local scripts and MCP/tool integrations only when the user names them and explains their purpose. Record the exact path or tool name and the human/AI review boundary; do not scaffold runtime execution logic.
 - For Stage Pipeline stages, prefer named inspectable output files (often under a stage `output/` folder) when downstream stages will consume the result after human review.
 - Do not pre-create empty input/output/work folders just because a contract names a future path. Create those folders only when adding a real seed file, reference file, first-run artifact, or when the user explicitly wants physical directories now.
-- `.picm/config.json` — tiny metadata only: `version`, `profile`, `generatedBy`, `createdAt`, and key path hints such as `rootInstructions`, `rootContext`, optional `references`, and workflow folder paths.
+- `.picm/config.json` — tiny metadata only: `version`, `profile`, `generatedBy`, `createdAt`, key path hints, and optional deterministic `maintenance` policy/check-in timestamps.
 
 Scaffold quality rules:
 
@@ -130,8 +132,8 @@ Load `references/adoption-guide.md` before running this mode. Load `references/c
 Process:
 
 1. Start read-only. Do not write or edit anything during discovery.
-2. If arguments start with `coding`, enter coding adoption directly. Otherwise, a shallow path-only Git-ignore-aware check may identify likely coding signals; offer **Coding Repository**, **add codebase mapping to the existing profile**, or **continue normal adoption**. Do not deep-scan merely to classify the repo.
-3. Scan for existing architecture files/folders and visible conventions. During coding scans, require a Git worktree, derive candidate paths through Git, and run `git check-ignore --no-index` before every read. Ignored files are out of scope without exception.
+2. If arguments start with `coding`, enter coding adoption directly. Otherwise, use a shallow path-only classification: derive candidates through Git in a worktree, or use a shallow non-recursive listing outside Git. Offer **Coding Repository**, **add codebase mapping to the existing profile**, or **continue normal adoption** when coding signals appear. Do not deep-scan merely to classify the repo.
+3. Scan for existing architecture files/folders and visible conventions. During coding scans, use the extension's Git-backed candidate view and immediate `git check-ignore --no-index` check before every read. An existing worktree is used directly; without `.git`, the extension uses isolated transient Git metadata outside the workspace and still honors `.gitignore`. Ignored files are out of scope without exception.
 4. Identify whether Pi can already use `CLAUDE.md` or `AGENTS.md`, and classify routing quality as adequate, partial, placeholder/unrelated, or conflicting/risky.
 5. For a complex, cluttered, or unfamiliar workspace—or when requested—offer the adoption guide's optional file-role inventory. Keep it a representative path-to-role-to-rationale orientation aid, separate from readiness, and never treat a classification as approval to move, rename, archive, delete, merge, or rewrite anything.
 6. Ask the security/privacy check before content-heavy discovery and before proposing report/config/context writes. For coding adoption, also ask for mapping approach (**root**, **distributed**, or **scan and recommend**), adoption depth (**additive** or **curated**), maintenance preset (**Light**, **Balanced**, or **Strict**), and optional user boundary hints.
@@ -141,13 +143,14 @@ Process:
    - **Ready with warnings** — routable/adoptable, with non-blocking ICM improvements.
    - **Needs routing before adoption** — routing is absent, partial, placeholder, conflicting, or unsafe; do not mark adopted yet.
    - **Scanned only** — user wants findings/metadata without full compatibility changes.
-9. If routing is adequate, offer minimal `.picm/` adoption metadata after explicit confirmation. Coding metadata records only the resulting root/distributed shape, roots, map path/equivalent, selected local contexts, and maintenance preset.
-10. If routing is missing or weak, offer multiple exact proposals:
+9. Near the final config preview, offer maintenance cadence: manual, a recommended monthly nudge, or automatic advisory maintenance in the first eligible interactive TUI session after it is due. Accept a positive integer interval in days, weeks, or months. If skipped/declined, omit the policy. Use `picm_maintenance_policy` preview for exact timestamps and include the result in the adoption config preview; cadence choice is not write approval.
+10. If routing is adequate, offer minimal `.picm/` adoption metadata after explicit confirmation. Coding metadata records only the resulting root/distributed shape, roots, map path/equivalent, selected local contexts, and maintenance preset.
+11. If routing is missing or weak, offer multiple exact proposals:
    - minimal PiCM-compatible routing;
    - stronger, more opinionated ICM-style routing;
    - scanned-only report/config for now.
-11. In coding additive mode, preserve existing documentation and add only missing routing/maps. In curated mode, draft a documentation consolidation proposal with canonical-source recommendations and separately highlighted merges, moves, archive candidates, rewrites, and deletions; never treat curated selection as blanket write approval.
-12. Iterate on proposals until the user is satisfied, then write only the exact approved changes. Option choice is not write approval; if the user asks for a preview or says not to write yet, stop after preview and require a separate explicit approval before any file write, including `.picm/` files.
+12. In coding additive mode, preserve existing documentation and add only missing routing/maps. In curated mode, draft a documentation consolidation proposal with canonical-source recommendations and separately highlighted merges, moves, archive candidates, rewrites, and deletions; never treat curated selection as blanket write approval.
+13. Iterate on proposals until the user is satisfied, then write only the exact approved changes. Option choice is not write approval; if the user asks for a preview or says not to write yet, stop after preview and require a separate explicit approval before any file write, including `.picm/` files.
 
 Allowed default outputs after confirmation:
 
@@ -195,9 +198,10 @@ Process:
 10. For coding workspaces, adapt the cold-agent walk to root routing → repository map/equivalent → owning boundary → entry point → authoritative tests/checks. Report map presence separately from correctness and user confirmation.
 11. Keep cold-agent walk findings advisory. Treat a short read count as a diagnostic target rather than a naming/layout law, and never claim deterministic workflow state or provenance from file presence.
 12. Keep folder naming/organization feedback loose and advisory unless routing is broken.
-13. Offer edits only after preview and explicit confirmation. Never auto-heal.
-14. Offer to write `.picm/maintenance-report.md` only after confirmation.
-15. End general reports with a discoverability note for trace mode: `/picm-maintain trace "describe what drifted"`.
+13. If this is a scheduled automatic cycle, keep the entire run read-only and advisory: chat findings only, with no agent-initiated Bash, edits, report, repair, commit, or external side effect. User-typed `!bash` remains unrestricted. The extension's schedule timestamp reset does not authorize any other write.
+14. Offer edits only after preview and explicit confirmation. Never auto-heal.
+15. Offer to write `.picm/maintenance-report.md` only after confirmation.
+16. End general reports with a discoverability note for trace mode: `/picm-maintain trace "describe what drifted"`.
 
 ## Mode: help (`/picm-help`)
 
@@ -217,7 +221,7 @@ Also explain:
 - Pi install:
   `npm install -g --ignore-scripts @earendil-works/pi-coding-agent`
 - pinned public npm project-local install:
-  `pi install -l npm:@eyevanovich/picm-factory@0.1.2`
+  `pi install -l npm:@eyevanovich/picm-factory@0.2.0`
 - local development install from the user's checkout:
   `pi install -l /path/to/picm-factory`
 - maintain examples:

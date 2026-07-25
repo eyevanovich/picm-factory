@@ -137,8 +137,12 @@ pi
 
 Expected behavior:
 
-- Requires/uses the Git worktree for the automatic coding scan.
+- Before an explicit PiCM command, the extension leaves ordinary Pi reads, user-level skills, screenshots/outside paths, Git inspection, and agent tools untouched; use only the synthetic fixture when demonstrating that pass-through.
+- User-typed `!bash` is never intercepted, including during an active PiCM scan or automatic maintenance cycle.
+- `/picm-new`, `/picm-adopt`, and `/picm-maintain` authorize their workflow and activate the gate for the command's first scan turn; `/picm-help` and natural-language requests do not.
+- After an agent turn settles, the scan gate is inactive. A later interview turn calls `picm_scan_control begin` before scanning and `end` afterward; workflow completion or session shutdown removes the authorization.
 - Derives candidates through Git and runs `git check-ignore --no-index` before reading each candidate.
+- In a second disposable fixture, omit `.git` but keep `.gitignore`; verify explicit and automatic maintenance scans still dispatch, block ignored agent reads, allow safe candidates, create no project `.git`, and remove transient isolated Git metadata on shutdown.
 - Does not open, quote, summarize, hash, or otherwise inspect untracked ignored `.env`, tracked ignored `.env.tracked`, or `secrets/fake-key.pem`, including through `git show`, broad traversal, or another worktree.
 - Does not follow `ignored-target-link` to the ignored `.env` target.
 - Visible Pi tool logs contain no read of any ignored file or symlink target.
@@ -151,6 +155,10 @@ Observed smoke: 2026-07-22 in visible Zellij/Pi panes against `/tmp/picm-coding-
 - Regular `/picm-adopt` first performed path-only Git-aware classification from `package.json`, `src/`, and `test/`, offered/selected Coding Repository without needing the shortcut, and asked the tracked-data security question before content inspection.
 - The regular flow recognized the repo was small enough to keep its root map in `AGENTS.md` rather than manufacture `CONTEXT-MAP.md`.
 - It reported `.env.tracked` as ignored and unread, did not follow `ignored-target-link`, did not list or quote ignored contents, created no `.picm/` metadata, and left the Git diff empty. Only the expected project-local `.pi/settings.json` from package installation remained untracked.
+
+## Maintenance cadence smoke check
+
+In a disposable fixture, configure a one-day nudge with `picm_maintenance_policy`, confirm the exact `.picm/config.json` patch, then make `nextDueAt` due and restart an interactive Pi session. Verify one deterministic notification appears without resetting timestamps. Repeat with automatic mode: verify the first eligible TUI session resets the cycle once and dispatches a chat-only maintenance report while agent-initiated Bash/edit/write remain blocked; user-typed `!bash` stays unrestricted. Repeat without `.git` but with `.gitignore` and verify the cycle still dispatches while ignored agent reads remain blocked and no project `.git` is created. Reload/resume must not dispatch the same due key twice. Print, JSON, and RPC sessions must neither notify/dispatch nor mutate the schedule. Decline an apply confirmation and verify no file changes. Do not run write-capable smoke tests outside an explicitly disposable target.
 
 ## `/picm-maintain` smoke checks
 

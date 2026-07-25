@@ -13,10 +13,11 @@ PiCM Factory is a project-local Pi Coding Agent package that helps users create,
 - Keep runtime methodology in the skill's references and templates; keep the extension thin.
 - Be non-destructive by default. Preview writes before applying them.
 - Treat security as a first-class requirement: secrets, client data, and private material must not be copied into context files or committed without explicit user approval.
-- During coding adoption/maintenance, Git ignored files are unreadable; derive candidates through Git and check each path before reading.
+- During scan phases explicitly authorized by `/picm-new`, `/picm-adopt`, or `/picm-maintain`, Git ignored files are unreadable; outside those PiCM workflows, the extension must not affect ordinary Pi tools. User-typed `!bash` is never intercepted. When `.git` is absent, transient isolated Git metadata outside the workspace preserves `.gitignore` semantics without modifying the project.
 - Use `.pi/` for Pi config and `.picm/` for minimal PiCM metadata/reports.
 - The visible folder structure and context files remain the source of truth.
 - `.picm/` is maintainer-only context and should not be read during normal workflow execution.
+- Optional maintenance cadence is stored in `.picm/config.json`; automatic means one read-only advisory run in the first eligible interactive TUI session after due, never a daemon or headless mutation.
 
 ## Current commands
 - `/picm-new` — interview-led minimal scaffold for new workspaces.
@@ -34,7 +35,7 @@ PiCM Factory is a project-local Pi Coding Agent package that helps users create,
 ## Deliberately out of scope
 - custom TUI wizard
 - workflow executor or orchestrator
-- background/automatic coding-map maintenance in the initial release
+- background daemons, wall-clock execution while Pi is closed, and automatic coding-map/report repair
 - deterministic validator
 - Docker/portable agents
 - starter repo

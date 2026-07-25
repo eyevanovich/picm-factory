@@ -9,6 +9,8 @@ const CONVENTIONAL_SUBJECT_PATTERN =
   /^(?<type>[a-z][a-z0-9-]*)(?:\((?<scope>[^)\r\n]+)\))?(?<breaking>!)?:\s+(?<description>.+)$/i;
 const BREAKING_FOOTER_PATTERN = /(?:^|\n)BREAKING(?: |-)CHANGE:\s*\S/im;
 const BUMP_PRIORITY = { patch: 1, minor: 2, major: 3 };
+const PINNED_INSTALL_PATTERN =
+  /(pi install -l npm:@eyevanovich\/picm-factory@)(\d+\.\d+\.\d+)/g;
 
 function git(root, args) {
   return execFileSync("git", args, { cwd: root, encoding: "utf8" }).trim();
@@ -207,6 +209,21 @@ function latestReleaseTag(root) {
   return tag;
 }
 
+export function updatePinnedInstallVersion(text, version) {
+  let replacements = 0;
+  const updated = text.replace(
+    PINNED_INSTALL_PATTERN,
+    (_match, prefix) => {
+      replacements += 1;
+      return `${prefix}${version}`;
+    },
+  );
+  if (replacements === 0) {
+    throw new Error("Pinned PiCM Factory install command was not found");
+  }
+  return updated;
+}
+
 function insertChangelogEntry(changelog, notes) {
   const firstRelease = changelog.indexOf("\n## [");
   if (firstRelease === -1) {
@@ -236,6 +253,8 @@ export function prepareRelease({
 
   const packagePath = resolve(root, "package.json");
   const changelogPath = resolve(root, "CHANGELOG.md");
+  const readmePath = resolve(root, "README.md");
+  const skillPath = resolve(root, "skills/picm-factory/SKILL.md");
   const pkg = JSON.parse(readFileSync(packagePath, "utf8"));
   const baseTag = latestReleaseTag(root);
   const baseVersion = baseTag.slice(1);
@@ -272,6 +291,8 @@ export function prepareRelease({
 
   const notes = buildReleaseNotes(version, releaseDate, commits);
   const changelog = readFileSync(changelogPath, "utf8");
+  const readme = updatePinnedInstallVersion(readFileSync(readmePath, "utf8"), version);
+  const skill = updatePinnedInstallVersion(readFileSync(skillPath, "utf8"), version);
   if (changelog.includes(`## [${version}]`)) {
     throw new Error(`CHANGELOG.md already contains version ${version}`);
   }
@@ -280,6 +301,8 @@ export function prepareRelease({
     pkg.version = version;
     writeFileSync(packagePath, `${JSON.stringify(pkg, null, 2)}\n`);
     writeFileSync(changelogPath, insertChangelogEntry(changelog, notes));
+    writeFileSync(readmePath, readme);
+    writeFileSync(skillPath, skill);
     if (notesFile) {
       writeFileSync(notesFile, `${notes}\n`);
     }
