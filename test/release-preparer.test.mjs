@@ -276,3 +276,14 @@ test("prepares package, changelog, and release notes from commits after the late
     rmSync(root, { recursive: true, force: true });
   }
 });
+
+test("release workflows install peer dependencies before validation", () => {
+  const install = "npm install --ignore-scripts --no-package-lock --no-audit --no-fund";
+  const release = readFileSync(".github/workflows/release.yml", "utf8");
+  const publish = readFileSync(".github/workflows/publish.yml", "utf8");
+
+  assert.ok(release.indexOf(install) >= 0);
+  assert.ok(release.indexOf(install) < release.indexOf("npm run check"));
+  assert.ok(publish.indexOf(install) >= 0);
+  assert.ok(publish.indexOf(install) < publish.indexOf("npm publish"));
+});
