@@ -221,7 +221,7 @@ Also explain:
 - Pi install:
   `npm install -g --ignore-scripts @earendil-works/pi-coding-agent`
 - pinned public npm project-local install:
-  `pi install -l npm:@eyevanovich/picm-factory@0.2.0`
+  `pi install -l npm:@eyevanovich/picm-factory@0.3.0`
 - local development install from the user's checkout:
   `pi install -l /path/to/picm-factory`
 - maintain examples:

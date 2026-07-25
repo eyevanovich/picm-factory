@@ -2,6 +2,25 @@
 
 All notable changes to PiCM Factory will be documented here.
 
+## [0.3.0] - 2026-07-25
+
+### Added
+
+- Install declared peers before `npm run check` in `release.yml`.
+- Install the same peers before `npm publish` triggers `prepublishOnly` in `publish.yml`.
+- Disable dependency lifecycle scripts and package-lock generation during both installs.
+- Add regression coverage requiring installation to precede validation and publication.
+- Document the clean-runner dependency setup.
+- Add deterministic Git-backed scan inventories and guarded reads for explicit PiCM command scans, including ignored-path, symlink, submodule, and non-Git workspace protections while leaving ordinary Pi usage unrestricted.
+- Add configurable maintenance cadence with monthly nudges, optional read-only automatic TUI advisory cycles, concurrency control, and atomic schedule bookkeeping.
+- Synchronize pinned install versions during release preparation and expand package validation, documentation, and automated coverage for the new runtime modules.
+
+### Fixed
+
+- Restore the detailed v0.2.0 changelog with all six coding-profile additions and both coding-scan safety boundaries.
+- Generate release notes from valid top-level `## What Changed` bullets, falling back to the Conventional PR title when no usable bullets exist while preserving existing SemVer qualification.
+- Document and validate the release-note contract, with regression coverage for structured extraction and malformed blank bullets.
+
 ## [0.2.0] - 2026-07-23
 
 ### Added
