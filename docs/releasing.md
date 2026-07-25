@@ -25,9 +25,9 @@ Use a Conventional Commit pull-request title. For detailed changelog entries, ad
 2. Open **Actions → Create release → Run workflow** and select `main`.
 3. The workflow finds the merged `main` pull requests associated with commits after the latest release tag and selects the highest required SemVer bump from their titles.
 4. It updates `package.json`, synchronizes pinned install commands in `README.md` and `skills/picm-factory/SKILL.md`, and prepends generated notes to `CHANGELOG.md`, preferring each PR's reviewed `## What Changed` bullets over its title.
-5. It runs `npm run check`, creates a `chore: release v<version>` commit directly on `main`, and atomically pushes that commit with the matching tag.
+5. It installs the declared Pi runtime peers with lifecycle scripts disabled, runs `npm run check`, creates a `chore: release v<version>` commit directly on `main`, and atomically pushes that commit with the matching tag.
 6. It creates the GitHub Release and explicitly dispatches `publish.yml`.
-7. `publish.yml` requires that GitHub Release, checks that its tag matches `package.json`, runs package validation through `prepublishOnly`, and publishes through npm trusted publishing. Pushing a tag alone cannot invoke publication.
+7. `publish.yml` installs the same validation dependencies with lifecycle scripts disabled, requires that GitHub Release, checks that its tag matches `package.json`, runs package validation through `prepublishOnly`, and publishes through npm trusted publishing. Pushing a tag alone cannot invoke publication.
 8. Verify the release on:
    - `https://www.npmjs.com/package/@eyevanovich/picm-factory`
    - `https://github.com/eyevanovich/picm-factory/releases`

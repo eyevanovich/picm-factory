@@ -35,6 +35,9 @@ jobs:
           registry-url: https://registry.npmjs.org
           package-manager-cache: false
 
+      - name: Install validation dependencies
+        run: npm install --ignore-scripts --no-package-lock --no-audit --no-fund
+
       - name: Verify GitHub Release
         shell: bash
         env:
