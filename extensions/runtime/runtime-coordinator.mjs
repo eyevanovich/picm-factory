@@ -67,7 +67,11 @@ export function createRuntimeCoordinator({
   async function scanControl(ctx, action, path) {
     const sessionId = sessionIdFor(ctx);
     const workflow = workflowFor(ctx);
-    const automatic = isAutomatic(ctx);
+    const automaticState = automaticFor(ctx);
+    const automatic = Boolean(automaticState);
+    if (automaticState?.expiresAt <= Date.now()) {
+      throw new Error("PICM_AUTOMATIC_SCAN_EXPIRED: automatic advisory safety boundary expired before settlement");
+    }
     if (automatic && action !== "inventory") {
       throw new Error("PICM_AUTOMATIC_INVENTORY_ONLY: automatic advisory sessions may only request inventory");
     }
@@ -132,18 +136,24 @@ export function createRuntimeCoordinator({
   }
 
   function isAutomatic(ctx) {
-    return automaticReadOnlySessions.get(sessionIdFor(ctx)) === ctx.cwd;
+    return Boolean(automaticFor(ctx));
+  }
+
+  function automaticFor(ctx) {
+    const state = automaticReadOnlySessions.get(sessionIdFor(ctx));
+    return state?.cwd === ctx.cwd ? state : undefined;
   }
 
   function beginAutomatic(ctx) {
     const sessionId = sessionIdFor(ctx);
-    automaticReadOnlySessions.set(sessionId, ctx.cwd);
-    activeScans.set(sessionId, { cwd: ctx.cwd, expiresAt: Date.now() + scanWorkflowTtlMs });
+    const expiresAt = Date.now() + scanWorkflowTtlMs;
+    automaticReadOnlySessions.set(sessionId, { cwd: ctx.cwd, expiresAt });
+    activeScans.set(sessionId, { cwd: ctx.cwd, expiresAt });
   }
 
   function clearAutomatic(ctx) {
     const sessionId = sessionIdFor(ctx);
-    if (automaticReadOnlySessions.get(sessionId) === ctx.cwd) automaticReadOnlySessions.delete(sessionId);
+    if (automaticReadOnlySessions.get(sessionId)?.cwd === ctx.cwd) automaticReadOnlySessions.delete(sessionId);
   }
 
   function settle(ctx) {
@@ -152,7 +162,14 @@ export function createRuntimeCoordinator({
   }
 
   async function checkToolCall(event, ctx) {
-    if (isAutomatic(ctx)) {
+    const automaticState = automaticFor(ctx);
+    if (automaticState) {
+      if (automaticState.expiresAt <= Date.now()) {
+        return {
+          allowed: false,
+          reason: "Scheduled maintenance safety boundary expired before settlement; all agent tools are blocked",
+        };
+      }
       const automaticInventory = event.toolName === "picm_scan_control" && event.input?.action === "inventory";
       if (!automaticInventory && !["read", "grep", "find", "ls"].includes(event.toolName)) {
         return { allowed: false, reason: "Scheduled maintenance is advisory and read-only; this tool is blocked" };

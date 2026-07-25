@@ -192,6 +192,38 @@ test("due automatic maintenance runs in non-Git workspaces while honoring gitign
   await h.handlers.get("session_shutdown")({}, ctx);
 });
 
+test("automatic advisory fails closed when its scan safety boundary expires", async (t) => {
+  const cwd = fixture(t, oldDue("automatic"));
+  writeFileSync(join(cwd, "safe.txt"), "safe\n");
+  const h = harness();
+  const ctx = h.context(cwd, "tui", "expiring-automatic-session");
+  let clock = Date.now();
+  t.mock.method(Date, "now", () => clock);
+
+  await h.handlers.get("session_start")({}, ctx);
+  clock += 2 * 60 * 60 * 1000 + 1;
+
+  for (const event of [
+    { toolName: "read", input: { path: "safe.txt" } },
+    { toolName: "picm_scan_control", input: { action: "inventory" } },
+    { toolName: "write", input: { path: "safe.txt" } },
+  ]) {
+    const blocked = await h.handlers.get("tool_call")(event, ctx);
+    assert.equal(blocked.block, true);
+    assert.match(blocked.reason, /safety boundary expired/);
+  }
+  await assert.rejects(
+    h.scanControl.execute("id", { action: "inventory" }, undefined, undefined, ctx),
+    /PICM_AUTOMATIC_SCAN_EXPIRED/,
+  );
+
+  await h.handlers.get("agent_settled")({}, ctx);
+  assert.equal(await h.handlers.get("tool_call")(
+    { toolName: "read", input: { path: "safe.txt" } },
+    ctx,
+  ), undefined);
+});
+
 test("automatic send failure rolls back the claim and clears the session guard", async (t) => {
   const due = oldDue("automatic");
   const cwd = fixture(t, due);
