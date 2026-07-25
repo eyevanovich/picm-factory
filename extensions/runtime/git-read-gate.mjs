@@ -135,6 +135,14 @@ function parseReadArguments(executable, argumentsForCommand) {
   return paths;
 }
 
+function isInertLocaleAssignment(word) {
+  const separator = word.indexOf("=");
+  if (separator < 1) return false;
+  const name = word.slice(0, separator);
+  const value = word.slice(separator + 1);
+  return /^(?:LANG|LANGUAGE|LC_[A-Z0-9_]+)$/.test(name) && /^[A-Za-z0-9_.@:-]*$/.test(value);
+}
+
 function staticReadPaths(command) {
   const words = parseStaticShellWords(command);
   if (!words || words.length === 0) return { unresolved: true };
@@ -143,21 +151,30 @@ function staticReadPaths(command) {
   for (let index = 0; index < words.length;) {
     while ([";", "&&", "||", "|"].includes(words[index])) index += 1;
     if (index >= words.length) break;
-    while (/^[A-Za-z_][A-Za-z0-9_]*=/.test(words[index] ?? "")) index += 1;
-    let executable = words[index]?.split("/").at(-1);
+    while (/^[A-Za-z_][A-Za-z0-9_]*=/.test(words[index] ?? "")) {
+      if (!isInertLocaleAssignment(words[index])) return { unresolved: true };
+      index += 1;
+    }
+    let executableWord = words[index];
+    let executable = executableWord;
     if (executable === "command") {
       index += 1;
       if (words[index] === "--") index += 1;
       else if ((words[index] ?? "").startsWith("-")) return { unresolved: true };
-      executable = words[index]?.split("/").at(-1);
+      executableWord = words[index];
+      executable = executableWord;
     } else if (executable === "env") {
       index += 1;
       if (words[index] === "--") index += 1;
-      while (/^[A-Za-z_][A-Za-z0-9_]*=/.test(words[index] ?? "")) index += 1;
+      while (/^[A-Za-z_][A-Za-z0-9_]*=/.test(words[index] ?? "")) {
+        if (!isInertLocaleAssignment(words[index])) return { unresolved: true };
+        index += 1;
+      }
       if ((words[index] ?? "").startsWith("-")) return { unresolved: true };
-      executable = words[index]?.split("/").at(-1);
+      executableWord = words[index];
+      executable = executableWord;
     }
-    if (!executable) return { unresolved: true };
+    if (!executable || executable.includes("/") || executableWord !== executable) return { unresolved: true };
     index += 1;
     const argumentsForCommand = [];
     while (index < words.length && ![";", "&&", "||", "|"].includes(words[index])) {
@@ -400,8 +417,9 @@ export function createGitReadGate({
     );
   }
 
-  async function resolveExistingPath(inputPath) {
-    const absolutePath = resolve(cwd, stripAtPrefix(inputPath));
+  async function resolveExistingPath(inputPath, stripToolPrefix) {
+    const path = stripToolPrefix ? stripAtPrefix(inputPath) : inputPath;
+    const absolutePath = resolve(cwd, path);
     const stat = await fs.lstat(absolutePath);
     if (stat.isSymbolicLink()) {
       return { blocked: true, reason: "symlinks are not readable during guarded scans" };
@@ -410,8 +428,9 @@ export function createGitReadGate({
     return { absolutePath, canonicalPath, stat };
   }
 
-  async function resolveProspectivePath(inputPath) {
-    const absolutePath = resolve(cwd, stripAtPrefix(inputPath));
+  async function resolveProspectivePath(inputPath, stripToolPrefix) {
+    const path = stripToolPrefix ? stripAtPrefix(inputPath) : inputPath;
+    const absolutePath = resolve(cwd, path);
     let existing = absolutePath;
     while (true) {
       try {
@@ -435,7 +454,7 @@ export function createGitReadGate({
     }
   }
 
-  async function checkPathUnchecked(toolName, inputPath) {
+  async function checkPathUnchecked(toolName, inputPath, { stripToolPrefix = true } = {}) {
     if (!PATH_TOOLS.has(toolName)) return { allowed: true, protected: false };
     await discoverWorktree();
     if (typeof inputPath !== "string" || inputPath.trim() === "") {
@@ -449,8 +468,8 @@ export function createGitReadGate({
     let resolvedPath;
     try {
       resolvedPath = prospectiveWrite
-        ? await resolveProspectivePath(inputPath)
-        : await resolveExistingPath(inputPath);
+        ? await resolveProspectivePath(inputPath, stripToolPrefix)
+        : await resolveExistingPath(inputPath, stripToolPrefix);
     } catch (error) {
       return {
         allowed: false,
@@ -611,7 +630,7 @@ export function createGitReadGate({
           };
         }
         for (const path of staticReads.paths) {
-          const decision = await checkPathUnchecked("read", path);
+          const decision = await checkPathUnchecked("read", path, { stripToolPrefix: false });
           if (!decision.allowed) {
             return {
               allowed: false,

@@ -56,6 +56,7 @@ function createFixture() {
     symlinkSync("safe.txt", join(root, "safe-link"));
     symlinkSync(".env", join(root, "ignored-target-link"));
     symlinkSync("safe-dir", join(root, "safe-dir-link"));
+    symlinkSync(".env", join(root, "@safe.txt"));
   }
 
   return { root, packageRoot };
@@ -175,6 +176,10 @@ test("refreshes ignored inventory and blocks literal paths and known bash bypass
     assert.match((await gate.checkBash("sort < ../outside.txt")).reason, /allowlist/);
     assert.match((await gate.checkBash("od ../outside.txt")).reason, /allowlist/);
     assert.match((await gate.checkBash("cp ../outside.txt /dev/stdout")).reason, /allowlist/);
+    assert.match((await gate.checkBash("./tools/cat safe.txt")).reason, /allowlist/);
+    assert.match((await gate.checkBash("PATH=./tools cat safe.txt")).reason, /allowlist/);
+    assert.match((await gate.checkBash("LESSOPEN='|cat ../outside.txt' less safe.txt")).reason, /allowlist/);
+    assert.equal((await gate.checkBash("LC_ALL=C cat safe.txt")).allowed, true);
     assert.match((await gate.checkBash("cat missing.txt")).reason, /path resolution failed/);
     assert.match((await gate.checkBash('cat "$TARGET"')).reason, /allowlist/);
     assert.match((await gate.checkBash("cat .env")).reason, /ignored inventory path/);
@@ -193,6 +198,10 @@ test("refreshes ignored inventory and blocks literal paths and known bash bypass
     assert.match((await gate.checkBash(`cat ${join(root, ".git", "config")}`)).reason, /\.git access/);
     assert.match((await gate.checkBash("rg --no-ignore token .")).reason, /ignore-disabling/);
     assert.match((await gate.checkBash("find . -type f -exec cat {} +")).reason, /broad find/);
+    if (process.platform !== "win32") {
+      assert.match((await gate.checkBash("cat @safe.txt")).reason, /symlinks/);
+      assert.equal((await gate.checkPath("read", "@safe.txt")).allowed, true);
+    }
 
     write(join(root, "late.pem"), "synthetic ignored\n");
     assert.match((await gate.checkBash("cat late.pem")).reason, /late\.pem/);
