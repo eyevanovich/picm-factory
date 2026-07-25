@@ -166,12 +166,17 @@ test("refreshes ignored inventory and blocks literal paths and known bash bypass
     assert.match((await gate.checkBash("env cat ../outside.txt")).reason, /blocked/);
     assert.match((await gate.checkBash("command cat ../outside.txt")).reason, /blocked/);
     assert.match((await gate.checkBash("LC_ALL=C cat ../outside.txt")).reason, /blocked/);
-    assert.match((await gate.checkBash("echo safe\ncat ../outside.txt")).reason, /blocked/);
-    assert.match((await gate.checkBash("sudo cat ../outside.txt")).reason, /deterministically validated/);
-    assert.match((await gate.checkBash("file --files-from=../outside.txt safe.txt")).reason, /deterministically validated/);
-    assert.match((await gate.checkBash("file -f../outside.txt safe.txt")).reason, /deterministically validated/);
+    assert.match((await gate.checkBash("echo safe\ncat ../outside.txt")).reason, /allowlist/);
+    assert.match((await gate.checkBash("sudo cat ../outside.txt")).reason, /allowlist/);
+    assert.match((await gate.checkBash("file --files-from=../outside.txt safe.txt")).reason, /allowlist/);
+    assert.match((await gate.checkBash("file -f../outside.txt safe.txt")).reason, /allowlist/);
+    assert.match((await gate.checkBash("env --chdir=.. cat safe.txt")).reason, /allowlist/);
+    assert.match((await gate.checkBash("env -S 'cat ../outside.txt'")).reason, /allowlist/);
+    assert.match((await gate.checkBash("sort < ../outside.txt")).reason, /allowlist/);
+    assert.match((await gate.checkBash("od ../outside.txt")).reason, /allowlist/);
+    assert.match((await gate.checkBash("cp ../outside.txt /dev/stdout")).reason, /allowlist/);
     assert.match((await gate.checkBash("cat missing.txt")).reason, /path resolution failed/);
-    assert.match((await gate.checkBash('cat "$TARGET"')).reason, /could not be deterministically validated/);
+    assert.match((await gate.checkBash('cat "$TARGET"')).reason, /allowlist/);
     assert.match((await gate.checkBash("cat .env")).reason, /ignored inventory path/);
     assert.match((await gate.checkBash("git show HEAD:.env.tracked")).reason, /Git object\/content/);
     assert.match((await gate.checkBash("git diff HEAD~1")).reason, /Git object\/content/);
@@ -197,7 +202,7 @@ test("refreshes ignored inventory and blocks literal paths and known bash bypass
 
     const dynamic = await gate.checkBash('part=env; cat ".${part}"');
     assert.equal(dynamic.allowed, false);
-    assert.match(dynamic.reason, /could not be deterministically validated/);
+    assert.match(dynamic.reason, /allowlist/);
   });
 });
 
@@ -246,6 +251,8 @@ test("treats present submodules as separate guarded worktrees", async (t) => {
   assert.equal((await gate.checkPath("read", "vendor/lib/safe.txt")).allowed, true);
   assert.match((await gate.checkPath("read", "vendor/lib/secret.txt")).reason, /ignored by Git/);
   assert.match((await gate.checkPath("read", "vendor/lib/.git")).reason, /\.git internals/);
+  write(join(root, ".gitignore"), "vendor/lib/\n");
+  assert.match((await gate.checkPath("read", "vendor/lib/safe.txt")).reason, /ignored by parent/);
 });
 
 test("isolated Git metadata is removed by gate disposal", async () => {

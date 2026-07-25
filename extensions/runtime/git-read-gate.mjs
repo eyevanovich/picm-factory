@@ -10,14 +10,6 @@ const PATH_TOOLS = new Set(["read", "edit", "write", "grep", "find", "ls"]);
 const READ_LIKE_TOOLS = new Set(["read", "edit", "grep", "find", "ls"]);
 const TRAVERSAL_TOOLS = new Set(["grep", "find", "ls"]);
 const STATIC_READ_COMMANDS = new Set(["cat", "head", "tail", "wc", "file", "strings", "less", "more"]);
-const READ_LIKE_BASH_COMMANDS = new Set([
-  ...STATIC_READ_COMMANDS,
-  "awk",
-  "grep",
-  "rg",
-  "ripgrep",
-  "sed",
-]);
 const KNOWN_BASH_BYPASSES = [
   { pattern: /\b(?:rg|ripgrep)\b[^\n;&|]*(?:^|\s)--no-ignore(?:-[a-z-]+)?(?:\s|$)/i, reason: "ignore-disabling search flag" },
   { pattern: /\b(?:rg|ripgrep)\b[^\n;&|]*(?:^|\s)-u{1,3}(?:\s|$)/, reason: "unrestricted search flag" },
@@ -145,51 +137,53 @@ function parseReadArguments(executable, argumentsForCommand) {
 
 function staticReadPaths(command) {
   const words = parseStaticShellWords(command);
-  if (!words) {
-    const readLike = /\b(?:awk|cat|file|grep|head|less|more|rg|ripgrep|sed|strings|tail|wc)\b/.test(command);
-    return { readLike, unresolved: readLike };
-  }
+  if (!words || words.length === 0) return { unresolved: true };
 
   const paths = [];
-  let readLike = false;
   for (let index = 0; index < words.length;) {
     while ([";", "&&", "||", "|"].includes(words[index])) index += 1;
-    const segmentStart = index;
+    if (index >= words.length) break;
     while (/^[A-Za-z_][A-Za-z0-9_]*=/.test(words[index] ?? "")) index += 1;
     let executable = words[index]?.split("/").at(-1);
     if (executable === "command") {
       index += 1;
-      while ((words[index] ?? "").startsWith("-")) index += 1;
+      if (words[index] === "--") index += 1;
+      else if ((words[index] ?? "").startsWith("-")) return { unresolved: true };
       executable = words[index]?.split("/").at(-1);
     } else if (executable === "env") {
       index += 1;
-      while (
-        (words[index] ?? "").startsWith("-") ||
-        /^[A-Za-z_][A-Za-z0-9_]*=/.test(words[index] ?? "")
-      ) index += 1;
+      if (words[index] === "--") index += 1;
+      while (/^[A-Za-z_][A-Za-z0-9_]*=/.test(words[index] ?? "")) index += 1;
+      if ((words[index] ?? "").startsWith("-")) return { unresolved: true };
       executable = words[index]?.split("/").at(-1);
     }
-    if (!executable) break;
+    if (!executable) return { unresolved: true };
     index += 1;
     const argumentsForCommand = [];
     while (index < words.length && ![";", "&&", "||", "|"].includes(words[index])) {
       argumentsForCommand.push(words[index]);
       index += 1;
     }
-    if (!READ_LIKE_BASH_COMMANDS.has(executable)) {
-      const segment = words.slice(segmentStart, index);
-      if (segment.some((word) => READ_LIKE_BASH_COMMANDS.has(word.split("/").at(-1)))) {
-        return { readLike: true, unresolved: true };
-      }
+    if (executable === "git") {
+      if (
+        argumentsForCommand[0] !== "status" ||
+        argumentsForCommand.slice(1).some((argument) => ![
+          "--branch",
+          "--porcelain",
+          "--short",
+          "--untracked-files=all",
+          "--untracked-files=no",
+          "--untracked-files=normal",
+        ].includes(argument))
+      ) return { unresolved: true };
       continue;
     }
-    readLike = true;
-    if (!STATIC_READ_COMMANDS.has(executable)) return { readLike, unresolved: true };
+    if (!STATIC_READ_COMMANDS.has(executable)) return { unresolved: true };
     const commandPaths = parseReadArguments(executable, argumentsForCommand);
-    if (!commandPaths) return { readLike, unresolved: true };
+    if (!commandPaths || commandPaths.length === 0) return { unresolved: true };
     paths.push(...commandPaths);
   }
-  return { readLike, paths, unresolved: readLike && paths.length === 0 };
+  return { paths, unresolved: false };
 }
 
 async function defaultRunGit(cwd, args) {
@@ -492,6 +486,27 @@ export function createGitReadGate({
       return { allowed: false, protected: true, reason: ".git internals are not readable" };
     }
 
+    if (nestedBoundary) {
+      const parentBoundaryPath = toGitPath(canonicalWorktree, nestedBoundary);
+      const parentIgnore = await runWorkspaceGit([
+        "check-ignore",
+        "--no-index",
+        "-q",
+        "--",
+        parentBoundaryPath,
+      ]);
+      if (parentIgnore.code === 0) {
+        return { allowed: false, protected: true, reason: "submodule boundary is ignored by parent Git worktree" };
+      }
+      if (parentIgnore.code !== 1) {
+        return {
+          allowed: false,
+          protected: true,
+          reason: `Parent Git ignore check was unresolved: ${parentIgnore.stderr.trim() || `exit ${parentIgnore.code}`}`,
+        };
+      }
+    }
+
     const inventory = nestedBoundary
       ? await inventoryForBoundary(nestedBoundary)
       : await refreshInventoryUnchecked();
@@ -588,27 +603,30 @@ export function createGitReadGate({
           };
         }
         const staticReads = staticReadPaths(normalizedCommand);
-        if (staticReads.readLike) {
-          if (staticReads.unresolved) {
+        if (staticReads.unresolved) {
+          return {
+            allowed: false,
+            protected: true,
+            reason: "Bash command is outside the deterministic scan allowlist",
+          };
+        }
+        for (const path of staticReads.paths) {
+          const decision = await checkPathUnchecked("read", path);
+          if (!decision.allowed) {
             return {
               allowed: false,
               protected: true,
-              reason: "read-like Bash command could not be deterministically validated",
+              reason: `read-like Bash path ${path} is blocked: ${decision.reason}`,
             };
           }
-          for (const path of staticReads.paths) {
-            const decision = await checkPathUnchecked("read", path);
-            if (!decision.allowed) {
-              return {
-                allowed: false,
-                protected: true,
-                reason: `read-like Bash path ${path} is blocked: ${decision.reason}`,
-              };
-            }
-          }
-          return { allowed: true, protected: true, reason: "static Bash read paths are Git candidates" };
         }
-        return { allowed: true, protected: true, reason: "no static read-like path requires validation" };
+        return {
+          allowed: true,
+          protected: true,
+          reason: staticReads.paths.length > 0
+            ? "static Bash read paths are Git candidates"
+            : "allowlisted metadata-only Bash command",
+        };
       });
     } catch (error) {
       return {
