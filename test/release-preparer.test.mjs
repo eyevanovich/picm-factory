@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -12,10 +12,23 @@ import {
   prepareRelease,
   selectBump,
   selectMergedPullRequests,
+  updatePinnedInstallVersion,
 } from "../scripts/prepare-release.mjs";
 
 function git(root, ...args) {
   return execFileSync("git", args, { cwd: root, encoding: "utf8" }).trim();
+}
+
+function writePinnedDocs(root, version) {
+  writeFileSync(
+    join(root, "README.md"),
+    `Install with pi install -l npm:@eyevanovich/picm-factory@${version}\n`,
+  );
+  mkdirSync(join(root, "skills/picm-factory"), { recursive: true });
+  writeFileSync(
+    join(root, "skills/picm-factory/SKILL.md"),
+    `Install with pi install -l npm:@eyevanovich/picm-factory@${version}\n`,
+  );
 }
 
 test("maps Conventional Commits to literal SemVer bumps", () => {
@@ -38,6 +51,20 @@ test("maps Conventional Commits to literal SemVer bumps", () => {
     null,
   );
   assert.equal(bumpVersion("0.1.2", "major"), "1.0.0");
+});
+
+test("updates pinned install commands to the prepared release version", () => {
+  assert.equal(
+    updatePinnedInstallVersion(
+      "pi install -l npm:@eyevanovich/picm-factory@0.2.0\n",
+      "0.3.0",
+    ),
+    "pi install -l npm:@eyevanovich/picm-factory@0.3.0\n",
+  );
+  assert.throws(
+    () => updatePinnedInstallVersion("no install command\n", "0.3.0"),
+    /Pinned PiCM Factory install command was not found/,
+  );
 });
 
 test("selects the highest bump across unreleased commits", () => {
@@ -163,10 +190,13 @@ test("leaves release files unchanged when post-tag commits are not merged pull r
       "# Changelog\n\nFixture history.\n\n## [0.1.2] - 2026-07-21\n\n- Bootstrap.\n";
     writeFileSync(join(root, "package.json"), packageText);
     writeFileSync(join(root, "CHANGELOG.md"), changelogText);
+    writePinnedDocs(root, "0.1.2");
+    const readmeText = readFileSync(join(root, "README.md"), "utf8");
+    const skillText = readFileSync(join(root, "skills/picm-factory/SKILL.md"), "utf8");
     git(root, "init", "-q");
     git(root, "config", "user.name", "Release Test");
     git(root, "config", "user.email", "release-test@example.invalid");
-    git(root, "add", "package.json", "CHANGELOG.md");
+    git(root, "add", "package.json", "CHANGELOG.md", "README.md", "skills/picm-factory/SKILL.md");
     git(root, "commit", "-qm", "chore: bootstrap");
     git(root, "tag", "--no-sign", "v0.1.2");
     writeFileSync(join(root, "direct.txt"), "direct\n");
@@ -186,6 +216,8 @@ test("leaves release files unchanged when post-tag commits are not merged pull r
     );
     assert.equal(readFileSync(join(root, "package.json"), "utf8"), packageText);
     assert.equal(readFileSync(join(root, "CHANGELOG.md"), "utf8"), changelogText);
+    assert.equal(readFileSync(join(root, "README.md"), "utf8"), readmeText);
+    assert.equal(readFileSync(join(root, "skills/picm-factory/SKILL.md"), "utf8"), skillText);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
@@ -202,10 +234,11 @@ test("prepares package, changelog, and release notes from commits after the late
       join(root, "CHANGELOG.md"),
       "# Changelog\n\nFixture history.\n\n## [0.1.2] - 2026-07-21\n\n- Bootstrap.\n",
     );
+    writePinnedDocs(root, "0.1.2");
     git(root, "init", "-q");
     git(root, "config", "user.name", "Release Test");
     git(root, "config", "user.email", "release-test@example.invalid");
-    git(root, "add", "package.json", "CHANGELOG.md");
+    git(root, "add", "package.json", "CHANGELOG.md", "README.md", "skills/picm-factory/SKILL.md");
     git(root, "commit", "-qm", "chore: bootstrap");
     git(root, "tag", "--no-sign", "v0.1.2");
 
@@ -230,6 +263,14 @@ test("prepares package, changelog, and release notes from commits after the late
     );
     assert.equal(JSON.parse(readFileSync(join(root, "package.json"), "utf8")).version, "0.2.0");
     assert.match(readFileSync(join(root, "CHANGELOG.md"), "utf8"), /^## \[0\.2\.0\]/m);
+    assert.match(
+      readFileSync(join(root, "README.md"), "utf8"),
+      /picm-factory@0\.2\.0/,
+    );
+    assert.match(
+      readFileSync(join(root, "skills/picm-factory/SKILL.md"), "utf8"),
+      /picm-factory@0\.2\.0/,
+    );
     assert.match(readFileSync(notesFile, "utf8"), /Add fixture feature\./);
   } finally {
     rmSync(root, { recursive: true, force: true });

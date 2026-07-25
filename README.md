@@ -49,7 +49,11 @@ pi install -l npm:@eyevanovich/picm-factory
 pi
 ```
 
-To pin a reproducible version, append `@0.1.2` to the npm package name.
+To pin a reproducible version, use:
+
+```bash
+pi install -l npm:@eyevanovich/picm-factory@0.2.0
+```
 
 Inside Pi:
 
@@ -90,7 +94,17 @@ For coding repositories, regular `/picm-adopt` can safely detect repository sign
 - Light, Balanced, or Strict manual maintenance;
 - hybrid workspaces where codebase mapping overlaps Stage Pipeline, Specialist Folder, Team / Role OS, or custom layouts.
 
-Coding scans treat Git ignore rules as a hard read boundary. PiCM derives scan candidates through Git, checks each candidate with `git check-ignore --no-index`, and does not inspect ignored file contents—even when an ignored file was previously tracked. Automatic scans do not follow symlinks; explicitly included submodules are treated as separate worktrees with the same checks. Automatic coding scans require a Git worktree.
+Coding scans treat Git ignore rules as a hard read boundary. The read gate is inactive during ordinary Pi work and activates only for scan phases inside an explicitly invoked `/picm-new`, `/picm-adopt`, or `/picm-maintain` workflow. PiCM Factory does not activate from natural-language requests; use one of those commands to authorize a workflow. During an active scan phase, `picm_scan_control inventory` derives candidates through Git without shell execution, and the extension checks direct path-tool calls with `git check-ignore --no-index` immediately before execution, including previously tracked ignored files. It conservatively blocks symlinks, paths outside the worktree, `.git` internals, recursive directory traversal, and every agent Bash tool call. Non-ignored Git candidates remain readable for context-map derivation. Explicitly included submodules are treated as separate worktrees with the same checks. User-typed `!bash` is never intercepted; it is an explicit human action.
+
+PiCM scans and maintenance may run with or without `.git`. When repository metadata is absent, the extension creates transient bare Git metadata in the operating system's temporary directory and points it at the workspace only for candidate and ignore evaluation. This preserves Git's root/nested `.gitignore` and negation semantics without creating `.git` or modifying project files; the temporary metadata is removed on session shutdown.
+
+This deterministic gate covers Pi's built-in path tools and blocks agent Bash during active scans; it is not an OS-level sandbox. Dynamically constructed shell paths therefore cannot be used by the agent during a guarded scan. Unrelated custom filesystem tools and filesystem time-of-check/time-of-use races remain limitations, so the skill prohibits those bypasses and keeps the privacy check mandatory.
+
+## Maintenance cadence
+
+During new-workspace or adoption setup, PiCM Factory can record a shared maintenance policy in `.picm/config.json`: manual, a nudge, or an automatic advisory cycle. Scheduling requires `.picm/config.json` to be non-ignored and a regular, non-symlink file beneath a regular, non-symlink `.picm/` directory. The recommended default offer is a monthly nudge; positive custom intervals may use days, weeks, or calendar months. Skipping or declining leaves maintenance manual and writes no schedule.
+
+The extension stores explicit UTC `lastCycleAt` and `nextDueAt` timestamps. `/picm-new`, `/picm-adopt`, and `/picm-maintain` reset an existing scheduled cycle; `/picm-help` does not. A due nudge only notifies. Automatic means one read-only advisory maintenance run in the first eligible interactive TUI session after the due time—not wall-clock execution while Pi is closed, and never print, JSON, RPC, or other headless execution. It works in Git and non-Git workspaces while honoring any `.gitignore` through the same Git-backed scan boundary. The scheduled timestamp update is authorized by the user's opt-in; reports, repairs, commits, and all other writes or external side effects still require their own preview and approval.
 
 ## Safety model
 
@@ -100,11 +114,11 @@ PiCM Factory is intentionally conservative:
 - Non-destructive by default: preview planned edits before writing.
 - Git encouraged, but no automatic commits.
 - Secrets-first handling: do not commit `.env`, keys, tokens, credentials, or sensitive client data accidentally.
-- Git-ignore-safe coding scans: ignored file contents are never read during coding adoption or maintenance.
+- Git-ignore-gated PiCM scans: during explicitly authorized scan phases, built-in path reads are checked immediately before execution and agent Bash is blocked; ordinary Pi work and user-typed `!bash` are unaffected.
 - `.pi/` belongs to Pi package configuration and controls which project-local Pi resources load.
 - `.picm/` belongs to small PiCM metadata/reports. It is maintainer-only context, not the normal workflow or source of truth.
 
-Recommended `.gitignore` entries for sensitive material are included in this repo and should be suggested to generated/adopted projects when relevant.
+When sensitive, private, or local-only paths are identified, PiCM Factory should propose exact `.gitignore` entries for the user to review instead of adding generic patterns.
 
 ## Acknowledgments
 
@@ -115,7 +129,7 @@ PiCM Factory is an independent adaptation for Pi, built on ideas and work shared
 - **[`RinDig/icm-architect`](https://github.com/RinDig/icm-architect)** — its cold-agent walk test and file-role inventory concepts informed independently adapted parts of PiCM Factory's maintenance and adoption guidance.
 - **[Pi Coding Agent](https://github.com/earendil-works/pi)** by Mario Zechner — the extensible coding-agent platform and package system that PiCM Factory runs on.
 
-See [`docs/references.md`](docs/references.md) for more detail about how these sources informed the project.
+See [`docs/references.md`](https://github.com/eyevanovich/picm-factory/blob/main/docs/references.md) for more detail about how these sources informed the project.
 
 ## Repository layout
 
@@ -138,4 +152,4 @@ Run checks:
 npm run check
 ```
 
-See [`CONTRIBUTING.md`](CONTRIBUTING.md) for development, validation, and pull-request guidance. Releases are prepared and finalized through the manually triggered GitHub Actions flow documented in [`docs/releasing.md`](docs/releasing.md). Use [GitHub Issues](https://github.com/eyevanovich/picm-factory/issues) for public work tracking.
+See [`CONTRIBUTING.md`](https://github.com/eyevanovich/picm-factory/blob/main/CONTRIBUTING.md) for development, validation, and pull-request guidance. Releases are prepared and finalized through the manually triggered GitHub Actions flow documented in [`docs/releasing.md`](https://github.com/eyevanovich/picm-factory/blob/main/docs/releasing.md). Use [GitHub Issues](https://github.com/eyevanovich/picm-factory/issues) for public work tracking.

@@ -46,7 +46,7 @@ Start read-only. Look for:
 
 Also note likely stable-reference areas vs per-run working artifacts or outputs. Do not copy sensitive/private source content into the report or config.
 
-If a shallow Git-ignore-aware path check suggests a coding repository, offer coding adoption without reading source merely to classify it. When selected, load `coding-adoption-guide.md` before further scanning. Its Git-ignore boundary is mandatory: require a Git worktree for automatic scans, derive candidate paths through Git, and run `git check-ignore --no-index` before every read. Never inspect ignored file contents, even when tracked.
+If a shallow path check suggests a coding repository, offer coding adoption without reading source merely to classify it. Derive even this shallow classification from Git candidates rather than directory traversal. Use the real worktree when present; when `.git` is absent, the extension uses isolated transient Git metadata outside the workspace and still honors `.gitignore` without initializing the user's folder. When coding adoption is selected, load `coding-adoption-guide.md` before further scanning. Its Git-ignore boundary is mandatory: derive candidate paths through Git and run `git check-ignore --no-index` before every read. Never inspect ignored file contents, even when tracked.
 
 ## Optional file-role inventory
 
@@ -175,6 +175,8 @@ Default approved adoption writes are minimal and live under `.picm/`:
 ```
 
 Use config to preserve compatibility metadata and provenance, not workflow instructions.
+
+Near the final config preview, offer maintenance cadence: manual, a recommended monthly nudge, or automatic read-only advisory maintenance at the first eligible interactive TUI session after it is due. Explain that scheduling requires `.picm/config.json` to remain non-ignored and a regular non-symlink file beneath a regular non-symlink `.picm/` directory. Accept positive integer day/week/month intervals. Skipped or declined leaves no policy object. Use `picm_maintenance_policy` preview for deterministic `lastCycleAt` and `nextDueAt`, then include the exact object in the same adoption preview. Cadence selection does not approve the config write. Once opted in, cycle timestamp resets are authorized schedule bookkeeping; reports, repairs, commits, and all other writes still require separate approval.
 
 Adopted example:
 

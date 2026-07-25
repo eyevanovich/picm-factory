@@ -23,7 +23,17 @@ const required = [
   ".github/workflows/release.yml",
   "scripts/prepare-release.mjs",
   "test/release-preparer.test.mjs",
+  "test/git-read-gate.test.mjs",
+  "test/maintenance-policy.test.mjs",
+  "test/maintenance-config-store.test.mjs",
+  "test/maintenance-controller.test.mjs",
+  "test/maintenance-extension.test.mjs",
   "extensions/picm-factory.ts",
+  "extensions/runtime/git-read-gate.mjs",
+  "extensions/runtime/maintenance-policy.mjs",
+  "extensions/runtime/maintenance-config-store.mjs",
+  "extensions/runtime/maintenance-controller.mjs",
+  "extensions/runtime/runtime-coordinator.mjs",
   "skills/picm-factory/SKILL.md",
   "prompts/picm-new.md",
   "prompts/picm-adopt.md",
@@ -75,9 +85,15 @@ if (pkg.scripts?.prepublishOnly !== "npm run check") {
   console.error("npm publication must run the package check first");
   process.exit(1);
 }
-if (!pkg.scripts?.check?.includes("test/release-preparer.test.mjs")) {
-  console.error("npm run check must exercise the release preparer tests");
+if (!pkg.scripts?.check?.includes("test/*.test.mjs")) {
+  console.error("npm run check must exercise all test/*.test.mjs files");
   process.exit(1);
+}
+for (const dependency of ["@earendil-works/pi-ai", "@earendil-works/pi-coding-agent", "typebox"]) {
+  if (pkg.peerDependencies?.[dependency] !== "*") {
+    console.error(`Pi runtime peer dependency must be declared with *: ${dependency}`);
+    process.exit(1);
+  }
 }
 
 const packResult = JSON.parse(
@@ -91,6 +107,11 @@ const requiredPackageFiles = [
   "README.md",
   "LICENSE",
   "extensions/picm-factory.ts",
+  "extensions/runtime/git-read-gate.mjs",
+  "extensions/runtime/maintenance-policy.mjs",
+  "extensions/runtime/maintenance-config-store.mjs",
+  "extensions/runtime/maintenance-controller.mjs",
+  "extensions/runtime/runtime-coordinator.mjs",
   "skills/picm-factory/SKILL.md",
   "skills/picm-factory/references/adoption-guide.md",
   "skills/picm-factory/references/coding-adoption-guide.md",
@@ -225,7 +246,12 @@ for (const [file, signals] of Object.entries(mechanicalWorkGuidance)) {
 
 const codingGuidance = {
   "skills/picm-factory/SKILL.md": [
-    "Git ignored means unreadable during coding scans",
+    "Git ignored means unreadable during active PiCM scan phases",
+    "extension deterministically checks built-in path-tool calls",
+    "Outside an explicitly authorized scan phase",
+    "User-typed `!bash` is an explicit human action and is never intercepted",
+    "transient isolated Git metadata outside the workspace",
+    "not an OS sandbox",
     "/picm-adopt coding",
     "Coding Repository",
     "codebase-map capability",
@@ -233,6 +259,10 @@ const codingGuidance = {
   ],
   "skills/picm-factory/references/coding-adoption-guide.md": [
     "git check-ignore --no-index",
+    "inactive during ordinary Pi work",
+    "User-typed `!bash` is never intercepted",
+    "temporary bare Git metadata",
+    "picm_scan_control",
     "Root map",
     "Distributed map",
     "Scan and recommend",
@@ -241,6 +271,8 @@ const codingGuidance = {
     "CONTEXT-MAP.md",
     "Do not follow symlinks during automatic scans",
     "Treat each submodule as a separate repository boundary",
+    "blocks every agent Bash tool call",
+    "picm_scan_control inventory",
   ],
   "skills/picm-factory/references/coding-maintenance-rubric.md": [
     "### Light",
@@ -248,6 +280,8 @@ const codingGuidance = {
     "### Strict",
     "Coding cold-agent walk",
     "Future automation boundary",
+    "extension's immediate `git check-ignore --no-index` gate",
+    "picm_scan_control inventory",
   ],
   "skills/picm-factory/references/layout-profiles.md": [
     "## Coding Repository",
@@ -276,6 +310,10 @@ for (const [file, signals] of Object.entries(codingGuidance)) {
 }
 
 const extension = readFileSync(join(root, "extensions/picm-factory.ts"), "utf8");
+const gitReadGate = readFileSync(
+  join(root, "extensions/runtime/git-read-gate.mjs"),
+  "utf8",
+);
 const forbiddenExtensionRuntimeSignals = [
   "node:child_process",
   "executePipeline",
@@ -288,6 +326,60 @@ for (const signal of forbiddenExtensionRuntimeSignals) {
     process.exit(1);
   }
 }
+if (extension.includes('pi.on("user_bash"')) {
+  console.error("PiCM extension must not intercept user-typed Bash");
+  process.exit(1);
+}
+for (const signal of [
+  'pi.on("tool_call"',
+  'pi.on("session_start"',
+  'name: "picm_scan_control"',
+  'name: "picm_maintenance_policy"',
+]) {
+  if (!extension.includes(signal)) {
+    console.error(`PiCM extension missing deterministic read-gate signal: ${signal}`);
+    process.exit(1);
+  }
+}
+const runtimeCoordinator = readFileSync(
+  join(root, "extensions/runtime/runtime-coordinator.mjs"),
+  "utf8",
+);
+for (const signal of [
+  "scanWorkflows",
+  "isAutomatic",
+  "createGitReadGate",
+  "createMaintenanceController",
+  "resetCycle",
+]) {
+  if (!runtimeCoordinator.includes(signal)) {
+    console.error(`PiCM runtime coordinator missing deterministic policy signal: ${signal}`);
+    process.exit(1);
+  }
+}
+for (const signal of [
+  'execFileAsync("git", ["-C", cwd, ...args]',
+  '"check-ignore",\n      "--no-index"',
+  '"ls-files"',
+  '"init", "--bare", "--quiet"',
+  '"--work-tree"',
+  "async function dispose()",
+  "trusted packaged PiCM resource",
+  "Git read gate failed closed",
+]) {
+  if (!gitReadGate.includes(signal)) {
+    console.error(`PiCM Git read gate missing signal: ${signal}`);
+    process.exit(1);
+  }
+}
+const maintenancePolicy = readFileSync(join(root, "extensions/runtime/maintenance-policy.mjs"), "utf8");
+for (const signal of ["calculateNextDue", "resetPolicy", "isDue", "INVALID_TIMESTAMP"]) {
+  if (!maintenancePolicy.includes(signal)) {
+    console.error(`PiCM maintenance policy missing deterministic signal: ${signal}`);
+    process.exit(1);
+  }
+}
+
 const codingCompletionLists = [
   "adoptArgumentCompletions",
   "maintainArgumentCompletions",
@@ -302,9 +394,30 @@ for (const listName of codingCompletionLists) {
   }
 }
 
+const pinnedInstallPattern =
+  /pi install -l npm:@eyevanovich\/picm-factory@(\d+\.\d+\.\d+)/g;
+for (const [file, text] of [
+  ["README.md", readFileSync(join(root, "README.md"), "utf8")],
+  ["skills/picm-factory/SKILL.md", skill],
+]) {
+  const pinnedVersions = [...text.matchAll(pinnedInstallPattern)].map(
+    ([, version]) => version,
+  );
+  if (
+    pinnedVersions.length === 0 ||
+    pinnedVersions.some((version) => version !== pkg.version)
+  ) {
+    console.error(`${file} must pin the current package version ${pkg.version}`);
+    process.exit(1);
+  }
+}
+
 const releaseDocs = {
   "README.md": [
     "pi install -l npm:@eyevanovich/picm-factory",
+    "https://github.com/eyevanovich/picm-factory/blob/main/docs/references.md",
+    "https://github.com/eyevanovich/picm-factory/blob/main/CONTRIBUTING.md",
+    "https://github.com/eyevanovich/picm-factory/blob/main/docs/releasing.md",
     "GitHub Issues",
   ],
   "CHANGELOG.md": ["Public npm distribution"],
@@ -420,6 +533,7 @@ const releaseWorkflowSignals = [
   "actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6",
   "node scripts/prepare-release.mjs --require-merged-prs",
   "npm run check",
+  "git add package.json CHANGELOG.md README.md skills/picm-factory/SKILL.md",
   'git config user.name "${RELEASE_APP_SLUG}[bot]"',
   "git push --atomic origin",
   "gh release create",

@@ -6,30 +6,30 @@ Coding adoption maps agent-relevant repository context without trying to documen
 
 ## Security boundary: Git ignored means unreadable
 
-Coding repositories commonly store credentials, local configuration, private fixtures, generated artifacts, and large dependency trees behind Git ignore rules. Treat those rules as a hard read boundary.
+Coding repositories commonly store credentials, local configuration, private fixtures, generated artifacts, and large dependency trees behind Git ignore rules. Treat those rules as a hard read boundary. The PiCM extension enforces this boundary only during scan phases inside a workflow explicitly authorized by `/picm-new`, `/picm-adopt`, or `/picm-maintain`; it is inactive during ordinary Pi work. User-typed `!bash` is never intercepted. The first command turn is already scan-active. On later interview turns, use `picm_scan_control` with `begin` before scanning, `end` after the scan phase, and `complete` when the workflow finishes.
 
 Before inspecting repository contents:
 
-1. Confirm the current folder is inside a Git worktree.
-2. Ask whether tracked files contain secrets, regulated data, client data, private material, or other paths that should not be inspected.
-3. Build candidate paths with Git-aware listing such as `git ls-files --cached --others --exclude-standard`. Do not begin with broad `find`, unrestricted recursive listings, `rg --no-ignore`, or equivalent traversal.
-4. Before opening any candidate path—including a user-mentioned path—run:
+1. Determine whether the current folder is inside a Git worktree. A missing `.git` directory does not block maintenance or adoption: the extension uses transient isolated Git metadata outside the workspace with the current folder as its work tree, without initializing or modifying the user's folder.
+2. Ask whether visible files contain secrets, regulated data, client data, private material, or other paths that should not be inspected.
+3. Build candidate paths with Git-aware listing such as `git ls-files --cached --others --exclude-standard`, using either the real worktree or the extension's isolated Git view. Do not begin with broad `find`, unrestricted recursive listings, `rg --no-ignore`, or equivalent traversal.
+4. Before opening any candidate path—including a user-mentioned path—the extension runs the equivalent of:
 
    ```bash
    git check-ignore --no-index -q -- "path/to/candidate"
    ```
 
-   - Exit `0`: the path is ignored; do not read it.
-   - Exit `1`: Git does not consider it ignored; it may be inspected if it is in the approved scan scope.
-   - Any other result: treat the check as unresolved and do not read the path until clarified.
+   - Exit `0`: the path is ignored and the tool call is blocked.
+   - Exit `1`: Git does not consider it ignored; an existing read must still be a Git-derived candidate in the approved scan scope.
+   - Any other result: the gate fails closed and blocks the tool call.
 
-`--no-index` is required so ignore rules are honored even when an ignored path was previously committed. Never use `git show`, another worktree, or direct filesystem reads to bypass this boundary.
+`--no-index` is required so ignore rules are honored even when an ignored path was previously committed. Use `picm_scan_control inventory` for candidate discovery; the extension blocks every agent Bash tool call during an active scan. It is not an OS-level sandbox: dynamically constructed agent shell paths are unavailable during guarded scans, while unrelated custom filesystem tools and filesystem time-of-check/time-of-use races remain limitations. Never use those mechanisms, another worktree, or direct filesystem reads to bypass this boundary. User-typed `!bash` is outside the agent scan boundary and remains unrestricted.
 
-Do not follow symlinks during automatic scans. A non-ignored symlink can resolve to ignored or out-of-repository content. Record only the link path/type and ask before following it. A separately approved symlink read requires resolving the canonical target without opening its contents, proving it remains inside the same worktree, and applying `git check-ignore --no-index` to both the link path and canonical target; if any check is ignored or unresolved, do not read it.
+Do not follow symlinks during automatic scans. A non-ignored symlink can resolve to ignored or out-of-repository content, so the extension blocks direct built-in path-tool access to symlinks. Record only the link path/type; if its content is genuinely needed, ask the user for a non-symlink, non-ignored copy inside the approved worktree rather than bypassing the gate.
 
 Treat each submodule as a separate repository boundary. Do not initialize, fetch, or enter it automatically. If the user explicitly includes an already available submodule, repeat the security/privacy check, Git-derived candidate listing, and per-path ignore checks from that submodule's worktree root before reading anything.
 
-If there is no Git worktree, do not run an automatic coding scan. Recommend initializing Git, or offer a manual root map based only on exact user-provided files and separately approved reads. Never run `git init` for the user.
+Maintenance and coding scans may run with or without repository metadata. When `.git` is absent, the extension creates temporary bare Git metadata under the operating system's temporary directory, points it at the workspace only for Git ignore/candidate evaluation, and removes it on session shutdown. It never runs `git init` in the user's workspace. Existing root and nested `.gitignore` rules, including negation, remain authoritative. If the Git executable itself is unavailable, stop rather than silently bypassing ignore enforcement.
 
 The ignore boundary reduces exposure but does not prove the remaining files are safe. Keep the explicit privacy check and avoid quoting credential-shaped or sensitive content in maps and reports.
 
@@ -41,7 +41,7 @@ The ignore boundary reduces exposure but does not prove the remaining files are 
 
 ### Detection through normal adoption
 
-Normal `/picm-adopt` may use a shallow, path-only, Git-ignore-aware check for signals such as:
+Normal `/picm-adopt` may use a shallow, path-only check for signals such as these. In a Git worktree, derive this sample from Git candidates rather than directory traversal; outside Git, use only a shallow non-recursive listing:
 
 - language or workspace manifests;
 - app, service, package, library, source, and test areas;

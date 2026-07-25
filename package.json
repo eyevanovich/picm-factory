@@ -32,17 +32,20 @@
     "prompts": []
   },
   "scripts": {
-    "check": "node --test test/release-preparer.test.mjs && node scripts/check-package.mjs",
+    "check": "node --test test/*.test.mjs && node scripts/check-package.mjs",
     "prepublishOnly": "npm run check"
   },
   "peerDependencies": {
-    "@earendil-works/pi-coding-agent": "*"
+    "@earendil-works/pi-ai": "*",
+    "@earendil-works/pi-coding-agent": "*",
+    "typebox": "*"
   },
   "publishConfig": {
     "access": "public"
   },
   "files": [
     "extensions/picm-factory.ts",
+    "extensions/runtime",
     "skills/picm-factory/SKILL.md",
     "skills/picm-factory/references",
     "skills/picm-factory/templates"

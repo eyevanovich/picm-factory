@@ -25,6 +25,8 @@ For every non-trivial Warning or Suggestion, include a healing path:
 
 Never apply repairs automatically. Offer exact edits only in `Changes I can apply with your approval` and wait for explicit approval before writing.
 
+A configured automatic cycle means the first eligible interactive TUI session after `nextDueAt`, not a daemon or wall-clock job while Pi is closed. That cycle is chat-only and read-only: no agent-initiated Bash, report write, repair, commit, external side effect, or auto-heal. User-typed `!bash` remains unrestricted. The opted-in atomic update of `lastCycleAt`/`nextDueAt` is schedule bookkeeping and authorizes no other write. A due nudge only notifies and does not reset the cycle. Automatic maintenance may run with or without `.git`; when repository metadata is absent, the extension's transient isolated Git view still honors `.gitignore` without modifying the workspace.
+
 ## Repair tiers
 
 Use these tiers to calibrate risk and approval language:
@@ -238,7 +240,7 @@ Healing paths:
 
 Checks:
 
-- coding scans derive candidates through Git and run `git check-ignore --no-index` before every read; ignored paths are never opened, even when tracked
+- explicitly invoked PiCM scans derive candidates through the Git-backed inventory, and built-in path reads receive an immediate `git check-ignore --no-index` gate; ignored paths are never opened, even when tracked
 - `.gitignore` covers obvious secrets
 - context/examples do not contain credentials or sensitive data by accident
 - private/client material is handled intentionally

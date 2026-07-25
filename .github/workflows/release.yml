@@ -78,7 +78,7 @@ jobs:
         run: |
           git config user.name "${RELEASE_APP_SLUG}[bot]"
           git config user.email "${RELEASE_APP_USER_ID}+${RELEASE_APP_SLUG}[bot]@users.noreply.github.com"
-          git add package.json CHANGELOG.md
+          git add package.json CHANGELOG.md README.md skills/picm-factory/SKILL.md
           git commit -m "chore: release $RELEASE_TAG"
           git tag --no-sign "$RELEASE_TAG"
           git push --atomic origin \
