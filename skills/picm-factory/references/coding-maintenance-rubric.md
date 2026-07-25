@@ -12,7 +12,7 @@ Apply the coding adoption guide's **Git ignored means unreadable** boundary befo
 - honor root and nested `.gitignore` rules in either mode without initializing the user's workspace;
 - begin the authorized scan phase and rely on the extension's immediate `git check-ignore --no-index` gate for built-in path-tool calls;
 - skip ignored paths even if tracked;
-- prohibit broad ignore-bypassing traversal and any dynamically constructed agent-Bash/custom-tool route the deterministic gate cannot evaluate; user-typed `!bash` remains unrestricted;
+- use `picm_scan_control inventory` instead of agent Bash for candidate discovery, and prohibit broad traversal or custom-tool routes the deterministic gate cannot evaluate; user-typed `!bash` remains unrestricted;
 - do not follow symlinks during automatic scans; the extension blocks direct symlink tool paths, and out-of-repository targets remain unreadable;
 - treat an explicitly included submodule as a separate worktree and repeat candidate listing, privacy confirmation, and per-path ignore checks there; never initialize or fetch it automatically;
 - ask about tracked secrets/private areas before content inspection.

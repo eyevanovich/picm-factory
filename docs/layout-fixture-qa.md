@@ -141,7 +141,7 @@ Expected behavior:
 - User-typed `!bash` is never intercepted, including during an active PiCM scan or automatic maintenance cycle.
 - `/picm-new`, `/picm-adopt`, and `/picm-maintain` authorize their workflow and activate the gate for the command's first scan turn; `/picm-help` and natural-language requests do not.
 - After an agent turn settles, the scan gate is inactive. A later interview turn calls `picm_scan_control begin` before scanning and `end` afterward; workflow completion or session shutdown removes the authorization.
-- Derives candidates through Git and runs `git check-ignore --no-index` before reading each candidate.
+- Uses `picm_scan_control inventory` to derive candidates through Git without agent Bash, and runs `git check-ignore --no-index` before reading each candidate.
 - In a second disposable fixture, omit `.git` but keep `.gitignore`; verify explicit and automatic maintenance scans still dispatch, block ignored agent reads, allow safe candidates, create no project `.git`, and remove transient isolated Git metadata on shutdown.
 - Does not open, quote, summarize, hash, or otherwise inspect untracked ignored `.env`, tracked ignored `.env.tracked`, or `secrets/fake-key.pem`, including through `git show`, broad traversal, or another worktree.
 - Does not follow `ignored-target-link` to the ignored `.env` target.

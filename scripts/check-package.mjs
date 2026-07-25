@@ -271,8 +271,8 @@ const codingGuidance = {
     "CONTEXT-MAP.md",
     "Do not follow symlinks during automatic scans",
     "Treat each submodule as a separate repository boundary",
-    "known Git object/content bypasses",
-    "dynamically constructed shell paths",
+    "blocks every agent Bash tool call",
+    "picm_scan_control inventory",
   ],
   "skills/picm-factory/references/coding-maintenance-rubric.md": [
     "### Light",
@@ -281,7 +281,7 @@ const codingGuidance = {
     "Coding cold-agent walk",
     "Future automation boundary",
     "extension's immediate `git check-ignore --no-index` gate",
-    "dynamically constructed agent-Bash/custom-tool route",
+    "picm_scan_control inventory",
   ],
   "skills/picm-factory/references/layout-profiles.md": [
     "## Coding Repository",

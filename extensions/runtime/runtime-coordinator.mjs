@@ -64,9 +64,26 @@ export function createRuntimeCoordinator({
     activeScans.set(sessionId, { cwd: ctx.cwd, expiresAt });
   }
 
-  function scanControl(ctx, action) {
+  async function scanControl(ctx, action, path) {
     const sessionId = sessionIdFor(ctx);
     const workflow = workflowFor(ctx);
+    if (action === "inventory") {
+      if (!workflow || activeScans.get(sessionId)?.cwd !== ctx.cwd) {
+        throw new Error("PICM_SCAN_NOT_ACTIVE: begin an explicitly authorized scan before requesting inventory");
+      }
+      const inventory = await runtime(ctx.cwd).gate.refreshInventory(path);
+      return {
+        ok: true,
+        action,
+        authorized: true,
+        active: true,
+        command: workflow.command,
+        worktree: inventory.worktree,
+        isolated: inventory.isolated,
+        candidates: [...inventory.candidates].sort(),
+        expiresAt: new Date(workflow.expiresAt).toISOString(),
+      };
+    }
     if (action === "begin") {
       if (!workflow) {
         throw new Error("PICM_SCAN_NOT_AUTHORIZED: invoke /picm-new, /picm-adopt, or /picm-maintain before scanning");

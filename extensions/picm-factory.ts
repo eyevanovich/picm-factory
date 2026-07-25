@@ -46,16 +46,17 @@ export default function picmFactoryExtension(pi: ExtensionAPI) {
     name: "picm_scan_control",
     label: "PiCM Scan Control",
     description: "Control Git-guarded scan phases inside an explicitly authorized PiCM command workflow",
-    promptSnippet: "Begin, end, complete, or inspect an explicitly authorized PiCM scan phase",
+    promptSnippet: "Begin, inventory, end, complete, or inspect an explicitly authorized PiCM scan phase",
     promptGuidelines: [
       "Only an explicit /picm-new, /picm-adopt, or /picm-maintain command authorizes this tool; natural-language requests do not.",
-      "The command's first turn is already scan-active. On later interview turns, call begin immediately before filesystem or Bash scanning, call end when that scan phase finishes, and call complete when the PiCM workflow is finished.",
+      "The command's first turn is already scan-active. Use inventory to obtain Git-derived candidate paths without Bash; on later interview turns call begin before scanning, end afterward, and complete when the workflow finishes.",
     ],
     parameters: Type.Object({
-      action: StringEnum(["begin", "end", "complete", "status"] as const),
+      action: StringEnum(["begin", "inventory", "end", "complete", "status"] as const),
+      path: Type.Optional(Type.String({ minLength: 1 })),
     }),
     async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
-      const result = coordinator.scanControl(ctx, params.action);
+      const result = await coordinator.scanControl(ctx, params.action, params.path);
       return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }], details: result };
     },
   });

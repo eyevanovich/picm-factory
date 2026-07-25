@@ -157,61 +157,22 @@ test("allows only canonical shipped PiCM skill resources from the package root",
   });
 });
 
-test("refreshes ignored inventory and blocks literal paths and known bash bypasses", async () => {
+test("blocks every agent Bash command presented to an active gate", async () => {
   await withFixture(async ({ root, packageRoot }) => {
     const gate = createGitReadGate({ cwd: root, packageRoot });
 
-    assert.equal((await gate.checkBash("git status --short")).allowed, true);
-    assert.equal((await gate.checkBash("cat safe.txt")).allowed, true);
-    assert.match((await gate.checkBash("cat ../outside.txt")).reason, /outside the canonical Git worktree|path resolution failed/);
-    assert.match((await gate.checkBash("env cat ../outside.txt")).reason, /blocked/);
-    assert.match((await gate.checkBash("command cat ../outside.txt")).reason, /blocked/);
-    assert.match((await gate.checkBash("LC_ALL=C cat ../outside.txt")).reason, /blocked/);
-    assert.match((await gate.checkBash("echo safe\ncat ../outside.txt")).reason, /allowlist/);
-    assert.match((await gate.checkBash("sudo cat ../outside.txt")).reason, /allowlist/);
-    assert.match((await gate.checkBash("file --files-from=../outside.txt safe.txt")).reason, /allowlist/);
-    assert.match((await gate.checkBash("file -f../outside.txt safe.txt")).reason, /allowlist/);
-    assert.match((await gate.checkBash("env --chdir=.. cat safe.txt")).reason, /allowlist/);
-    assert.match((await gate.checkBash("env -S 'cat ../outside.txt'")).reason, /allowlist/);
-    assert.match((await gate.checkBash("sort < ../outside.txt")).reason, /allowlist/);
-    assert.match((await gate.checkBash("od ../outside.txt")).reason, /allowlist/);
-    assert.match((await gate.checkBash("cp ../outside.txt /dev/stdout")).reason, /allowlist/);
-    assert.match((await gate.checkBash("./tools/cat safe.txt")).reason, /allowlist/);
-    assert.match((await gate.checkBash("PATH=./tools cat safe.txt")).reason, /allowlist/);
-    assert.match((await gate.checkBash("LESSOPEN='|cat ../outside.txt' less safe.txt")).reason, /allowlist/);
-    assert.equal((await gate.checkBash("LC_ALL=C cat safe.txt")).allowed, true);
-    assert.match((await gate.checkBash("cat missing.txt")).reason, /path resolution failed/);
-    assert.match((await gate.checkBash('cat "$TARGET"')).reason, /allowlist/);
-    assert.match((await gate.checkBash("cat .env")).reason, /ignored inventory path/);
-    assert.match((await gate.checkBash("git show HEAD:.env.tracked")).reason, /Git object\/content/);
-    assert.match((await gate.checkBash("git diff HEAD~1")).reason, /Git object\/content/);
-    assert.match((await gate.checkBash("git log -p -1")).reason, /Git patch-content/);
-    assert.match((await gate.checkBash("git config --local --get user.email")).reason, /config command/);
-    assert.match((await gate.checkBash("git -C ../other status")).reason, /worktree switching/);
-    assert.match((await gate.checkBash("git --git-dir=../other/.git status")).reason, /worktree override|\.git access/);
-    assert.match((await gate.checkBash("git --work-tree ../other status")).reason, /worktree override/);
-    assert.match((await gate.checkBash("GIT_DIR=../other/.git git status")).reason, /environment override|\.git access/);
-    assert.match((await gate.checkBash("GIT_WORK_TREE=../other git status")).reason, /environment override/);
-    assert.match((await gate.checkBash("cd ../other && git status")).reason, /shell worktree switching/);
-    assert.match((await gate.checkBash("pushd ../other; git status")).reason, /shell worktree switching/);
-    assert.match((await gate.checkBash("cat .git/config")).reason, /\.git access/);
-    assert.match((await gate.checkBash(`cat ${join(root, ".git", "config")}`)).reason, /\.git access/);
-    assert.match((await gate.checkBash("rg --no-ignore token .")).reason, /ignore-disabling/);
-    assert.match((await gate.checkBash("find . -type f -exec cat {} +")).reason, /broad find/);
-    if (process.platform !== "win32") {
-      assert.match((await gate.checkBash("cat @safe.txt")).reason, /symlinks/);
-      assert.equal((await gate.checkPath("read", "@safe.txt")).allowed, true);
+    for (const command of [
+      "git status --short",
+      "cat safe.txt",
+      "PATH=./tools cat safe.txt",
+      "LESSOPEN='|cat ../outside.txt' less safe.txt",
+      'part=env; cat ".${part}"',
+    ]) {
+      const decision = await gate.checkBash(command);
+      assert.equal(decision.allowed, false);
+      assert.match(decision.reason, /agent Bash is blocked/);
     }
-
-    write(join(root, "late.pem"), "synthetic ignored\n");
-    assert.match((await gate.checkBash("cat late.pem")).reason, /late\.pem/);
-    assert.match((await gate.checkBash("cat .e''nv")).reason, /ignored inventory path/);
-    assert.match((await gate.checkBash("g''it diff HEAD~1")).reason, /Git object\/content/);
-    assert.match((await gate.checkBash("g'i't show HEAD:safe.txt")).reason, /Git object\/content/);
-
-    const dynamic = await gate.checkBash('part=env; cat ".${part}"');
-    assert.equal(dynamic.allowed, false);
-    assert.match(dynamic.reason, /allowlist/);
+    if (process.platform !== "win32") assert.equal((await gate.checkPath("read", "@safe.txt")).allowed, true);
   });
 });
 
@@ -260,6 +221,10 @@ test("treats present submodules as separate guarded worktrees", async (t) => {
   assert.equal((await gate.checkPath("read", "vendor/lib/safe.txt")).allowed, true);
   assert.match((await gate.checkPath("read", "vendor/lib/secret.txt")).reason, /ignored by Git/);
   assert.match((await gate.checkPath("read", "vendor/lib/.git")).reason, /\.git internals/);
+  const inventory = await gate.refreshInventory("vendor/lib");
+  assert.equal(inventory.worktree.endsWith("/vendor/lib"), true);
+  assert.equal(inventory.candidates.has("safe.txt"), true);
+  assert.equal(inventory.candidates.has("secret.txt"), false);
   write(join(root, ".gitignore"), "vendor/lib/\n");
   assert.match((await gate.checkPath("read", "vendor/lib/safe.txt")).reason, /ignored by parent/);
 });
@@ -497,11 +462,21 @@ test("explicit PiCM commands scope the gate to the active session and scan phase
     assert.equal(blockedBash.block, true);
     assert.equal(h.handlers.has("user_bash"), false);
 
+    const scanControl = h.tools.get("picm_scan_control");
+    const inventory = await scanControl.execute(
+      "id",
+      { action: "inventory" },
+      undefined,
+      undefined,
+      ctx,
+    );
+    assert.equal(inventory.details.candidates.includes("safe.txt"), true);
+    assert.equal(inventory.details.candidates.includes(".env"), false);
+
     assert.equal(await h.handlers.get("tool_call")(
       { toolName: "read", input: { path: ".env" } },
       unrelated,
     ), undefined);
-    const scanControl = h.tools.get("picm_scan_control");
     await assert.rejects(
       scanControl.execute("id", { action: "begin" }, undefined, undefined, unrelated),
       /PICM_SCAN_NOT_AUTHORIZED/,

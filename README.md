@@ -94,11 +94,11 @@ For coding repositories, regular `/picm-adopt` can safely detect repository sign
 - Light, Balanced, or Strict manual maintenance;
 - hybrid workspaces where codebase mapping overlaps Stage Pipeline, Specialist Folder, Team / Role OS, or custom layouts.
 
-Coding scans treat Git ignore rules as a hard read boundary. The read gate is inactive during ordinary Pi work and activates only for scan phases inside an explicitly invoked `/picm-new`, `/picm-adopt`, or `/picm-maintain` workflow. PiCM Factory does not activate from natural-language requests; use one of those commands to authorize a workflow. During an active scan phase, the extension derives candidates through Git and checks direct path-tool calls with `git check-ignore --no-index` immediately before execution, including previously tracked ignored files. It conservatively blocks symlinks, paths outside the worktree, `.git` internals, recursive directory traversal, Git content/object commands, literal ignored-path references in agent-initiated Bash, and known ignore-bypass commands. Non-ignored Git candidates remain readable for context-map derivation. Explicitly included submodules are treated as separate worktrees with the same checks. User-typed `!bash` is never intercepted; it is an explicit human action.
+Coding scans treat Git ignore rules as a hard read boundary. The read gate is inactive during ordinary Pi work and activates only for scan phases inside an explicitly invoked `/picm-new`, `/picm-adopt`, or `/picm-maintain` workflow. PiCM Factory does not activate from natural-language requests; use one of those commands to authorize a workflow. During an active scan phase, `picm_scan_control inventory` derives candidates through Git without shell execution, and the extension checks direct path-tool calls with `git check-ignore --no-index` immediately before execution, including previously tracked ignored files. It conservatively blocks symlinks, paths outside the worktree, `.git` internals, recursive directory traversal, and every agent Bash tool call. Non-ignored Git candidates remain readable for context-map derivation. Explicitly included submodules are treated as separate worktrees with the same checks. User-typed `!bash` is never intercepted; it is an explicit human action.
 
 PiCM scans and maintenance may run with or without `.git`. When repository metadata is absent, the extension creates transient bare Git metadata in the operating system's temporary directory and points it at the workspace only for candidate and ignore evaluation. This preserves Git's root/nested `.gitignore` and negation semantics without creating `.git` or modifying project files; the temporary metadata is removed on session shutdown.
 
-This deterministic gate covers Pi's built-in path tools and literal or recognized bypasses in agent-initiated Bash; it is not an OS-level sandbox. Shell variables, arbitrary dynamic path construction, unrelated custom filesystem tools, and filesystem time-of-check/time-of-use races remain limitations, so the skill prohibits those bypasses and keeps the privacy check mandatory.
+This deterministic gate covers Pi's built-in path tools and blocks agent Bash during active scans; it is not an OS-level sandbox. Dynamically constructed shell paths therefore cannot be used by the agent during a guarded scan. Unrelated custom filesystem tools and filesystem time-of-check/time-of-use races remain limitations, so the skill prohibits those bypasses and keeps the privacy check mandatory.
 
 ## Maintenance cadence
 
@@ -114,7 +114,7 @@ PiCM Factory is intentionally conservative:
 - Non-destructive by default: preview planned edits before writing.
 - Git encouraged, but no automatic commits.
 - Secrets-first handling: do not commit `.env`, keys, tokens, credentials, or sensitive client data accidentally.
-- Git-ignore-gated PiCM scans: during explicitly authorized scan phases, built-in path reads and agent-initiated Bash are checked immediately before execution; ordinary Pi work and user-typed `!bash` are unaffected.
+- Git-ignore-gated PiCM scans: during explicitly authorized scan phases, built-in path reads are checked immediately before execution and agent Bash is blocked; ordinary Pi work and user-typed `!bash` are unaffected.
 - `.pi/` belongs to Pi package configuration and controls which project-local Pi resources load.
 - `.picm/` belongs to small PiCM metadata/reports. It is maintainer-only context, not the normal workflow or source of truth.
 
