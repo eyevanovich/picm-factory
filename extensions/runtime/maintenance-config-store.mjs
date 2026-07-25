@@ -42,6 +42,7 @@ export function createMaintenanceConfigStore({
   const directory = join(cwd, ".picm");
   const configPath = join(directory, "config.json");
   const lockPath = `${configPath}.lock`;
+  const recoveryPath = `${lockPath}.recovery`;
 
   async function authorize(toolName) {
     const decision = await gate.checkPath(toolName, configPath);
@@ -124,33 +125,31 @@ export function createMaintenanceConfigStore({
   }
 
   async function recoverStaleLock() {
-    let owner;
     try {
-      owner = JSON.parse(await fs.readFile(lockPath, "utf8"));
-    } catch {
-      return false;
-    }
-    if (!Number.isSafeInteger(owner?.pid) || typeof owner?.token !== "string" || isProcessAlive(owner.pid)) {
-      return false;
-    }
-    const stalePath = `${lockPath}.stale-${owner.token}-${randomId()}`;
-    try {
-      await fs.rename(lockPath, stalePath);
+      await fs.link(lockPath, recoveryPath);
     } catch (error) {
-      if (error?.code === "ENOENT") return true;
+      if (error?.code === "ENOENT") {
+        try { await fs.unlink(recoveryPath); } catch {}
+        return true;
+      }
       return false;
     }
     try {
-      const movedOwner = JSON.parse(await fs.readFile(stalePath, "utf8"));
-      if (movedOwner.pid !== owner.pid || movedOwner.token !== owner.token) {
-        await fs.rename(stalePath, lockPath);
+      const owner = JSON.parse(await fs.readFile(recoveryPath, "utf8"));
+      if (!Number.isSafeInteger(owner?.pid) || typeof owner?.token !== "string" || isProcessAlive(owner.pid)) {
         return false;
       }
-      await fs.unlink(stalePath);
+      const [lockStat, recoveryStat] = await Promise.all([
+        fs.stat(lockPath),
+        fs.stat(recoveryPath),
+      ]);
+      if (lockStat.dev !== recoveryStat.dev || lockStat.ino !== recoveryStat.ino) return false;
+      await fs.unlink(lockPath);
       return true;
     } catch {
-      try { await fs.rename(stalePath, lockPath); } catch {}
       return false;
+    } finally {
+      try { await fs.unlink(recoveryPath); } catch {}
     }
   }
 

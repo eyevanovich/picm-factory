@@ -78,6 +78,10 @@ function parseStaticShellWords(command) {
       quote = character;
     } else if (character === "$" || character === "`" || character === "(" || character === ")") {
       return undefined;
+    } else if (character === "\n") {
+      if (word) words.push(word);
+      word = "";
+      words.push(";");
     } else if (/\s/.test(character)) {
       if (word) words.push(word);
       word = "";
@@ -110,7 +114,21 @@ function staticReadPaths(command) {
   let readLike = false;
   for (let index = 0; index < words.length;) {
     while ([";", "&&", "||", "|"].includes(words[index])) index += 1;
-    const executable = words[index]?.split("/").at(-1);
+    const segmentStart = index;
+    while (/^[A-Za-z_][A-Za-z0-9_]*=/.test(words[index] ?? "")) index += 1;
+    let executable = words[index]?.split("/").at(-1);
+    if (executable === "command") {
+      index += 1;
+      while ((words[index] ?? "").startsWith("-")) index += 1;
+      executable = words[index]?.split("/").at(-1);
+    } else if (executable === "env") {
+      index += 1;
+      while (
+        (words[index] ?? "").startsWith("-") ||
+        /^[A-Za-z_][A-Za-z0-9_]*=/.test(words[index] ?? "")
+      ) index += 1;
+      executable = words[index]?.split("/").at(-1);
+    }
     if (!executable) break;
     index += 1;
     const argumentsForCommand = [];
@@ -118,7 +136,13 @@ function staticReadPaths(command) {
       argumentsForCommand.push(words[index]);
       index += 1;
     }
-    if (!READ_LIKE_BASH_COMMANDS.has(executable)) continue;
+    if (!READ_LIKE_BASH_COMMANDS.has(executable)) {
+      const segment = words.slice(segmentStart, index);
+      if (segment.some((word) => READ_LIKE_BASH_COMMANDS.has(word.split("/").at(-1)))) {
+        return { readLike: true, unresolved: true };
+      }
+      continue;
+    }
     readLike = true;
     if (!STATIC_READ_COMMANDS.has(executable)) return { readLike, unresolved: true };
     let acceptsOptionValue = false;

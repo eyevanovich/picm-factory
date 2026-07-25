@@ -129,7 +129,7 @@ export default function picmFactoryExtension(pi: ExtensionAPI) {
       handler: async (args, ctx) => {
         await ctx.waitForIdle();
         if (command !== "picm-help") {
-          const reset = await coordinator.runtime(ctx.cwd).controller.resetExistingCycle();
+          const reset = await coordinator.resetCycle(ctx);
           if (!reset.ok && ctx.hasUI) {
             ctx.ui.notify(`[picm-factory] Maintenance cycle was not reset: ${reset.message}`, "warning");
           }

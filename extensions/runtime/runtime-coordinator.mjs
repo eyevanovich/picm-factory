@@ -274,20 +274,17 @@ export function createRuntimeCoordinator({
     }
   }
 
+  async function resetCycle(ctx) {
+    return runtime(ctx.cwd).controller.resetExistingCycle();
+  }
+
   return {
     authorizeWorkflow,
-    beginAutomatic,
     checkToolCall,
-    clearActiveScan,
-    clearAutomatic,
     clearWorkflow,
     dispose,
-    isAutomatic,
     maintenancePolicy,
-    releasePreview,
-    reservePreview,
-    retainPreview,
-    runtime,
+    resetCycle,
     scanControl,
     settle,
     startup,

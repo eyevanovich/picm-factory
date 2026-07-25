@@ -33,6 +33,7 @@ const required = [
   "extensions/runtime/maintenance-policy.mjs",
   "extensions/runtime/maintenance-config-store.mjs",
   "extensions/runtime/maintenance-controller.mjs",
+  "extensions/runtime/runtime-coordinator.mjs",
   "skills/picm-factory/SKILL.md",
   "prompts/picm-new.md",
   "prompts/picm-adopt.md",
@@ -110,6 +111,7 @@ const requiredPackageFiles = [
   "extensions/runtime/maintenance-policy.mjs",
   "extensions/runtime/maintenance-config-store.mjs",
   "extensions/runtime/maintenance-controller.mjs",
+  "extensions/runtime/runtime-coordinator.mjs",
   "skills/picm-factory/SKILL.md",
   "skills/picm-factory/references/adoption-guide.md",
   "skills/picm-factory/references/coding-adoption-guide.md",
@@ -333,13 +335,25 @@ for (const signal of [
   'pi.on("session_start"',
   'name: "picm_scan_control"',
   'name: "picm_maintenance_policy"',
-  "scanWorkflows",
-  "isScanActive",
-  "createGitReadGate",
-  "createMaintenanceController",
 ]) {
   if (!extension.includes(signal)) {
     console.error(`PiCM extension missing deterministic read-gate signal: ${signal}`);
+    process.exit(1);
+  }
+}
+const runtimeCoordinator = readFileSync(
+  join(root, "extensions/runtime/runtime-coordinator.mjs"),
+  "utf8",
+);
+for (const signal of [
+  "scanWorkflows",
+  "isAutomatic",
+  "createGitReadGate",
+  "createMaintenanceController",
+  "resetCycle",
+]) {
+  if (!runtimeCoordinator.includes(signal)) {
+    console.error(`PiCM runtime coordinator missing deterministic policy signal: ${signal}`);
     process.exit(1);
   }
 }

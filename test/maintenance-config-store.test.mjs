@@ -233,3 +233,33 @@ test("recovers a dead-owner lock but never removes a live-owner lock", async (t)
   assert.equal(blocked.code, "CONFIG_LOCKED");
   assert.deepEqual(JSON.parse(await fs.readFile(lockPath, "utf8")), { pid: 42, token: "live-owner" });
 });
+
+test("serializes concurrent stale-lock recovery without moving a replacement", async (t) => {
+  const { cwd, gate } = await repository(t);
+  await fs.mkdir(join(cwd, ".picm"));
+  const path = join(cwd, ".picm/config.json");
+  await fs.writeFile(path, `${JSON.stringify({ version: 1, maintenance: monthly })}\n`);
+  await fs.writeFile(`${path}.lock`, `${JSON.stringify({ pid: 41, token: "dead-owner" })}\n`);
+
+  const first = createMaintenanceConfigStore({
+    cwd,
+    gate,
+    processId: 91,
+    isProcessAlive: (pid) => pid !== 41,
+  });
+  const second = createMaintenanceConfigStore({
+    cwd,
+    gate,
+    processId: 92,
+    isProcessAlive: (pid) => pid !== 41,
+  });
+  const results = await Promise.all([
+    first.compareAndUpdateMaintenance(monthly, { mode: "manual" }),
+    second.compareAndUpdateMaintenance(monthly, { mode: "manual" }),
+  ]);
+
+  assert.equal(results.filter((result) => result.changed).length, 1);
+  assert.equal(results.filter((result) => result.conflict).length, 1);
+  await assert.rejects(fs.access(`${path}.lock`));
+  await assert.rejects(fs.access(`${path}.lock.recovery`));
+});

@@ -163,6 +163,11 @@ test("refreshes ignored inventory and blocks literal paths and known bash bypass
     assert.equal((await gate.checkBash("git status --short")).allowed, true);
     assert.equal((await gate.checkBash("cat safe.txt")).allowed, true);
     assert.match((await gate.checkBash("cat ../outside.txt")).reason, /outside the canonical Git worktree|path resolution failed/);
+    assert.match((await gate.checkBash("env cat ../outside.txt")).reason, /blocked/);
+    assert.match((await gate.checkBash("command cat ../outside.txt")).reason, /blocked/);
+    assert.match((await gate.checkBash("LC_ALL=C cat ../outside.txt")).reason, /blocked/);
+    assert.match((await gate.checkBash("echo safe\ncat ../outside.txt")).reason, /blocked/);
+    assert.match((await gate.checkBash("sudo cat ../outside.txt")).reason, /deterministically validated/);
     assert.match((await gate.checkBash("cat missing.txt")).reason, /path resolution failed/);
     assert.match((await gate.checkBash('cat "$TARGET"')).reason, /could not be deterministically validated/);
     assert.match((await gate.checkBash("cat .env")).reason, /ignored inventory path/);
