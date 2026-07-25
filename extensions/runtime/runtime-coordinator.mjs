@@ -67,21 +67,27 @@ export function createRuntimeCoordinator({
   async function scanControl(ctx, action, path) {
     const sessionId = sessionIdFor(ctx);
     const workflow = workflowFor(ctx);
+    const automatic = isAutomatic(ctx);
+    if (automatic && action !== "inventory") {
+      throw new Error("PICM_AUTOMATIC_INVENTORY_ONLY: automatic advisory sessions may only request inventory");
+    }
     if (action === "inventory") {
-      if (!workflow || activeScans.get(sessionId)?.cwd !== ctx.cwd) {
+      if ((!workflow && !automatic) || activeScans.get(sessionId)?.cwd !== ctx.cwd) {
         throw new Error("PICM_SCAN_NOT_ACTIVE: begin an explicitly authorized scan before requesting inventory");
       }
       const inventory = await runtime(ctx.cwd).gate.refreshInventory(path);
+      const scan = activeScans.get(sessionId);
       return {
         ok: true,
         action,
-        authorized: true,
+        authorized: Boolean(workflow),
+        automatic,
         active: true,
-        command: workflow.command,
+        command: workflow?.command ?? "picm-maintain",
         worktree: inventory.worktree,
         isolated: inventory.isolated,
         candidates: [...inventory.candidates].sort(),
-        expiresAt: new Date(workflow.expiresAt).toISOString(),
+        expiresAt: new Date((workflow ?? scan).expiresAt).toISOString(),
       };
     }
     if (action === "begin") {
@@ -146,8 +152,12 @@ export function createRuntimeCoordinator({
   }
 
   async function checkToolCall(event, ctx) {
-    if (isAutomatic(ctx) && !["read", "grep", "find", "ls"].includes(event.toolName)) {
-      return { allowed: false, reason: "Scheduled maintenance is advisory and read-only; this tool is blocked" };
+    if (isAutomatic(ctx)) {
+      const automaticInventory = event.toolName === "picm_scan_control" && event.input?.action === "inventory";
+      if (!automaticInventory && !["read", "grep", "find", "ls"].includes(event.toolName)) {
+        return { allowed: false, reason: "Scheduled maintenance is advisory and read-only; this tool is blocked" };
+      }
+      if (automaticInventory) return { allowed: true };
     }
     workflowFor(ctx);
     if (activeScans.get(sessionIdFor(ctx))?.cwd !== ctx.cwd) return { allowed: true };

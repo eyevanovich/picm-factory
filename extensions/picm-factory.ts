@@ -50,6 +50,7 @@ export default function picmFactoryExtension(pi: ExtensionAPI) {
     promptGuidelines: [
       "Only an explicit /picm-new, /picm-adopt, or /picm-maintain command authorizes this tool; natural-language requests do not.",
       "The command's first turn is already scan-active. Use inventory to obtain Git-derived candidate paths without Bash; on later interview turns call begin before scanning, end afterward, and complete when the workflow finishes.",
+      "An active automatic advisory session may use only inventory; it does not authorize begin, end, complete, status, Bash, or writes.",
     ],
     parameters: Type.Object({
       action: StringEnum(["begin", "inventory", "end", "complete", "status"] as const),

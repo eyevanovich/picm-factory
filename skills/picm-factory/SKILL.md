@@ -198,7 +198,7 @@ Process:
 10. For coding workspaces, adapt the cold-agent walk to root routing → repository map/equivalent → owning boundary → entry point → authoritative tests/checks. Report map presence separately from correctness and user confirmation.
 11. Keep cold-agent walk findings advisory. Treat a short read count as a diagnostic target rather than a naming/layout law, and never claim deterministic workflow state or provenance from file presence.
 12. Keep folder naming/organization feedback loose and advisory unless routing is broken.
-13. If this is a scheduled automatic cycle, keep the entire run read-only and advisory: chat findings only, with no agent-initiated Bash, edits, report, repair, commit, or external side effect. User-typed `!bash` remains unrestricted. The extension's schedule timestamp reset does not authorize any other write.
+13. If this is a scheduled automatic cycle, use only `picm_scan_control inventory` plus guarded built-in read tools for scanning, and keep the entire run read-only and advisory: chat findings only, with no scan lifecycle action, agent-initiated Bash, edits, report, repair, commit, or external side effect. User-typed `!bash` remains unrestricted. The extension's schedule timestamp reset does not authorize any other write.
 14. Offer edits only after preview and explicit confirmation. Never auto-heal.
 15. Offer to write `.picm/maintenance-report.md` only after confirmation.
 16. End general reports with a discoverability note for trace mode: `/picm-maintain trace "describe what drifted"`.

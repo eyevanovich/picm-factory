@@ -98,8 +98,10 @@ test("TUI due nudge notifies once without resetting the cycle", async (t) => {
 
 test("TUI automatic cycle resets, dispatches once, and blocks side effects until settled", async (t) => {
   const cwd = fixture(t, oldDue("automatic"));
+  writeFileSync(join(cwd, "safe.txt"), "safe\n");
   const h = harness();
-  await h.handlers.get("session_start")({}, h.context(cwd));
+  const ctx = h.context(cwd);
+  await h.handlers.get("session_start")({}, ctx);
   assert.equal(h.sent.length, 1);
   assert.match(h.sent[0], /scheduled read-only advisory cycle/);
   assert.match(h.sent[0], /Do not edit or write files/);
@@ -115,6 +117,30 @@ test("TUI automatic cycle resets, dispatches once, and blocks side effects until
   assert.match(blockedIgnoredRead.reason, /ignored by Git/);
   const blockedBash = await h.handlers.get("tool_call")({ toolName: "bash", input: { command: "echo safe" } }, h.context(cwd));
   assert.equal(blockedBash.block, true);
+  assert.equal(await h.handlers.get("tool_call")(
+    { toolName: "picm_scan_control", input: { action: "inventory" } },
+    ctx,
+  ), undefined);
+  const inventory = await h.scanControl.execute(
+    "id",
+    { action: "inventory" },
+    undefined,
+    undefined,
+    ctx,
+  );
+  assert.equal(inventory.details.automatic, true);
+  assert.equal(inventory.details.authorized, false);
+  assert.equal(inventory.details.candidates.includes("safe.txt"), true);
+  assert.equal(inventory.details.candidates.includes(".env"), false);
+  const blockedLifecycle = await h.handlers.get("tool_call")(
+    { toolName: "picm_scan_control", input: { action: "end" } },
+    ctx,
+  );
+  assert.equal(blockedLifecycle.block, true);
+  await assert.rejects(
+    h.scanControl.execute("id", { action: "end" }, undefined, undefined, ctx),
+    /PICM_AUTOMATIC_INVENTORY_ONLY/,
+  );
   assert.equal(h.handlers.has("user_bash"), false);
   await h.handlers.get("agent_settled")({}, h.context(cwd));
   const allowedWrite = await h.handlers.get("tool_call")({ toolName: "write", input: { path: "safe.txt" } }, h.context(cwd));
@@ -132,6 +158,21 @@ test("due automatic maintenance runs in non-Git workspaces while honoring gitign
   await h.handlers.get("session_start")({}, ctx);
   assert.equal(h.sent.length, 1);
   assert.match(h.sent[0], /scheduled read-only advisory cycle/);
+  assert.equal(await h.handlers.get("tool_call")(
+    { toolName: "picm_scan_control", input: { action: "inventory" } },
+    ctx,
+  ), undefined);
+  const inventory = await h.scanControl.execute(
+    "id",
+    { action: "inventory" },
+    undefined,
+    undefined,
+    ctx,
+  );
+  assert.equal(inventory.details.automatic, true);
+  assert.equal(inventory.details.isolated, true);
+  assert.equal(inventory.details.candidates.includes("safe.txt"), true);
+  assert.equal(inventory.details.candidates.includes(".env"), false);
   assert.equal(await h.handlers.get("tool_call")(
     { toolName: "read", input: { path: "safe.txt" } },
     ctx,
@@ -176,6 +217,10 @@ test("automatic read-only guards are scoped to cwd and session", async (t) => {
   await h.handlers.get("session_start")({}, second);
 
   await h.handlers.get("agent_settled")({}, unrelated);
+  await assert.rejects(
+    h.scanControl.execute("id", { action: "inventory" }, undefined, undefined, unrelated),
+    /PICM_SCAN_NOT_ACTIVE/,
+  );
   assert.equal((await h.handlers.get("tool_call")({ toolName: "write", input: { path: "safe.txt" } }, first)).block, true);
   assert.equal((await h.handlers.get("tool_call")({ toolName: "write", input: { path: "safe.txt" } }, second)).block, true);
 
