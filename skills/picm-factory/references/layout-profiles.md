@@ -170,7 +170,7 @@ Map placement is adaptive:
 
 The first-run checklist should route one real coding task from root → map/equivalent → owning boundary → entry point → authoritative tests/checks. Review the code diff and check result, keep cross-boundary effects and unknowns visible, and run `/picm-maintain` after the first real change or when repository boundaries/manifests/verification sources change.
 
-For coding scans and maintenance, ignored files are unreadable: derive candidates through Git and run `git check-ignore --no-index` before each read. Load `coding-adoption-guide.md` or `coding-maintenance-rubric.md` for the full boundary.
+During explicitly invoked PiCM scan phases, ignored files are unreadable. Load `coding-adoption-guide.md` or `coding-maintenance-rubric.md` for the authoritative read-boundary procedure.
 
 ## Custom / Existing Structure
 

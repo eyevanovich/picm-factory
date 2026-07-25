@@ -2,7 +2,7 @@
 
 ## Summary
 
-PiCM Factory uses a small repository-owned Node.js release preparer inside a manually dispatched GitHub Actions workflow. It finds merged `main` pull requests associated with commits after the latest release tag, maps Conventional Commit markers in their titles and bodies to SemVer, updates `package.json` and `CHANGELOG.md`, commits those files directly to `main`, creates the tag and GitHub Release, and dispatches the separate npm trusted-publishing workflow.
+PiCM Factory uses a small repository-owned Node.js release preparer inside a manually dispatched GitHub Actions workflow. It finds merged `main` pull requests associated with commits after the latest release tag, maps Conventional Commit markers in their titles and bodies to SemVer, updates `package.json` and `CHANGELOG.md`, synchronizes the pinned install commands named in the [release guide](releasing.md), commits those files directly to `main`, creates the tag and GitHub Release, and dispatches the separate npm trusted-publishing workflow.
 
 This design keeps the repository setting that prohibits GitHub Actions from creating or approving pull requests. It also works with the selected-actions policy that permits only GitHub-owned actions.
 
@@ -12,7 +12,7 @@ This design keeps the repository setting that prohibits GitHub Actions from crea
 - Only pull requests merged into `main` participate; direct commits do not.
 - `fix:` produces a patch, `feat:` produces a minor, and `!` or a `BREAKING CHANGE:` marker produces a major.
 - Breaking changes before `1.0.0` still produce a major release; `0.1.2` becomes `1.0.0`.
-- The workflow updates the package version and changelog without opening a pull request.
+- The workflow updates the package version, pinned install commands, and changelog without opening a pull request.
 - npm publication uses OIDC trusted publishing rather than a stored token.
 - A pushed tag alone must not publish a package.
 
@@ -49,7 +49,7 @@ Use the repository-owned preparer and a one-stage manual workflow:
 
 1. Merge qualifying Conventional Commit-titled pull requests into `main`.
 2. Manually run **Create release** from `main`.
-3. Resolve post-tag commits to merged `main` pull requests, then generate and validate `package.json` and `CHANGELOG.md` updates according to the [release guide](releasing.md).
+3. Resolve post-tag commits to merged `main` pull requests, then generate and validate the release-file updates defined by the [release guide](releasing.md).
 4. Mint a short-lived token from the dedicated release App, commit directly to `main`, and atomically push the matching tag through the App's PR-rule bypass.
 5. Create the GitHub Release.
 6. Dispatch the trusted npm publisher.

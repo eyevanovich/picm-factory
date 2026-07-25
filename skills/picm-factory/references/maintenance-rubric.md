@@ -240,7 +240,7 @@ Healing paths:
 
 Checks:
 
-- coding scans derive candidates through Git and run `git check-ignore --no-index` before every read; ignored paths are never opened, even when tracked
+- explicitly invoked PiCM scans derive candidates through the Git-backed inventory, and built-in path reads receive an immediate `git check-ignore --no-index` gate; ignored paths are never opened, even when tracked
 - `.gitignore` covers obvious secrets
 - context/examples do not contain credentials or sensitive data by accident
 - private/client material is handled intentionally
