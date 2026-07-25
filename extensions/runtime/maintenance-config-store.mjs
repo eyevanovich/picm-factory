@@ -26,6 +26,15 @@ export function createMaintenanceConfigStore({
   randomId = randomUUID,
   lockRetryMs = 5,
   lockRetries = 100,
+  processId = process.pid,
+  isProcessAlive = (pid) => {
+    try {
+      process.kill(pid, 0);
+      return true;
+    } catch (error) {
+      return error?.code === "EPERM";
+    }
+  },
 } = {}) {
   if (!cwd) throw new Error("Maintenance config store requires cwd");
   if (!gate) throw new Error("Maintenance config store requires a Git read gate");
@@ -114,14 +123,55 @@ export function createMaintenanceConfigStore({
     }
   }
 
+  async function recoverStaleLock() {
+    let owner;
+    try {
+      owner = JSON.parse(await fs.readFile(lockPath, "utf8"));
+    } catch {
+      return false;
+    }
+    if (!Number.isSafeInteger(owner?.pid) || typeof owner?.token !== "string" || isProcessAlive(owner.pid)) {
+      return false;
+    }
+    const stalePath = `${lockPath}.stale-${owner.token}-${randomId()}`;
+    try {
+      await fs.rename(lockPath, stalePath);
+    } catch (error) {
+      if (error?.code === "ENOENT") return true;
+      return false;
+    }
+    try {
+      const movedOwner = JSON.parse(await fs.readFile(stalePath, "utf8"));
+      if (movedOwner.pid !== owner.pid || movedOwner.token !== owner.token) {
+        await fs.rename(stalePath, lockPath);
+        return false;
+      }
+      await fs.unlink(stalePath);
+      return true;
+    } catch {
+      try { await fs.rename(stalePath, lockPath); } catch {}
+      return false;
+    }
+  }
+
   async function acquireLock(waitForLock) {
     for (let attempt = 0; ; attempt += 1) {
+      const token = randomId();
+      let handle;
       try {
-        const handle = await fs.open(lockPath, "wx", 0o600);
+        handle = await fs.open(lockPath, "wx", 0o600);
+        await handle.writeFile(`${JSON.stringify({ pid: processId, token })}\n`, "utf8");
         await handle.sync();
-        return { ok: true, handle };
+        return { ok: true, handle, token };
       } catch (error) {
-        if (error?.code !== "EEXIST") throw error;
+        if (error?.code !== "EEXIST") {
+          try { await handle?.close(); } catch {}
+          if (handle) {
+            try { await fs.unlink(lockPath); } catch {}
+          }
+          throw error;
+        }
+        if (await recoverStaleLock()) continue;
         if (!waitForLock || attempt >= lockRetries) {
           return errorDecision("CONFIG_LOCKED", "maintenance config is locked by another update");
         }
@@ -141,6 +191,7 @@ export function createMaintenanceConfigStore({
     if (!writeAccess.ok) return writeAccess;
 
     let lockHandle;
+    let lockToken;
     let tempHandle;
     const tempPath = `${configPath}.tmp-${process.pid}-${randomId()}`;
     try {
@@ -151,6 +202,7 @@ export function createMaintenanceConfigStore({
       const lock = await acquireLock(conditional);
       if (!lock.ok) return lock;
       lockHandle = lock.handle;
+      lockToken = lock.token;
 
       const underLockDirectory = await validateDirectory();
       if (!underLockDirectory.ok) return underLockDirectory;
@@ -229,7 +281,10 @@ export function createMaintenanceConfigStore({
       try { await fs.unlink(tempPath); } catch {}
       try { await lockHandle?.close(); } catch {}
       if (lockHandle) {
-        try { await fs.unlink(lockPath); } catch {}
+        try {
+          const owner = JSON.parse(await fs.readFile(lockPath, "utf8"));
+          if (owner.pid === processId && owner.token === lockToken) await fs.unlink(lockPath);
+        } catch {}
       }
     }
   }

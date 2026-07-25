@@ -206,3 +206,30 @@ test("lock or write failure leaves the prior file unchanged", async (t) => {
   await assert.rejects(fs.access(`${path}.lock`));
   await assert.rejects(fs.access(`${path}.tmp-${process.pid}-failure`));
 });
+
+test("recovers a dead-owner lock but never removes a live-owner lock", async (t) => {
+  const { cwd, gate } = await repository(t);
+  await fs.mkdir(join(cwd, ".picm"));
+  const path = join(cwd, ".picm/config.json");
+  await fs.writeFile(path, `${JSON.stringify({ version: 1, maintenance: monthly })}\n`);
+  const lockPath = `${path}.lock`;
+  await fs.writeFile(lockPath, `${JSON.stringify({ pid: 41, token: "dead-owner" })}\n`);
+  const recovered = await createMaintenanceConfigStore({
+    cwd,
+    gate,
+    processId: 99,
+    isProcessAlive: (pid) => pid !== 41,
+  }).updateMaintenance({ mode: "manual" });
+  assert.equal(recovered.ok, true);
+  await assert.rejects(fs.access(lockPath));
+
+  await fs.writeFile(lockPath, `${JSON.stringify({ pid: 42, token: "live-owner" })}\n`);
+  const blocked = await createMaintenanceConfigStore({
+    cwd,
+    gate,
+    processId: 99,
+    isProcessAlive: () => true,
+  }).updateMaintenance(monthly);
+  assert.equal(blocked.code, "CONFIG_LOCKED");
+  assert.deepEqual(JSON.parse(await fs.readFile(lockPath, "utf8")), { pid: 42, token: "live-owner" });
+});

@@ -9,6 +9,15 @@ const execFileAsync = promisify(execFile);
 const PATH_TOOLS = new Set(["read", "edit", "write", "grep", "find", "ls"]);
 const READ_LIKE_TOOLS = new Set(["read", "edit", "grep", "find", "ls"]);
 const TRAVERSAL_TOOLS = new Set(["grep", "find", "ls"]);
+const STATIC_READ_COMMANDS = new Set(["cat", "head", "tail", "wc", "file", "strings", "less", "more"]);
+const READ_LIKE_BASH_COMMANDS = new Set([
+  ...STATIC_READ_COMMANDS,
+  "awk",
+  "grep",
+  "rg",
+  "ripgrep",
+  "sed",
+]);
 const KNOWN_BASH_BYPASSES = [
   { pattern: /\b(?:rg|ripgrep)\b[^\n;&|]*(?:^|\s)--no-ignore(?:-[a-z-]+)?(?:\s|$)/i, reason: "ignore-disabling search flag" },
   { pattern: /\b(?:rg|ripgrep)\b[^\n;&|]*(?:^|\s)-u{1,3}(?:\s|$)/, reason: "unrestricted search flag" },
@@ -49,6 +58,85 @@ function parseNullList(output) {
 
 function stripAtPrefix(path) {
   return path.startsWith("@") ? path.slice(1) : path;
+}
+
+function parseStaticShellWords(command) {
+  const words = [];
+  let word = "";
+  let quote;
+  for (let index = 0; index < command.length; index += 1) {
+    const character = command[index];
+    if (character === "\\" && quote !== "'") {
+      index += 1;
+      if (index >= command.length) return undefined;
+      word += command[index];
+    } else if (quote) {
+      if (character === quote) quote = undefined;
+      else if (character === "$" || character === "`") return undefined;
+      else word += character;
+    } else if (character === "'" || character === '"') {
+      quote = character;
+    } else if (character === "$" || character === "`" || character === "(" || character === ")") {
+      return undefined;
+    } else if (/\s/.test(character)) {
+      if (word) words.push(word);
+      word = "";
+    } else if (";&|<>".includes(character)) {
+      if (word) words.push(word);
+      word = "";
+      const next = command[index + 1];
+      const operator = (character === "&" && next === "&") || (character === "|" && next === "|")
+        ? `${character}${next}`
+        : character;
+      if (operator.length === 2) index += 1;
+      words.push(operator);
+    } else {
+      word += character;
+    }
+  }
+  if (quote) return undefined;
+  if (word) words.push(word);
+  return words;
+}
+
+function staticReadPaths(command) {
+  const words = parseStaticShellWords(command);
+  if (!words) {
+    const readLike = /\b(?:awk|cat|file|grep|head|less|more|rg|ripgrep|sed|strings|tail|wc)\b/.test(command);
+    return { readLike, unresolved: readLike };
+  }
+
+  const paths = [];
+  let readLike = false;
+  for (let index = 0; index < words.length;) {
+    while ([";", "&&", "||", "|"].includes(words[index])) index += 1;
+    const executable = words[index]?.split("/").at(-1);
+    if (!executable) break;
+    index += 1;
+    const argumentsForCommand = [];
+    while (index < words.length && ![";", "&&", "||", "|"].includes(words[index])) {
+      argumentsForCommand.push(words[index]);
+      index += 1;
+    }
+    if (!READ_LIKE_BASH_COMMANDS.has(executable)) continue;
+    readLike = true;
+    if (!STATIC_READ_COMMANDS.has(executable)) return { readLike, unresolved: true };
+    let acceptsOptionValue = false;
+    for (const argument of argumentsForCommand) {
+      if (argument === "<" || argument === ">" || argument === ">>") return { readLike, unresolved: true };
+      if (acceptsOptionValue) {
+        acceptsOptionValue = false;
+        continue;
+      }
+      if (argument === "--") continue;
+      if (argument.startsWith("-")) {
+        acceptsOptionValue = ["-n", "-c", "--lines", "--bytes"].includes(argument);
+        continue;
+      }
+      paths.push(argument);
+    }
+  }
+  return { readLike, paths, unresolved: readLike && paths.length === 0 };
 }
 
 async function defaultRunGit(cwd, args) {
@@ -391,7 +479,28 @@ export function createGitReadGate({
             reason: `command references Git-ignored inventory path: ${ignoredPath}`,
           };
         }
-        return { allowed: true, protected: true, reason: "no literal ignored-path reference detected" };
+        const staticReads = staticReadPaths(normalizedCommand);
+        if (staticReads.readLike) {
+          if (staticReads.unresolved) {
+            return {
+              allowed: false,
+              protected: true,
+              reason: "read-like Bash command could not be deterministically validated",
+            };
+          }
+          for (const path of staticReads.paths) {
+            const decision = await checkPathUnchecked("read", path);
+            if (!decision.allowed) {
+              return {
+                allowed: false,
+                protected: true,
+                reason: `read-like Bash path ${path} is blocked: ${decision.reason}`,
+              };
+            }
+          }
+          return { allowed: true, protected: true, reason: "static Bash read paths are Git candidates" };
+        }
+        return { allowed: true, protected: true, reason: "no static read-like path requires validation" };
       });
     } catch (error) {
       return {

@@ -161,6 +161,10 @@ test("refreshes ignored inventory and blocks literal paths and known bash bypass
     const gate = createGitReadGate({ cwd: root, packageRoot });
 
     assert.equal((await gate.checkBash("git status --short")).allowed, true);
+    assert.equal((await gate.checkBash("cat safe.txt")).allowed, true);
+    assert.match((await gate.checkBash("cat ../outside.txt")).reason, /outside the canonical Git worktree|path resolution failed/);
+    assert.match((await gate.checkBash("cat missing.txt")).reason, /path resolution failed/);
+    assert.match((await gate.checkBash('cat "$TARGET"')).reason, /could not be deterministically validated/);
     assert.match((await gate.checkBash("cat .env")).reason, /ignored inventory path/);
     assert.match((await gate.checkBash("git show HEAD:.env.tracked")).reason, /Git object\/content/);
     assert.match((await gate.checkBash("git diff HEAD~1")).reason, /Git object\/content/);
@@ -185,8 +189,8 @@ test("refreshes ignored inventory and blocks literal paths and known bash bypass
     assert.match((await gate.checkBash("g'i't show HEAD:safe.txt")).reason, /Git object\/content/);
 
     const dynamic = await gate.checkBash('part=env; cat ".${part}"');
-    assert.equal(dynamic.allowed, true);
-    assert.match(dynamic.reason, /no literal ignored-path reference/);
+    assert.equal(dynamic.allowed, false);
+    assert.match(dynamic.reason, /could not be deterministically validated/);
   });
 });
 
