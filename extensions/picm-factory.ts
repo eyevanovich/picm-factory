@@ -1,10 +1,12 @@
-import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { StringEnum } from "@earendil-works/pi-ai";
 import { Type } from "typebox";
 import { packageRootFromImportMeta } from "./runtime/git-read-gate.mjs";
 import { createRuntimeCoordinator } from "./runtime/runtime-coordinator.mjs";
 
 type CommandName = "picm-new" | "picm-adopt" | "picm-maintain" | "picm-help";
+
+const scanWorkflowEntryType = "picm-scan-workflow";
 
 const commandDescriptions: Record<CommandName, string> = {
   "picm-new": "Create a new PiCM folder-agent workspace through an interview-led setup flow",
@@ -42,6 +44,18 @@ export default function picmFactoryExtension(pi: ExtensionAPI) {
   const packageRoot = packageRootFromImportMeta(import.meta.url);
   const coordinator = createRuntimeCoordinator({ packageRoot });
 
+  const restoreScanWorkflow = (ctx: ExtensionContext) => {
+    let state;
+    for (const entry of ctx.sessionManager.getBranch()) {
+      if (entry.type === "custom" && entry.customType === scanWorkflowEntryType) state = entry.data;
+    }
+    coordinator.restoreWorkflow(ctx, state);
+  };
+
+  const recordClearedWorkflow = (ctx: ExtensionContext) => {
+    pi.appendEntry(scanWorkflowEntryType, { status: "cleared", cwd: ctx.cwd });
+  };
+
   pi.registerTool({
     name: "picm_scan_control",
     label: "PiCM Scan Control",
@@ -58,6 +72,16 @@ export default function picmFactoryExtension(pi: ExtensionAPI) {
     }),
     async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
       const result = await coordinator.scanControl(ctx, params.action, params.path);
+      if (params.action === "begin" && result.authorized) {
+        pi.appendEntry(scanWorkflowEntryType, {
+          status: "authorized",
+          cwd: ctx.cwd,
+          command: result.command,
+          expiresAt: result.expiresAt,
+        });
+      } else if (params.action === "complete") {
+        recordClearedWorkflow(ctx);
+      }
       return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }], details: result };
     },
   });
@@ -102,11 +126,16 @@ export default function picmFactoryExtension(pi: ExtensionAPI) {
   });
 
   pi.on("session_start", async (_event, ctx) => {
+    restoreScanWorkflow(ctx);
     await coordinator.startup(ctx, {
       appendEntry: pi.appendEntry.bind(pi),
       sendUserMessage: pi.sendUserMessage.bind(pi),
       scheduledPrompt: scheduledMaintenancePrompt(),
     });
+  });
+
+  pi.on("session_tree", async (_event, ctx) => {
+    restoreScanWorkflow(ctx);
   });
 
   pi.on("agent_settled", async (_event, ctx) => {
@@ -135,14 +164,18 @@ export default function picmFactoryExtension(pi: ExtensionAPI) {
           if (!reset.ok && ctx.hasUI) {
             ctx.ui.notify(`[picm-factory] Maintenance cycle was not reset: ${reset.message}`, "warning");
           }
-          coordinator.authorizeWorkflow(ctx, command);
-        } else {
-          coordinator.clearWorkflow(ctx);
+          const authorization = coordinator.authorizeWorkflow(ctx, command);
+          pi.appendEntry(scanWorkflowEntryType, { status: "authorized", ...authorization });
+        } else if (coordinator.clearWorkflow(ctx)) {
+          recordClearedWorkflow(ctx);
         }
         try {
           pi.sendUserMessage(buildPrompt(command, args));
         } catch (error) {
-          if (command !== "picm-help") coordinator.clearWorkflow(ctx);
+          if (command !== "picm-help") {
+            coordinator.clearWorkflow(ctx);
+            recordClearedWorkflow(ctx);
+          }
           throw error;
         }
       },
