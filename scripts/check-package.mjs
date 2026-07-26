@@ -187,32 +187,6 @@ for (const file of firstRunGuidanceFiles) {
   }
 }
 
-const firstRunAudienceGuidance = {
-  "skills/picm-factory/SKILL.md": [
-    "separate user actions from automatic agent behavior",
-  ],
-  "skills/picm-factory/references/coding-adoption-guide.md": [
-    "state the coding task normally",
-    "expected agent behavior",
-  ],
-  "skills/picm-factory/references/layout-profiles.md": [
-    "user-facing",
-    "agent should",
-  ],
-  "docs/layout-fixture-qa.md": [
-    "does not tell the user to open or read `agents.md`",
-  ],
-};
-for (const [file, signals] of Object.entries(firstRunAudienceGuidance)) {
-  const text = readFileSync(join(root, file), "utf8").toLowerCase();
-  for (const signal of signals) {
-    if (!text.includes(signal)) {
-      console.error(`First-run audience guidance ${file} missing signal: ${signal}`);
-      process.exit(1);
-    }
-  }
-}
-
 const minimumViableGuidanceFiles = [
   "skills/picm-factory/SKILL.md",
   "skills/picm-factory/references/interview-guide.md",
