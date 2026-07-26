@@ -272,12 +272,12 @@ Omit the consolidation section in additive mode unless there is a safety/routing
 
 ## First coding run
 
-End with a path-specific checklist:
+End with a path-specific, user-facing checklist that separates the user's actions from expected agent behavior:
 
-1. Start from the canonical root routing file.
-2. Follow it to `CONTEXT-MAP.md` or the reused architecture map.
-3. Choose one real change and reach the relevant local context/source boundary.
-4. Confirm the named entry point and verification source before editing.
-5. Make the smallest change, run the repository's real checks, and review the diff/test result.
-6. Keep cross-boundary effects and unknowns visible.
-7. Run `/picm-maintain` after the first real coding task and whenever repository boundaries, manifests, commands, or architecture docs change.
+1. Tell the user to state the coding task normally; do not tell them to manually open or read an auto-loaded `AGENTS.md` or `CLAUDE.md`.
+2. Describe as expected agent behavior that the agent uses the canonical root routing file and follows it to `CONTEXT-MAP.md` or the reused architecture map.
+3. The agent should reach the relevant local context/source boundary and confirm the named entry point and verification source before editing.
+4. The agent should make the smallest appropriate change, run the repository's real checks, and present the diff/test result.
+5. Tell the user to review that presented diff/test result and any approval boundary that actually requires human judgment.
+6. Require the agent to keep cross-boundary effects and unknowns visible.
+7. Recommend `/picm-maintain` after the first real coding task and whenever repository boundaries, manifests, commands, or architecture docs change.

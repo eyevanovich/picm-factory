@@ -89,6 +89,7 @@ Expected behavior:
 - `monorepo-distributed` routes through `AGENTS.md` → `CONTEXT-MAP.md` → the selected app/package `CONTEXT.md`.
 - Distributed mapping treats `apps/api` and `packages/shared` as meaningful boundaries because they have distinct responsibilities, entry points, and tests—not merely because they are workspace members.
 - The map points to authoritative manifests/tests rather than copying large command or dependency inventories.
+- Completion guidance separates user actions from agent behavior: it tells the user to state a normal coding task and review the presented diff/check result, while routing and verification remain expected agent behavior. It does not tell the user to open or read `AGENTS.md` or manually follow the repository map.
 
 ### Hybrid composition
 
