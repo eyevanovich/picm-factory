@@ -168,7 +168,7 @@ Map placement is adaptive:
 
 `AGENTS.md`/canonical `CLAUDE.md` owns behavior and task routing. `CONTEXT-MAP.md` indexes areas, responsibilities, authoritative context, entry points, and verification sources. Local `CONTEXT.md` files hold boundary-specific detail. Do not duplicate the same instructions across all three.
 
-The first-run checklist should route one real coding task from root → map/equivalent → owning boundary → entry point → authoritative tests/checks. Review the code diff and check result, keep cross-boundary effects and unknowns visible, and run `/picm-maintain` after the first real change or when repository boundaries/manifests/verification sources change.
+The first-run checklist should be user-facing: tell the user they can state one real coding task normally, then describe what the agent should do from the auto-loaded root routing → map/equivalent → owning boundary → entry point → authoritative tests/checks. The user reviews the presented code diff and check result; the agent keeps cross-boundary effects and unknowns visible. Recommend `/picm-maintain` after the first real change or when repository boundaries/manifests/verification sources change.
 
 During explicitly invoked PiCM scan phases, ignored files are unreadable. Load `coding-adoption-guide.md` or `coding-maintenance-rubric.md` for the authoritative read-boundary procedure.
 

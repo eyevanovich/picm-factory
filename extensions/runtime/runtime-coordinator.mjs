@@ -3,6 +3,8 @@ import { createGitReadGate } from "./git-read-gate.mjs";
 import { createMaintenanceConfigStore } from "./maintenance-config-store.mjs";
 import { createMaintenanceController } from "./maintenance-controller.mjs";
 
+const EXPLICIT_SCAN_COMMANDS = new Set(["picm-new", "picm-adopt", "picm-maintain"]);
+
 export function createRuntimeCoordinator({
   packageRoot,
   scanWorkflowTtlMs = 2 * 60 * 60 * 1000,
@@ -53,8 +55,9 @@ export function createRuntimeCoordinator({
 
   function clearWorkflow(ctx) {
     const sessionId = sessionIdFor(ctx);
-    scanWorkflows.delete(sessionId);
-    activeScans.delete(sessionId);
+    const hadWorkflow = scanWorkflows.delete(sessionId);
+    const hadActiveScan = activeScans.delete(sessionId);
+    return hadWorkflow || hadActiveScan;
   }
 
   function authorizeWorkflow(ctx, command) {
@@ -62,6 +65,26 @@ export function createRuntimeCoordinator({
     const expiresAt = Date.now() + scanWorkflowTtlMs;
     scanWorkflows.set(sessionId, { cwd: ctx.cwd, command, expiresAt });
     activeScans.set(sessionId, { cwd: ctx.cwd, expiresAt });
+    return { cwd: ctx.cwd, command, expiresAt: new Date(expiresAt).toISOString() };
+  }
+
+  function restoreWorkflow(ctx, state) {
+    clearWorkflow(ctx);
+    if (
+      state?.status !== "authorized" ||
+      state.cwd !== ctx.cwd ||
+      !EXPLICIT_SCAN_COMMANDS.has(state.command)
+    ) {
+      return false;
+    }
+    const expiresAt = Date.parse(state.expiresAt);
+    if (!Number.isFinite(expiresAt) || expiresAt <= Date.now()) return false;
+    scanWorkflows.set(sessionIdFor(ctx), {
+      cwd: ctx.cwd,
+      command: state.command,
+      expiresAt,
+    });
+    return true;
   }
 
   async function scanControl(ctx, action, path) {
@@ -283,7 +306,7 @@ export function createRuntimeCoordinator({
   }
 
   async function startup(ctx, { appendEntry, sendUserMessage, scheduledPrompt }) {
-    if (ctx.mode !== "tui") return;
+    if (ctx.mode !== "tui" || workflowFor(ctx)) return;
     const seenKeys = new Set();
     for (const entry of ctx.sessionManager.getEntries()) {
       if (entry.type === "custom" && entry.customType === "picm-maintenance-due" && typeof entry.data?.dueKey === "string") {
@@ -329,6 +352,7 @@ export function createRuntimeCoordinator({
     dispose,
     maintenancePolicy,
     resetCycle,
+    restoreWorkflow,
     scanControl,
     settle,
     startup,

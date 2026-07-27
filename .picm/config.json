@@ -1,10 +1,11 @@
 {
   "version": 1,
-  "profile": "custom-existing-structure",
+  "profile": "coding-repository",
   "generatedBy": "picm-factory",
   "adoption": {
     "status": "adopted",
-    "readiness": "ready"
+    "readiness": "ready",
+    "report": ".picm/adoption-report.md"
   },
   "routing": {
     "source": "AGENTS.md",
@@ -14,6 +15,35 @@
   "paths": {
     "rootInstructions": "AGENTS.md",
     "rootContext": "CONTEXT.md",
-    "workflowFolders": ["qa-runner"]
+    "workflowFolders": [
+      "qa-runner"
+    ]
+  },
+  "capabilities": {
+    "codebaseMap": {
+      "shape": "root",
+      "roots": [
+        "extensions",
+        "skills",
+        "test",
+        "scripts",
+        "docs",
+        "qa-runner"
+      ],
+      "map": "AGENTS.md",
+      "localContexts": [
+        "qa-runner/CONTEXT.md"
+      ],
+      "maintenancePreset": "balanced"
+    }
+  },
+  "maintenance": {
+    "mode": "nudge",
+    "interval": {
+      "value": 1,
+      "unit": "weeks"
+    },
+    "lastCycleAt": "2026-07-26T03:53:14.305Z",
+    "nextDueAt": "2026-08-02T03:53:14.305Z"
   }
 }

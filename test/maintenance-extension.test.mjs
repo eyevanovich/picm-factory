@@ -54,6 +54,7 @@ function harness({ entries = [], confirm = true, sendError } = {}) {
     hasUI: mode === "tui" || mode === "rpc",
     waitForIdle: async () => {},
     sessionManager: {
+      getBranch: () => entries,
       getEntries: () => entries,
       getSessionId: () => sessionId,
     },

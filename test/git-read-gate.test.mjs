@@ -71,7 +71,7 @@ async function withFixture(run) {
   }
 }
 
-function extensionHarness({ sendError } = {}) {
+function extensionHarness({ entries = [], sendError } = {}) {
   const handlers = new Map();
   const commands = new Map();
   const tools = new Map();
@@ -80,6 +80,7 @@ function extensionHarness({ sendError } = {}) {
     on(name, handler) { handlers.set(name, handler); },
     registerCommand(name, definition) { commands.set(name, definition); },
     registerTool(definition) { tools.set(definition.name, definition); },
+    appendEntry(customType, data) { entries.push({ type: "custom", customType, data }); },
     sendUserMessage(message) {
       if (sendError) throw sendError;
       sent.push(message);
@@ -92,7 +93,8 @@ function extensionHarness({ sendError } = {}) {
     hasUI: false,
     waitForIdle: async () => {},
     sessionManager: {
-      getEntries: () => [],
+      getBranch: () => entries,
+      getEntries: () => entries,
       getSessionId: () => sessionId,
     },
     ui: { notify() {} },
@@ -526,6 +528,77 @@ test("explicit PiCM commands scope the gate to the active session and scan phase
   });
 });
 
+test("explicit PiCM scan authorization survives resuming the same session", async () => {
+  await withFixture(async ({ root }) => {
+    const entries = [];
+    const sessionId = "resumed-session";
+    const first = extensionHarness({ entries });
+    const firstCtx = first.context(root, sessionId);
+
+    await first.commands.get("picm-adopt").handler("coding", firstCtx);
+    await first.tools.get("picm_scan_control").execute(
+      "id",
+      { action: "end" },
+      undefined,
+      undefined,
+      firstCtx,
+    );
+    await first.handlers.get("session_shutdown")({ reason: "quit" }, firstCtx);
+
+    const resumed = extensionHarness({ entries });
+    const resumedCtx = resumed.context(root, sessionId);
+    await resumed.handlers.get("session_start")(
+      { reason: "resume", previousSessionFile: "/synthetic/previous.jsonl" },
+      resumedCtx,
+    );
+
+    const restored = await resumed.tools.get("picm_scan_control").execute(
+      "id",
+      { action: "status" },
+      undefined,
+      undefined,
+      resumedCtx,
+    );
+    assert.equal(restored.details.authorized, true);
+    assert.equal(restored.details.active, false);
+
+    const begun = await resumed.tools.get("picm_scan_control").execute(
+      "id",
+      { action: "begin" },
+      undefined,
+      undefined,
+      resumedCtx,
+    );
+    assert.equal(begun.details.authorized, true);
+    assert.equal(begun.details.active, true);
+    await resumed.tools.get("picm_scan_control").execute(
+      "id",
+      { action: "complete" },
+      undefined,
+      undefined,
+      resumedCtx,
+    );
+    await resumed.handlers.get("session_shutdown")({ reason: "quit" }, resumedCtx);
+
+    const afterCompletion = extensionHarness({ entries });
+    const afterCompletionCtx = afterCompletion.context(root, sessionId);
+    await afterCompletion.handlers.get("session_start")(
+      { reason: "resume", previousSessionFile: "/synthetic/previous.jsonl" },
+      afterCompletionCtx,
+    );
+    await assert.rejects(
+      afterCompletion.tools.get("picm_scan_control").execute(
+        "id",
+        { action: "begin" },
+        undefined,
+        undefined,
+        afterCompletionCtx,
+      ),
+      /PICM_SCAN_NOT_AUTHORIZED/,
+    );
+  });
+});
+
 test("scan authorization rejects help, timeout, cwd mismatch, and dispatch failure", async (t) => {
   await withFixture(async ({ root }) => {
     const scanEvent = { toolName: "read", input: { path: ".env" } };
@@ -541,7 +614,8 @@ test("scan authorization rejects help, timeout, cwd mismatch, and dispatch failu
     );
     assert.equal(await help.handlers.get("tool_call")(scanEvent, helpCtx), undefined);
 
-    const timed = extensionHarness();
+    const timedEntries = [];
+    const timed = extensionHarness({ entries: timedEntries });
     const timedCtx = timed.context(root, "timed-session");
     let now = Date.now();
     t.mock.method(Date, "now", () => now);
@@ -550,6 +624,23 @@ test("scan authorization rejects help, timeout, cwd mismatch, and dispatch failu
     assert.equal(await timed.handlers.get("tool_call")(scanEvent, timedCtx), undefined);
     await assert.rejects(
       timed.tools.get("picm_scan_control").execute("id", { action: "begin" }, undefined, undefined, timedCtx),
+      /PICM_SCAN_NOT_AUTHORIZED/,
+    );
+    await timed.handlers.get("session_shutdown")({ reason: "quit" }, timedCtx);
+    const resumedAfterExpiry = extensionHarness({ entries: timedEntries });
+    const resumedAfterExpiryCtx = resumedAfterExpiry.context(root, "timed-session");
+    await resumedAfterExpiry.handlers.get("session_start")(
+      { reason: "resume", previousSessionFile: "/synthetic/previous.jsonl" },
+      resumedAfterExpiryCtx,
+    );
+    await assert.rejects(
+      resumedAfterExpiry.tools.get("picm_scan_control").execute(
+        "id",
+        { action: "begin" },
+        undefined,
+        undefined,
+        resumedAfterExpiryCtx,
+      ),
       /PICM_SCAN_NOT_AUTHORIZED/,
     );
 
