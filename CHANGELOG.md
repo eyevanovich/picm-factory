@@ -2,6 +2,14 @@
 
 All notable changes to PiCM Factory will be documented here.
 
+## [0.3.1] - 2026-07-27
+
+### Fixed
+
+- Persist explicit PiCM scan authorization across same-session resumes, restoring it inactive while keeping completed, cleared, failed, or expired workflows revoked.
+- Clarify Coding Repository completion guidance so users state tasks normally and review results while agents handle routing, boundaries, edits, and verification.
+- Record this repository’s approved Coding Repository adoption with a root codebase map, Balanced maintenance preset, and weekly nudge.
+
 ## [0.3.0] - 2026-07-25
 
 ### Added

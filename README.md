@@ -52,7 +52,7 @@ pi
 To pin a reproducible version, use:
 
 ```bash
-pi install -l npm:@eyevanovich/picm-factory@0.3.0
+pi install -l npm:@eyevanovich/picm-factory@0.3.1
 ```
 
 Inside Pi:
