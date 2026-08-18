@@ -208,11 +208,32 @@ export default function picmFactoryExtension(pi: ExtensionAPI) {
 
   pi.on("session_shutdown", async (_event, ctx) => {
     const completed = coordinator.isWorkflowCompleted(ctx);
+    let cleanupError: unknown;
+    let cleanupFailed = false;
     try {
       await coordinator.dispose(ctx);
-    } finally {
-      if (completed) recordClearedWorkflow(ctx);
+    } catch (error) {
+      cleanupError = error;
+      cleanupFailed = true;
     }
+    let persistenceError: unknown;
+    let persistenceFailed = false;
+    if (completed) {
+      try {
+        recordClearedWorkflow(ctx);
+      } catch (error) {
+        persistenceError = error;
+        persistenceFailed = true;
+      }
+    }
+    if (cleanupFailed && persistenceFailed) {
+      throw new AggregateError(
+        [cleanupError, persistenceError],
+        "PiCM shutdown cleanup and terminal-state persistence both failed",
+      );
+    }
+    if (cleanupFailed) throw cleanupError;
+    if (persistenceFailed) throw persistenceError;
   });
 
   for (const command of Object.keys(commandDescriptions) as CommandName[]) {
