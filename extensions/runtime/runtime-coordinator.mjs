@@ -28,7 +28,7 @@ export function createRuntimeCoordinator({
 
   function pruneScans(now = Date.now()) {
     for (const [sessionId, workflow] of scanWorkflows) {
-      if (workflow.expiresAt <= now) {
+      if (!workflow.completed && workflow.expiresAt <= now) {
         scanWorkflows.delete(sessionId);
         activeScans.delete(sessionId);
       }
@@ -105,8 +105,9 @@ export function createRuntimeCoordinator({
     ) {
       return false;
     }
+    const completed = state.status === "completed";
     const expiresAt = Date.parse(state.expiresAt);
-    if (!Number.isFinite(expiresAt) || expiresAt <= Date.now()) return false;
+    if (!Number.isFinite(expiresAt) || (!completed && expiresAt <= Date.now())) return false;
     let excludedPaths;
     try {
       excludedPaths = mergePrivacyExcludedPaths(ctx.cwd, state.excludedPaths ?? []);
@@ -130,7 +131,7 @@ export function createRuntimeCoordinator({
       scanStarted: privacyReviewed && state.scanStarted === true,
       maintenanceResetAttempted:
         privacyReviewed && state.maintenanceResetAttempted === true,
-      completed: state.status === "completed",
+      completed,
       excludedPaths,
     });
     return true;
@@ -315,11 +316,13 @@ export function createRuntimeCoordinator({
   }
 
   async function dispose(ctx) {
+    const completed = workflowFor(ctx)?.completed === true;
     clearAutomatic(ctx);
     clearWorkflow(ctx);
     const value = runtimes.get(ctx.cwd);
     runtimes.delete(ctx.cwd);
     await value?.gate.dispose();
+    return completed;
   }
 
   function isAutomatic(ctx) {
