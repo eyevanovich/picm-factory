@@ -68,8 +68,10 @@ export function createRuntimeCoordinator({
       cwd: workflow.cwd,
       command: workflow.command,
       expiresAt: new Date(workflow.expiresAt).toISOString(),
+      preflightComplete: workflow.preflightComplete,
       privacyReviewed: workflow.privacyReviewed,
       scanStarted: workflow.scanStarted,
+      maintenanceResetAttempted: workflow.maintenanceResetAttempted,
       excludedPaths: [...workflow.excludedPaths],
     };
   }
@@ -81,8 +83,10 @@ export function createRuntimeCoordinator({
       cwd: ctx.cwd,
       command,
       expiresAt,
+      preflightComplete: false,
       privacyReviewed: false,
       scanStarted: false,
+      maintenanceResetAttempted: false,
       excludedPaths: [],
     };
     scanWorkflows.set(sessionId, workflow);
@@ -107,12 +111,23 @@ export function createRuntimeCoordinator({
     } catch {
       return false;
     }
+    const completeState =
+      typeof state.preflightComplete === "boolean" &&
+      typeof state.privacyReviewed === "boolean" &&
+      typeof state.scanStarted === "boolean" &&
+      typeof state.maintenanceResetAttempted === "boolean" &&
+      Array.isArray(state.excludedPaths);
+    const preflightComplete = completeState && state.preflightComplete;
+    const privacyReviewed = preflightComplete && state.privacyReviewed;
     scanWorkflows.set(sessionIdFor(ctx), {
       cwd: ctx.cwd,
       command: state.command,
       expiresAt,
-      privacyReviewed: state.privacyReviewed === true,
-      scanStarted: state.scanStarted === true,
+      preflightComplete,
+      privacyReviewed,
+      scanStarted: privacyReviewed && state.scanStarted === true,
+      maintenanceResetAttempted:
+        privacyReviewed && state.maintenanceResetAttempted === true,
       excludedPaths,
     });
     return true;
@@ -134,19 +149,24 @@ export function createRuntimeCoordinator({
       if (!workflow) {
         throw new Error("PICM_SCAN_NOT_AUTHORIZED: invoke /picm-new, /picm-adopt, or /picm-maintain before preflight");
       }
+      const details = await runtime(ctx.cwd).gate.preflight();
+      workflow.preflightComplete = true;
+      workflow.expiresAt = Date.now() + scanWorkflowTtlMs;
       return {
         ok: true,
         action,
         authorized: true,
         active: false,
-        command: workflow.command,
-        ...await runtime(ctx.cwd).gate.preflight(),
-        expiresAt: new Date(workflow.expiresAt).toISOString(),
+        ...details,
+        ...workflowState(workflow),
       };
     }
     if (action === "privacy") {
       if (!workflow) {
         throw new Error("PICM_SCAN_NOT_AUTHORIZED: invoke /picm-new, /picm-adopt, or /picm-maintain before privacy review");
+      }
+      if (!workflow.preflightComplete) {
+        throw new Error("PICM_PREFLIGHT_INCOMPLETE: complete picm_scan_control preflight before privacy review");
       }
       const store = runtime(ctx.cwd).store;
       const current = await store.read();
@@ -190,6 +210,11 @@ export function createRuntimeCoordinator({
         additions,
       );
       workflow.privacyReviewed = true;
+      let maintenanceReset;
+      if (!workflow.maintenanceResetAttempted) {
+        maintenanceReset = await runtime(ctx.cwd).controller.resetExistingCycle();
+        workflow.maintenanceResetAttempted = true;
+      }
       workflow.expiresAt = Date.now() + scanWorkflowTtlMs;
       clearActiveScan(ctx);
       return {
@@ -199,6 +224,7 @@ export function createRuntimeCoordinator({
         active: false,
         configChanged,
         persisted: persist && additions.length > 0,
+        maintenanceReset,
         ...workflowState(workflow),
       };
     }
@@ -225,6 +251,9 @@ export function createRuntimeCoordinator({
     if (action === "begin") {
       if (!workflow) {
         throw new Error("PICM_SCAN_NOT_AUTHORIZED: invoke /picm-new, /picm-adopt, or /picm-maintain before scanning");
+      }
+      if (!workflow.preflightComplete) {
+        throw new Error("PICM_PREFLIGHT_INCOMPLETE: complete picm_scan_control preflight before scanning");
       }
       if (!workflow.privacyReviewed) {
         throw new Error("PICM_PRIVACY_NOT_REVIEWED: complete picm_scan_control privacy before scanning");

@@ -100,16 +100,28 @@ export default function picmFactoryExtension(pi: ExtensionAPI) {
       const result = params.action === "privacy" && params.persist
         ? await withFileMutationQueue(join(ctx.cwd, ".picm", "config.json"), run)
         : await run();
-      if (result.ok && (params.action === "privacy" || params.action === "begin") && result.authorized) {
+      if (
+        result.ok &&
+        (params.action === "preflight" || params.action === "privacy" || params.action === "begin") &&
+        result.authorized
+      ) {
         pi.appendEntry(scanWorkflowEntryType, {
           status: "authorized",
           cwd: result.cwd,
           command: result.command,
           expiresAt: result.expiresAt,
+          preflightComplete: result.preflightComplete,
           privacyReviewed: result.privacyReviewed,
           scanStarted: result.scanStarted,
+          maintenanceResetAttempted: result.maintenanceResetAttempted,
           excludedPaths: result.excludedPaths,
         });
+        if (result.maintenanceReset && !result.maintenanceReset.ok && ctx.hasUI) {
+          ctx.ui.notify(
+            `[picm-factory] Maintenance cycle was not reset: ${result.maintenanceReset.message}`,
+            "warning",
+          );
+        }
       } else if (params.action === "complete") {
         recordClearedWorkflow(ctx);
       }
@@ -191,10 +203,6 @@ export default function picmFactoryExtension(pi: ExtensionAPI) {
       handler: async (args, ctx) => {
         await ctx.waitForIdle();
         if (command !== "picm-help") {
-          const reset = await coordinator.resetCycle(ctx);
-          if (!reset.ok && ctx.hasUI) {
-            ctx.ui.notify(`[picm-factory] Maintenance cycle was not reset: ${reset.message}`, "warning");
-          }
           const authorization = coordinator.authorizeWorkflow(ctx, command);
           pi.appendEntry(scanWorkflowEntryType, { status: "authorized", ...authorization });
         } else if (coordinator.clearWorkflow(ctx)) {

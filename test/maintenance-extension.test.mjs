@@ -310,11 +310,23 @@ test("non-TUI startup is a no-op for print, json, and rpc", async (t) => {
   }
 });
 
-test("new, adopt, and maintain reset scheduled cycles while help does not", async (t) => {
+test("new, adopt, and maintain reset scheduled cycles only after preflight and privacy", async (t) => {
   for (const command of ["picm-new", "picm-adopt", "picm-maintain"]) {
     const cwd = fixture(t, oldDue("nudge"));
     const h = harness();
-    await h.commands.get(command).handler("", h.context(cwd));
+    const ctx = h.context(cwd);
+    const before = readFileSync(join(cwd, ".picm/config.json"), "utf8");
+    await h.commands.get(command).handler("", ctx);
+    assert.equal(readFileSync(join(cwd, ".picm/config.json"), "utf8"), before);
+    await h.scanControl.execute("id", { action: "preflight" }, undefined, undefined, ctx);
+    assert.equal(readFileSync(join(cwd, ".picm/config.json"), "utf8"), before);
+    await h.scanControl.execute(
+      "id",
+      { action: "privacy", excludedPaths: [], persist: false },
+      undefined,
+      undefined,
+      ctx,
+    );
     const config = JSON.parse(readFileSync(join(cwd, ".picm/config.json"), "utf8"));
     assert.notEqual(config.maintenance.lastCycleAt, "2020-01-01T00:00:00.000Z");
     assert.equal(h.sent.length, 1);
@@ -324,6 +336,95 @@ test("new, adopt, and maintain reset scheduled cycles while help does not", asyn
   const before = readFileSync(join(helpCwd, ".picm/config.json"), "utf8");
   await help.commands.get("picm-help").handler("", help.context(helpCwd));
   assert.equal(readFileSync(join(helpCwd, ".picm/config.json"), "utf8"), before);
+});
+
+test("maintenance reset is skipped when privacy is declined, incomplete, cancelled, or unproven on restore", async (t) => {
+  const declinedCwd = fixture(t, oldDue("nudge"));
+  const declined = harness({ confirm: false });
+  const declinedCtx = declined.context(declinedCwd, "tui", "declined-reset-session");
+  const declinedBefore = readFileSync(join(declinedCwd, ".picm/config.json"), "utf8");
+  await declined.commands.get("picm-adopt").handler("", declinedCtx);
+  await declined.scanControl.execute("id", { action: "preflight" }, undefined, undefined, declinedCtx);
+  const privacy = await declined.scanControl.execute(
+    "id",
+    { action: "privacy", excludedPaths: ["private"], persist: true },
+    undefined,
+    undefined,
+    declinedCtx,
+  );
+  assert.equal(privacy.details.code, "PRIVACY_APPLY_DECLINED");
+  assert.equal(readFileSync(join(declinedCwd, ".picm/config.json"), "utf8"), declinedBefore);
+
+  const cancelledCwd = fixture(t, oldDue("nudge"));
+  const cancelled = harness();
+  const cancelledCtx = cancelled.context(cancelledCwd, "tui", "cancelled-reset-session");
+  const cancelledBefore = readFileSync(join(cancelledCwd, ".picm/config.json"), "utf8");
+  await cancelled.commands.get("picm-maintain").handler("", cancelledCtx);
+  await cancelled.scanControl.execute("id", { action: "preflight" }, undefined, undefined, cancelledCtx);
+  await cancelled.commands.get("picm-help").handler("", cancelledCtx);
+  assert.equal(readFileSync(join(cancelledCwd, ".picm/config.json"), "utf8"), cancelledBefore);
+
+  const restoredCwd = fixture(t, oldDue("nudge"));
+  const restoredBefore = readFileSync(join(restoredCwd, ".picm/config.json"), "utf8");
+  const restored = harness({ entries: [{
+    type: "custom",
+    customType: "picm-scan-workflow",
+    data: {
+      status: "authorized",
+      cwd: restoredCwd,
+      command: "picm-maintain",
+      expiresAt: new Date(Date.now() + 60_000).toISOString(),
+      privacyReviewed: true,
+      scanStarted: true,
+      maintenanceResetAttempted: true,
+      excludedPaths: [],
+    },
+  }] });
+  const restoredCtx = restored.context(restoredCwd, "tui", "legacy-restore-session");
+  await restored.handlers.get("session_start")({ reason: "resume" }, restoredCtx);
+  const status = await restored.scanControl.execute("id", { action: "status" }, undefined, undefined, restoredCtx);
+  assert.equal(status.details.preflightComplete, false);
+  assert.equal(status.details.privacyReviewed, false);
+  assert.equal(status.details.maintenanceResetAttempted, false);
+  await assert.rejects(
+    restored.scanControl.execute("id", { action: "begin" }, undefined, undefined, restoredCtx),
+    /PICM_PREFLIGHT_INCOMPLETE/,
+  );
+  assert.equal(readFileSync(join(restoredCwd, ".picm/config.json"), "utf8"), restoredBefore);
+});
+
+test("non-Git command startup and preflight do not read maintenance config or create Git metadata", async (t) => {
+  const cwd = nonGitFixture(t, oldDue("nudge"));
+  const h = harness();
+  const ctx = h.context(cwd, "tui", "non-git-privacy-order-session");
+  const before = readFileSync(join(cwd, ".picm/config.json"), "utf8");
+
+  await h.commands.get("picm-maintain").handler("", ctx);
+  assert.equal(readFileSync(join(cwd, ".picm/config.json"), "utf8"), before);
+  assert.equal(existsSync(join(cwd, ".git")), false);
+
+  const preflight = await h.scanControl.execute("id", { action: "preflight" }, undefined, undefined, ctx);
+  assert.equal(preflight.details.gitRepository, false);
+  assert.equal(preflight.details.preflightComplete, true);
+  assert.equal(readFileSync(join(cwd, ".picm/config.json"), "utf8"), before);
+  assert.equal(existsSync(join(cwd, ".git")), false);
+
+  await h.scanControl.execute(
+    "id",
+    { action: "privacy", excludedPaths: [], persist: false },
+    undefined,
+    undefined,
+    ctx,
+  );
+  const reset = JSON.parse(readFileSync(join(cwd, ".picm/config.json"), "utf8"));
+  assert.notEqual(reset.maintenance.lastCycleAt, "2020-01-01T00:00:00.000Z");
+  assert.equal(existsSync(join(cwd, ".git")), false);
+
+  await h.scanControl.execute("id", { action: "begin" }, undefined, undefined, ctx);
+  const inventory = await h.scanControl.execute("id", { action: "inventory" }, undefined, undefined, ctx);
+  assert.equal(inventory.details.isolated, true);
+  assert.equal(inventory.details.candidates.includes("safe.txt"), true);
+  assert.equal(existsSync(join(cwd, ".git")), false);
 });
 
 test("policy tool applies the exact accepted confirmation", async (t) => {

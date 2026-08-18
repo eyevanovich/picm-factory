@@ -502,6 +502,40 @@ test("extension gate is inactive outside explicit PiCM scan phases", async () =>
   });
 });
 
+test("privacy refuses before preflight without reading config or initializing isolated Git", async (t) => {
+  const root = mkdtempSync(join(tmpdir(), "picm-preflight-order-test-"));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  write(join(root, ".picm", "config.json"), "not valid json\n");
+  write(join(root, "safe.txt"));
+  const h = extensionHarness();
+  const ctx = h.context(root, "preflight-order-session");
+  const scanControl = h.tools.get("picm_scan_control");
+
+  await h.commands.get("picm-adopt").handler("coding", ctx);
+  await assert.rejects(
+    scanControl.execute(
+      "id",
+      { action: "privacy", excludedPaths: [], persist: false },
+      undefined,
+      undefined,
+      ctx,
+    ),
+    /PICM_PREFLIGHT_INCOMPLETE/,
+  );
+  assert.equal(readFileSync(join(root, ".picm", "config.json"), "utf8"), "not valid json\n");
+  assert.equal(existsSync(join(root, ".git")), false);
+
+  const preflight = await scanControl.execute("id", { action: "preflight" }, undefined, undefined, ctx);
+  assert.equal(preflight.details.preflightComplete, true);
+  assert.equal(preflight.details.gitRepository, false);
+  assert.equal(existsSync(join(root, ".git")), false);
+  await assert.rejects(
+    scanControl.execute("id", { action: "privacy", excludedPaths: [], persist: false }, undefined, undefined, ctx),
+    /CONFIG_INVALID_JSON/,
+  );
+  assert.equal(existsSync(join(root, ".git")), false);
+});
+
 test("explicit PiCM scans require privacy review before honoring gitignore in non-Git workspaces", async (t) => {
   const root = mkdtempSync(join(tmpdir(), "picm-non-git-scan-test-"));
   t.after(() => rmSync(root, { recursive: true, force: true }));
@@ -555,6 +589,7 @@ test("persistent privacy review writes config and protects later inventories", a
     const ctx = h.context(root, "persistent-privacy-session");
     const scanControl = h.tools.get("picm_scan_control");
     await h.commands.get("picm-adopt").handler("coding", ctx);
+    await scanControl.execute("id", { action: "preflight" }, undefined, undefined, ctx);
 
     const privacy = await scanControl.execute(
       "id",
@@ -587,6 +622,7 @@ test("declining persistent privacy keeps review incomplete", async () => {
     const ctx = h.context(root, "declined-privacy-session");
     const scanControl = h.tools.get("picm_scan_control");
     await h.commands.get("picm-adopt").handler("coding", ctx);
+    await scanControl.execute("id", { action: "preflight" }, undefined, undefined, ctx);
     const privacy = await scanControl.execute(
       "id",
       { action: "privacy", excludedPaths: ["safe-dir"], persist: true },
@@ -623,11 +659,25 @@ test("explicit PiCM commands enforce privacy review, session scope, and durable 
       /PICM_SCAN_NOT_ACTIVE/,
     );
     await assert.rejects(
+      scanControl.execute(
+        "id",
+        { action: "privacy", excludedPaths: ["safe-dir"], persist: false },
+        undefined,
+        undefined,
+        ctx,
+      ),
+      /PICM_PREFLIGHT_INCOMPLETE/,
+    );
+    await assert.rejects(
       scanControl.execute("id", { action: "begin" }, undefined, undefined, ctx),
-      /PICM_PRIVACY_NOT_REVIEWED/,
+      /PICM_PREFLIGHT_INCOMPLETE/,
     );
 
     const preflight = await scanControl.execute("id", { action: "preflight" }, undefined, undefined, ctx);
+    await assert.rejects(
+      scanControl.execute("id", { action: "begin" }, undefined, undefined, ctx),
+      /PICM_PRIVACY_NOT_REVIEWED/,
+    );
     assert.equal(preflight.details.gitRepository, true);
     assert.equal(preflight.details.rootGitignore, "file");
     const privacy = await scanControl.execute(
@@ -732,6 +782,7 @@ test("privacy-reviewed scan authorization and exclusions survive resuming the sa
     const firstControl = first.tools.get("picm_scan_control");
 
     await first.commands.get("picm-adopt").handler("coding", firstCtx);
+    await firstControl.execute("id", { action: "preflight" }, undefined, undefined, firstCtx);
     await firstControl.execute(
       "id",
       { action: "privacy", excludedPaths: ["safe-dir"], persist: false },
@@ -759,6 +810,7 @@ test("privacy-reviewed scan authorization and exclusions survive resuming the sa
     );
     assert.equal(restored.details.authorized, true);
     assert.equal(restored.details.active, false);
+    assert.equal(restored.details.preflightComplete, true);
     assert.equal(restored.details.privacyReviewed, true);
     assert.equal(restored.details.scanStarted, true);
     assert.deepEqual(restored.details.excludedPaths, ["safe-dir"]);
@@ -801,6 +853,44 @@ test("privacy-reviewed scan authorization and exclusions survive resuming the sa
       ),
       /PICM_SCAN_NOT_AUTHORIZED/,
     );
+  });
+});
+
+test("incomplete resumed workflow state is never treated as preflight-complete", async () => {
+  await withFixture(async ({ root }) => {
+    for (const missingField of ["excludedPaths", "maintenanceResetAttempted"]) {
+      const state = {
+        status: "authorized",
+        cwd: root,
+        command: "picm-adopt",
+        expiresAt: new Date(Date.now() + 60_000).toISOString(),
+        preflightComplete: true,
+        privacyReviewed: true,
+        scanStarted: true,
+        maintenanceResetAttempted: true,
+        excludedPaths: ["safe-dir"],
+      };
+      delete state[missingField];
+      const entries = [{ type: "custom", customType: "picm-scan-workflow", data: state }];
+      const h = extensionHarness({ entries });
+      const ctx = h.context(root, `incomplete-${missingField}-session`);
+      await h.handlers.get("session_start")({ reason: "resume" }, ctx);
+
+      const status = await h.tools.get("picm_scan_control").execute(
+        "id",
+        { action: "status" },
+        undefined,
+        undefined,
+        ctx,
+      );
+      assert.equal(status.details.preflightComplete, false);
+      assert.equal(status.details.privacyReviewed, false);
+      assert.equal(status.details.scanStarted, false);
+      await assert.rejects(
+        h.tools.get("picm_scan_control").execute("id", { action: "begin" }, undefined, undefined, ctx),
+        /PICM_PREFLIGHT_INCOMPLETE/,
+      );
+    }
   });
 });
 
