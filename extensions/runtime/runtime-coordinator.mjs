@@ -365,6 +365,7 @@ export function createRuntimeCoordinator({
         reason: "PiCM privacy review must complete before any agent tool can inspect or change the project",
       };
     }
+    if (workflow && WORKFLOW_CONTROL_TOOLS.has(event.toolName)) return { allowed: true };
     if (workflow && scan?.cwd !== ctx.cwd) {
       if (event.toolName === "picm_scan_control") return { allowed: true };
       return {
@@ -375,7 +376,6 @@ export function createRuntimeCoordinator({
 
     try {
       if (scan?.cwd === ctx.cwd) {
-        if (event.toolName === "picm_scan_control") return { allowed: true };
         if (event.toolName === "bash") return runtime(ctx.cwd).gate.checkBash(event.input?.command);
         if (!GUARDED_PATH_TOOLS.has(event.toolName)) {
           return { allowed: false, reason: "Unrecognized agent tools are blocked during active PiCM scans" };

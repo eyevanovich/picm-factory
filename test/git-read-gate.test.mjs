@@ -697,10 +697,18 @@ test("explicit PiCM commands enforce privacy review, session scope, and durable 
       { toolName: "read", input: { path: "safe.txt" } },
       ctx,
     )).reason, /Begin the privacy-reviewed/);
+    assert.equal(await h.handlers.get("tool_call")(
+      { toolName: "picm_maintenance_policy", input: { action: "preview" } },
+      ctx,
+    ), undefined);
 
     const begun = await scanControl.execute("id", { action: "begin" }, undefined, undefined, ctx);
     assert.equal(begun.details.authorized, true);
     assert.equal(begun.details.active, true);
+    assert.equal(await h.handlers.get("tool_call")(
+      { toolName: "picm_maintenance_policy", input: { action: "preview" } },
+      ctx,
+    ), undefined);
     const inventory = await scanControl.execute(
       "id",
       { action: "inventory" },
