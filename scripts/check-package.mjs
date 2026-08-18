@@ -312,6 +312,36 @@ for (const [file, signals] of Object.entries(codingGuidance)) {
   }
 }
 
+const adoptionPrivacyQuestionGuidance = {
+  "skills/picm-factory/SKILL.md": [
+    "PiCM already honors `.gitignore`, nested Git ignore rules",
+    "Only name additional sensitive project-relative paths not already covered",
+    "Reply with exact paths, or `none`",
+  ],
+  "skills/picm-factory/references/coding-adoption-guide.md": [
+    "PiCM already honors `.gitignore`, nested Git ignore rules",
+    "Only name additional sensitive project-relative paths not already covered",
+    "sensitive eligible paths PiCM cannot infer",
+  ],
+  "prompts/picm-adopt.md": [
+    "In both paths, after metadata-only preflight and before scanning",
+    "automatic Git/PiCM protections from additional sensitive project-relative paths",
+  ],
+  "docs/layout-fixture-qa.md": [
+    "both `/picm-adopt` classified as coding and `/picm-adopt coding` reassure the user",
+    "does not claim every secret is inferred",
+  ],
+};
+for (const [file, signals] of Object.entries(adoptionPrivacyQuestionGuidance)) {
+  const text = readFileSync(join(root, file), "utf8");
+  for (const signal of signals) {
+    if (!text.includes(signal)) {
+      console.error(`Adoption privacy-question guidance ${file} missing signal: ${signal}`);
+      process.exit(1);
+    }
+  }
+}
+
 const extension = readFileSync(join(root, "extensions/picm-factory.ts"), "utf8");
 const gitReadGate = readFileSync(
   join(root, "extensions/runtime/git-read-gate.mjs"),
