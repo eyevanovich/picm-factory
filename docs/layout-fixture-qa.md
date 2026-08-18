@@ -131,7 +131,7 @@ Expected behavior:
 - Separately highlights proposed rewrites, merges, moves, archive candidates, or deletions.
 - Treats choosing Curated as permission to draft a proposal, not permission to apply it.
 
-### Git-ignore read boundary
+### Protected privacy and Git-exclude boundary
 
 Prepare the ignored-file fixture in a disposable Git repository:
 
@@ -151,6 +151,9 @@ git -c user.name="PiCM Fixture" -c user.email="fixture@example.invalid" commit -
 printf 'SYNTHETIC_ONLY=do-not-read\n' > .env
 mkdir -p secrets
 printf 'SYNTHETIC FAKE KEY - DO NOT READ\n' > secrets/fake-key.pem
+printf 'LOCAL_EXCLUDE=do-not-read\n' > local-excluded.txt
+printf 'local-excluded.txt\n' >> .git/info/exclude
+printf 'CONFIG_EXCLUDE=do-not-read\n' > config-excluded.txt
 pi install -l /path/to/picm-factory
 pi
 ```
@@ -159,11 +162,14 @@ Expected behavior:
 
 - Before an explicit PiCM command, the extension leaves ordinary Pi reads, user-level skills, screenshots/outside paths, Git inspection, and agent tools untouched; use only the synthetic fixture when demonstrating that pass-through.
 - User-typed `!bash` is never intercepted, including during an active PiCM scan or automatic maintenance cycle.
-- `/picm-new`, `/picm-adopt`, and `/picm-maintain` authorize their workflow and activate the gate for the command's first scan turn; `/picm-help` and natural-language requests do not.
-- After an agent turn settles, the scan gate is inactive. A later interview turn calls `picm_scan_control begin` before scanning and `end` afterward. Session shutdown clears only in-memory active state; resuming the same session restores valid workflow authorization inactive. Workflow completion, explicit clearing, dispatch failure, or expiry revokes authorization durably so it cannot be restored on resume.
-- Uses `picm_scan_control inventory` to derive candidates through Git without agent Bash, and runs `git check-ignore --no-index` before reading each candidate.
-- In a second disposable fixture, omit `.git` but keep `.gitignore`; verify explicit and automatic maintenance scans still dispatch, block ignored agent reads, allow safe candidates, create no project `.git`, and remove transient isolated Git metadata on shutdown.
-- Does not open, quote, summarize, hash, or otherwise inspect untracked ignored `.env`, tracked ignored `.env.tracked`, or `secrets/fake-key.pem`, including through `git show`, broad traversal, or another worktree.
+- `/picm-new`, `/picm-adopt`, and `/picm-maintain` authorize a privacy-pending workflow; `/picm-help` and natural-language requests do not. Before privacy review, every agent tool except `picm_scan_control` is blocked.
+- `picm_scan_control preflight` reports Git status plus root `.gitignore` and `.git/info/exclude` presence without candidate inventory or temporary Git metadata. The workflow asks privacy before scanning, records `config-excluded.txt`, previews `privacy.excludedPaths`, and persists it only after exact confirmation.
+- `begin` is refused before privacy review. After review, `inventory` combines root/nested `.gitignore`, `.git/info/exclude`, global Git excludes, persisted PiCM config, and session additions. A later scan phase calls `begin` again and `end` afterward.
+- Session shutdown clears only active scan state; resuming the same session restores valid privacy-reviewed authorization and exclusions inactive. Workflow completion, explicit clearing, dispatch failure, or expiry revokes authorization durably.
+- Uses `picm_scan_control inventory` to derive candidates without agent Bash and checks Git plus PiCM exclusions immediately before each path-tool execution. Unknown agent tools are blocked during active scans; confirmed privacy paths remain blocked between scan phases.
+- In a second disposable fixture, omit `.git` but keep `.gitignore`; verify preflight creates no temporary metadata, then privacy review allows explicit and automatic maintenance scans to block excluded reads, allow safe candidates, create no project `.git`, and remove post-review transient metadata on shutdown.
+- In a third disposable fixture, omit both `.git` and `.gitignore`; verify preflight asks privacy before creating transient metadata and persisted/session exclusions protect the scan.
+- Does not open, quote, summarize, hash, or otherwise inspect untracked ignored `.env`, tracked ignored `.env.tracked`, `secrets/fake-key.pem`, `.git/info/exclude`-matched `local-excluded.txt`, or config-excluded `config-excluded.txt`, including through `git show`, broad traversal, or another worktree.
 - Does not follow `ignored-target-link` to the ignored `.env` target.
 - Visible Pi tool logs contain no read of any ignored file or symlink target.
 - Still asks whether tracked files or other approved paths contain secrets; ignore rules are not treated as proof that every remaining path is safe.

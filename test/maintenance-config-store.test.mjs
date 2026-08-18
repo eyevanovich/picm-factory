@@ -32,6 +32,42 @@ test("creates only minimal metadata plus explicitly set maintenance", async (t) 
   });
 });
 
+test("persists and conditionally updates normalized privacy exclusions", async (t) => {
+  const { cwd, gate } = await repository(t);
+  const store = createMaintenanceConfigStore({ cwd, gate, randomId: () => "privacy" });
+  const first = await store.updatePrivacy({ excludedPaths: ["secrets/key.txt", "secrets/", ".env"] });
+  assert.equal(first.ok, true);
+  assert.deepEqual(first.privacy, { excludedPaths: [".env", "secrets"] });
+  assert.deepEqual(JSON.parse(await fs.readFile(join(cwd, ".picm/config.json"), "utf8")), {
+    version: 1,
+    generatedBy: "picm-factory",
+    privacy: { excludedPaths: [".env", "secrets"] },
+  });
+
+  const conflict = await store.compareAndUpdatePrivacy(
+    { excludedPaths: ["different"] },
+    { excludedPaths: ["private"] },
+  );
+  assert.equal(conflict.conflict, true);
+  assert.equal(conflict.code, "PRIVACY_POLICY_CONFLICT");
+  assert.deepEqual((await store.read()).privacy, { excludedPaths: [".env", "secrets"] });
+});
+
+test("rejects malformed or outside privacy exclusions", async (t) => {
+  const { cwd, gate } = await repository(t);
+  const store = createMaintenanceConfigStore({ cwd, gate });
+  assert.equal((await store.updatePrivacy({ excludedPaths: ["../outside"] })).code, "PRIVACY_EXCLUDED_PATH_OUTSIDE");
+
+  await fs.mkdir(join(cwd, ".picm"));
+  await fs.writeFile(join(cwd, ".picm/config.json"), JSON.stringify({
+    version: 1,
+    privacy: { excludedPaths: "secrets" },
+  }));
+  const invalid = await store.read();
+  assert.equal(invalid.ok, false);
+  assert.equal(invalid.code, "PRIVACY_EXCLUDED_PATHS_INVALID");
+});
+
 test("does not create a config for absent manual policy", async (t) => {
   const { cwd, gate } = await repository(t);
   const store = createMaintenanceConfigStore({ cwd, gate });
@@ -71,7 +107,7 @@ test("blocks ignored and symlink maintenance configs or directories", async (t) 
   await fs.writeFile(join(linked.cwd, "actual.json"), "{}\n");
   await fs.symlink(join(linked.cwd, "actual.json"), join(linked.cwd, ".picm/config.json"));
   const linkedResult = await createMaintenanceConfigStore(linked).read();
-  assert.deepEqual(linkedResult, { ok: false, code: "CONFIG_SYMLINK_BLOCKED", message: "maintenance config must not be a symlink" });
+  assert.deepEqual(linkedResult, { ok: false, code: "CONFIG_SYMLINK_BLOCKED", message: "PiCM config must not be a symlink" });
 
   const linkedDirectory = await repository(t);
   await fs.mkdir(join(linkedDirectory.cwd, "actual-picm"));

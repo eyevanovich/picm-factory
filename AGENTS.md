@@ -17,8 +17,8 @@ You are working on PiCM Factory, a project-local Pi package for creating, adopti
 - Do not build a custom TUI or workflow executor without clear evidence it is necessary.
 - Be non-destructive by default. Preview file changes before writing.
 - Security first: never copy secrets, credentials, tokens, private keys, regulated data, or sensitive client material into context files or examples.
-- Explicitly invoked `/picm-new`, `/picm-adopt`, and `/picm-maintain` scan phases must use the Git-backed inventory and immediate `git check-ignore --no-index` read gate, and never inspect ignored file contents. Ordinary Pi work and user-typed `!bash` remain unrestricted.
-- `.pi/` is for Pi config. `.picm/` is for minimal PiCM metadata/reports.
+- Explicitly invoked `/picm-new`, `/picm-adopt`, and `/picm-maintain` workflows must complete privacy preflight/review before scanning. Protected inventory and immediate path checks combine root/nested `.gitignore`, `.git/info/exclude`, global Git excludes, `.picm/config.json` `privacy.excludedPaths`, and session exclusions; never inspect matching contents. Ordinary Pi work and user-typed `!bash` remain unrestricted.
+- `.pi/` is for Pi config. `.picm/` is for minimal PiCM metadata/reports, including optional persisted scan exclusions.
 - `.picm/` is maintainer-only context; normal workflow routing should skip it.
 
 ## Repository structure

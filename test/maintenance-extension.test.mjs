@@ -151,8 +151,14 @@ test("TUI automatic cycle resets, dispatches once, and blocks side effects until
   assert.equal(h.sent.length, 1);
 });
 
-test("due automatic maintenance runs in non-Git workspaces while honoring gitignore", async (t) => {
+test("due automatic maintenance runs in non-Git workspaces while honoring Git and PiCM exclusions", async (t) => {
   const cwd = nonGitFixture(t, oldDue("automatic"));
+  writeFileSync(join(cwd, "config-private.txt"), "CONFIG_PRIVATE=do-not-read\n");
+  const before = JSON.parse(readFileSync(join(cwd, ".picm/config.json"), "utf8"));
+  writeFileSync(join(cwd, ".picm/config.json"), `${JSON.stringify({
+    ...before,
+    privacy: { excludedPaths: ["config-private.txt"] },
+  }, null, 2)}\n`);
   const h = harness();
   const ctx = h.context(cwd, "tui", "non-git-automatic-session");
 
@@ -174,6 +180,7 @@ test("due automatic maintenance runs in non-Git workspaces while honoring gitign
   assert.equal(inventory.details.isolated, true);
   assert.equal(inventory.details.candidates.includes("safe.txt"), true);
   assert.equal(inventory.details.candidates.includes(".env"), false);
+  assert.equal(inventory.details.candidates.includes("config-private.txt"), false);
   assert.equal(await h.handlers.get("tool_call")(
     { toolName: "read", input: { path: "safe.txt" } },
     ctx,
@@ -184,6 +191,12 @@ test("due automatic maintenance runs in non-Git workspaces while honoring gitign
   );
   assert.equal(blocked.block, true);
   assert.match(blocked.reason, /ignored by Git/);
+  const blockedPrivate = await h.handlers.get("tool_call")(
+    { toolName: "read", input: { path: "config-private.txt" } },
+    ctx,
+  );
+  assert.equal(blockedPrivate.block, true);
+  assert.match(blockedPrivate.reason, /PiCM privacy policy/);
   assert.equal(h.handlers.has("user_bash"), false);
   assert.equal(existsSync(join(cwd, ".git")), false);
   const config = JSON.parse(readFileSync(join(cwd, ".picm/config.json"), "utf8"));

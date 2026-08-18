@@ -13,8 +13,8 @@ PiCM Factory is a project-local Pi Coding Agent package that helps users create,
 - Keep runtime methodology in the skill's references and templates; keep the extension thin.
 - Be non-destructive by default. Preview writes before applying them.
 - Treat security as a first-class requirement: secrets, client data, and private material must not be copied into context files or committed without explicit user approval.
-- During scan phases explicitly authorized by `/picm-new`, `/picm-adopt`, or `/picm-maintain`, Git ignored files are unreadable; outside those PiCM workflows, the extension must not affect ordinary Pi tools. User-typed `!bash` is never intercepted. When `.git` is absent, transient isolated Git metadata outside the workspace preserves `.gitignore` semantics without modifying the project.
-- Use `.pi/` for Pi config and `.picm/` for minimal PiCM metadata/reports.
+- Explicit `/picm-new`, `/picm-adopt`, and `/picm-maintain` workflows start privacy-pending. Protected scans combine Git standard excludes (`.gitignore`, `.git/info/exclude`, and global rules) with persisted `.picm/config.json` and session exclusions; matching contents are unreadable. Outside those workflows ordinary Pi tools remain unaffected, and user-typed `!bash` is never intercepted. When `.git` is absent, transient isolated Git metadata is created only after privacy review and never modifies the project.
+- Use `.pi/` for Pi config and `.picm/` for minimal PiCM metadata/reports, including optional persisted scan exclusions.
 - The visible folder structure and context files remain the source of truth.
 - `.picm/` is maintainer-only context and should not be read during normal workflow execution.
 - Optional maintenance cadence is stored in `.picm/config.json`; automatic means one read-only advisory run in the first eligible interactive TUI session after due, never a daemon or headless mutation.

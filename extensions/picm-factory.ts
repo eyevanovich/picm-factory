@@ -1,5 +1,10 @@
-import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import {
+  withFileMutationQueue,
+  type ExtensionAPI,
+  type ExtensionContext,
+} from "@earendil-works/pi-coding-agent";
 import { StringEnum } from "@earendil-works/pi-ai";
+import { join } from "node:path";
 import { Type } from "typebox";
 import { packageRootFromImportMeta } from "./runtime/git-read-gate.mjs";
 import { createRuntimeCoordinator } from "./runtime/runtime-coordinator.mjs";
@@ -59,25 +64,35 @@ export default function picmFactoryExtension(pi: ExtensionAPI) {
   pi.registerTool({
     name: "picm_scan_control",
     label: "PiCM Scan Control",
-    description: "Control Git-guarded scan phases inside an explicitly authorized PiCM command workflow",
-    promptSnippet: "Begin, inventory, end, complete, or inspect an explicitly authorized PiCM scan phase",
+    description: "Preflight, privacy-review, and control protected scan phases inside an explicitly authorized PiCM workflow",
+    promptSnippet: "Preflight, record privacy exclusions, and control protected PiCM scan phases",
     promptGuidelines: [
-      "Only an explicit /picm-new, /picm-adopt, or /picm-maintain command authorizes this tool; natural-language requests do not.",
-      "The command's first turn is already scan-active. Use inventory to obtain Git-derived candidate paths without Bash; on later interview turns call begin before scanning, end afterward, and complete when the workflow finishes.",
-      "An active automatic advisory session may use only inventory; it does not authorize begin, end, complete, status, Bash, or writes.",
+      "Only an explicit /picm-new, /picm-adopt, or /picm-maintain command authorizes picm_scan_control; natural-language requests do not.",
+      "After an explicit command, call picm_scan_control preflight before any scan, ask the privacy question, then call privacy with every exact project-relative excluded path before begin.",
+      "Use picm_scan_control privacy with persist true only when the user requests durable exclusions; the action presents the exact .picm/config.json patch for TUI confirmation.",
+      "Use picm_scan_control inventory only after begin, end after each scan phase, and complete when the PiCM workflow finishes.",
+      "An active automatic advisory session may use only picm_scan_control inventory; it does not authorize begin, end, complete, status, Bash, or writes.",
     ],
     parameters: Type.Object({
-      action: StringEnum(["begin", "inventory", "end", "complete", "status"] as const),
+      action: StringEnum(["preflight", "privacy", "begin", "inventory", "end", "complete", "status"] as const),
       path: Type.Optional(Type.String({ minLength: 1 })),
+      excludedPaths: Type.Optional(Type.Array(Type.String({ minLength: 1 }))),
+      persist: Type.Optional(Type.Boolean()),
     }),
     async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
-      const result = await coordinator.scanControl(ctx, params.action, params.path);
-      if (params.action === "begin" && result.authorized) {
+      const run = () => coordinator.scanControl(ctx, params);
+      const result = params.action === "privacy" && params.persist
+        ? await withFileMutationQueue(join(ctx.cwd, ".picm", "config.json"), run)
+        : await run();
+      if (result.ok && (params.action === "privacy" || params.action === "begin") && result.authorized) {
         pi.appendEntry(scanWorkflowEntryType, {
           status: "authorized",
-          cwd: ctx.cwd,
+          cwd: result.cwd,
           command: result.command,
           expiresAt: result.expiresAt,
+          privacyReviewed: result.privacyReviewed,
+          scanStarted: result.scanStarted,
+          excludedPaths: result.excludedPaths,
         });
       } else if (params.action === "complete") {
         recordClearedWorkflow(ctx);
@@ -119,7 +134,7 @@ export default function picmFactoryExtension(pi: ExtensionAPI) {
   pi.on("tool_call", async (event, ctx) => {
     const decision = await coordinator.checkToolCall(event, ctx);
     if (!decision.allowed) {
-      const reason = `[picm-factory] Blocked by Git read gate: ${decision.reason}`;
+      const reason = `[picm-factory] Blocked by PiCM scan gate: ${decision.reason}`;
       if (ctx.hasUI) ctx.ui.notify(reason, "warning");
       return { block: true, reason };
     }

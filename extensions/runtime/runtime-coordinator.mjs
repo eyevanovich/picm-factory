@@ -2,8 +2,11 @@ import { randomUUID } from "node:crypto";
 import { createGitReadGate } from "./git-read-gate.mjs";
 import { createMaintenanceConfigStore } from "./maintenance-config-store.mjs";
 import { createMaintenanceController } from "./maintenance-controller.mjs";
+import { mergePrivacyExcludedPaths } from "./privacy-policy.mjs";
 
 const EXPLICIT_SCAN_COMMANDS = new Set(["picm-new", "picm-adopt", "picm-maintain"]);
+const GUARDED_PATH_TOOLS = new Set(["read", "edit", "write", "grep", "find", "ls"]);
+const WORKFLOW_CONTROL_TOOLS = new Set(["picm_scan_control", "picm_maintenance_policy"]);
 
 export function createRuntimeCoordinator({
   packageRoot,
@@ -60,12 +63,31 @@ export function createRuntimeCoordinator({
     return hadWorkflow || hadActiveScan;
   }
 
+  function workflowState(workflow) {
+    return {
+      cwd: workflow.cwd,
+      command: workflow.command,
+      expiresAt: new Date(workflow.expiresAt).toISOString(),
+      privacyReviewed: workflow.privacyReviewed,
+      scanStarted: workflow.scanStarted,
+      excludedPaths: [...workflow.excludedPaths],
+    };
+  }
+
   function authorizeWorkflow(ctx, command) {
     const sessionId = sessionIdFor(ctx);
     const expiresAt = Date.now() + scanWorkflowTtlMs;
-    scanWorkflows.set(sessionId, { cwd: ctx.cwd, command, expiresAt });
-    activeScans.set(sessionId, { cwd: ctx.cwd, expiresAt });
-    return { cwd: ctx.cwd, command, expiresAt: new Date(expiresAt).toISOString() };
+    const workflow = {
+      cwd: ctx.cwd,
+      command,
+      expiresAt,
+      privacyReviewed: false,
+      scanStarted: false,
+      excludedPaths: [],
+    };
+    scanWorkflows.set(sessionId, workflow);
+    activeScans.delete(sessionId);
+    return workflowState(workflow);
   }
 
   function restoreWorkflow(ctx, state) {
@@ -79,15 +101,25 @@ export function createRuntimeCoordinator({
     }
     const expiresAt = Date.parse(state.expiresAt);
     if (!Number.isFinite(expiresAt) || expiresAt <= Date.now()) return false;
+    let excludedPaths;
+    try {
+      excludedPaths = mergePrivacyExcludedPaths(ctx.cwd, state.excludedPaths ?? []);
+    } catch {
+      return false;
+    }
     scanWorkflows.set(sessionIdFor(ctx), {
       cwd: ctx.cwd,
       command: state.command,
       expiresAt,
+      privacyReviewed: state.privacyReviewed === true,
+      scanStarted: state.scanStarted === true,
+      excludedPaths,
     });
     return true;
   }
 
-  async function scanControl(ctx, action, path) {
+  async function scanControl(ctx, params) {
+    const { action, path, excludedPaths = [], persist = false } = params;
     const sessionId = sessionIdFor(ctx);
     const workflow = workflowFor(ctx);
     const automaticState = automaticFor(ctx);
@@ -98,12 +130,84 @@ export function createRuntimeCoordinator({
     if (automatic && action !== "inventory") {
       throw new Error("PICM_AUTOMATIC_INVENTORY_ONLY: automatic advisory sessions may only request inventory");
     }
+    if (action === "preflight") {
+      if (!workflow) {
+        throw new Error("PICM_SCAN_NOT_AUTHORIZED: invoke /picm-new, /picm-adopt, or /picm-maintain before preflight");
+      }
+      return {
+        ok: true,
+        action,
+        authorized: true,
+        active: false,
+        command: workflow.command,
+        ...await runtime(ctx.cwd).gate.preflight(),
+        expiresAt: new Date(workflow.expiresAt).toISOString(),
+      };
+    }
+    if (action === "privacy") {
+      if (!workflow) {
+        throw new Error("PICM_SCAN_NOT_AUTHORIZED: invoke /picm-new, /picm-adopt, or /picm-maintain before privacy review");
+      }
+      const store = runtime(ctx.cwd).store;
+      const current = await store.read();
+      if (!current.ok) throw new Error(`${current.code}: ${current.message}`);
+      const additions = mergePrivacyExcludedPaths(ctx.cwd, excludedPaths);
+      let persistedPrivacy = current.privacy;
+      let configChanged = false;
+      if (persist && additions.length > 0) {
+        if (ctx.mode !== "tui") {
+          throw new Error("PRIVACY_APPLY_TUI_ONLY: persistent privacy exclusions require interactive TUI confirmation");
+        }
+        const nextPrivacy = {
+          excludedPaths: mergePrivacyExcludedPaths(
+            ctx.cwd,
+            current.privacy?.excludedPaths ?? [],
+            additions,
+          ),
+        };
+        const confirmed = await ctx.ui.confirm(
+          "Persist PiCM privacy exclusions?",
+          `Exact .picm/config.json patch:\n${JSON.stringify({ privacy: nextPrivacy }, null, 2)}`,
+        );
+        if (!confirmed) {
+          return {
+            ok: false,
+            action,
+            code: "PRIVACY_APPLY_DECLINED",
+            message: "No privacy settings were changed and scan privacy review remains incomplete",
+          };
+        }
+        const update = await store.compareAndUpdatePrivacy(current.privacy, nextPrivacy);
+        if (!update.ok) throw new Error(`${update.code}: ${update.message}`);
+        if (update.conflict) throw new Error(`${update.code}: ${update.message}`);
+        persistedPrivacy = nextPrivacy;
+        configChanged = update.changed;
+      }
+      workflow.excludedPaths = mergePrivacyExcludedPaths(
+        ctx.cwd,
+        workflow.excludedPaths,
+        persistedPrivacy?.excludedPaths ?? [],
+        additions,
+      );
+      workflow.privacyReviewed = true;
+      workflow.expiresAt = Date.now() + scanWorkflowTtlMs;
+      clearActiveScan(ctx);
+      return {
+        ok: true,
+        action,
+        authorized: true,
+        active: false,
+        configChanged,
+        persisted: persist && additions.length > 0,
+        ...workflowState(workflow),
+      };
+    }
     if (action === "inventory") {
-      if ((!workflow && !automatic) || activeScans.get(sessionId)?.cwd !== ctx.cwd) {
+      const scan = activeScans.get(sessionId);
+      if ((!workflow && !automatic) || scan?.cwd !== ctx.cwd) {
         throw new Error("PICM_SCAN_NOT_ACTIVE: begin an explicitly authorized scan before requesting inventory");
       }
-      const inventory = await runtime(ctx.cwd).gate.refreshInventory(path);
-      const scan = activeScans.get(sessionId);
+      const inventory = await runtime(ctx.cwd).gate.refreshInventory(path, scan.excludedPaths);
       return {
         ok: true,
         action,
@@ -114,6 +218,7 @@ export function createRuntimeCoordinator({
         worktree: inventory.worktree,
         isolated: inventory.isolated,
         candidates: [...inventory.candidates].sort(),
+        excludedPaths: [...scan.excludedPaths],
         expiresAt: new Date((workflow ?? scan).expiresAt).toISOString(),
       };
     }
@@ -121,21 +226,36 @@ export function createRuntimeCoordinator({
       if (!workflow) {
         throw new Error("PICM_SCAN_NOT_AUTHORIZED: invoke /picm-new, /picm-adopt, or /picm-maintain before scanning");
       }
+      if (!workflow.privacyReviewed) {
+        throw new Error("PICM_PRIVACY_NOT_REVIEWED: complete picm_scan_control privacy before scanning");
+      }
+      const config = await runtime(ctx.cwd).store.read();
+      if (!config.ok) throw new Error(`${config.code}: ${config.message}`);
+      workflow.excludedPaths = mergePrivacyExcludedPaths(
+        ctx.cwd,
+        workflow.excludedPaths,
+        config.privacy?.excludedPaths ?? [],
+      );
+      workflow.scanStarted = true;
       workflow.expiresAt = Date.now() + scanWorkflowTtlMs;
-      activeScans.set(sessionId, { cwd: ctx.cwd, expiresAt: workflow.expiresAt });
+      activeScans.set(sessionId, {
+        cwd: ctx.cwd,
+        expiresAt: workflow.expiresAt,
+        excludedPaths: [...workflow.excludedPaths],
+      });
     } else if (action === "end") {
       clearActiveScan(ctx);
     } else if (action === "complete") {
       clearWorkflow(ctx);
     }
     const current = workflowFor(ctx);
+    const active = activeScans.get(sessionIdFor(ctx));
     return {
       ok: true,
       action,
       authorized: Boolean(current),
-      active: activeScans.get(sessionIdFor(ctx))?.cwd === ctx.cwd,
-      command: current?.command,
-      expiresAt: current ? new Date(current.expiresAt).toISOString() : undefined,
+      active: active?.cwd === ctx.cwd,
+      ...(current ? workflowState(current) : {}),
     };
   }
 
@@ -144,7 +264,7 @@ export function createRuntimeCoordinator({
     if (!value) {
       const gate = createGitReadGate({ cwd, packageRoot });
       const store = createMaintenanceConfigStore({ cwd, gate });
-      value = { gate, controller: createMaintenanceController({ store }) };
+      value = { gate, store, controller: createMaintenanceController({ store }) };
       runtimes.set(cwd, value);
     }
     return value;
@@ -167,11 +287,17 @@ export function createRuntimeCoordinator({
     return state?.cwd === ctx.cwd ? state : undefined;
   }
 
-  function beginAutomatic(ctx) {
+  async function beginAutomatic(ctx) {
     const sessionId = sessionIdFor(ctx);
     const expiresAt = Date.now() + scanWorkflowTtlMs;
+    const config = await runtime(ctx.cwd).store.read();
+    if (!config.ok) throw new Error(`${config.code}: ${config.message}`);
+    const excludedPaths = mergePrivacyExcludedPaths(
+      ctx.cwd,
+      config.privacy?.excludedPaths ?? [],
+    );
     automaticReadOnlySessions.set(sessionId, { cwd: ctx.cwd, expiresAt });
-    activeScans.set(sessionId, { cwd: ctx.cwd, expiresAt });
+    activeScans.set(sessionId, { cwd: ctx.cwd, expiresAt, excludedPaths });
   }
 
   function clearAutomatic(ctx) {
@@ -199,12 +325,54 @@ export function createRuntimeCoordinator({
       }
       if (automaticInventory) return { allowed: true };
     }
-    workflowFor(ctx);
-    if (activeScans.get(sessionIdFor(ctx))?.cwd !== ctx.cwd) return { allowed: true };
+
+    const workflow = workflowFor(ctx);
+    const sessionId = sessionIdFor(ctx);
+    const scan = activeScans.get(sessionId);
+    if (workflow && !workflow.privacyReviewed) {
+      if (event.toolName === "picm_scan_control") return { allowed: true };
+      return {
+        allowed: false,
+        reason: "PiCM privacy review must complete before any agent tool can inspect or change the project",
+      };
+    }
+    if (workflow && !workflow.scanStarted && scan?.cwd !== ctx.cwd) {
+      if (event.toolName === "picm_scan_control") return { allowed: true };
+      return {
+        allowed: false,
+        reason: "Begin the privacy-reviewed PiCM scan before using agent tools",
+      };
+    }
+
     try {
-      return event.toolName === "bash"
-        ? await runtime(ctx.cwd).gate.checkBash(event.input?.command)
-        : await runtime(ctx.cwd).gate.checkPath(event.toolName, event.input?.path);
+      if (scan?.cwd === ctx.cwd) {
+        if (event.toolName === "picm_scan_control") return { allowed: true };
+        if (event.toolName === "bash") return runtime(ctx.cwd).gate.checkBash(event.input?.command);
+        if (!GUARDED_PATH_TOOLS.has(event.toolName)) {
+          return { allowed: false, reason: "Unrecognized agent tools are blocked during active PiCM scans" };
+        }
+        return runtime(ctx.cwd).gate.checkPath(
+          event.toolName,
+          event.input?.path,
+          scan.excludedPaths,
+        );
+      }
+
+      if (workflow?.excludedPaths.length > 0) {
+        if (WORKFLOW_CONTROL_TOOLS.has(event.toolName)) return { allowed: true };
+        if (event.toolName === "bash") {
+          return { allowed: false, reason: "Agent Bash is blocked while PiCM privacy exclusions are active" };
+        }
+        if (!GUARDED_PATH_TOOLS.has(event.toolName)) {
+          return { allowed: false, reason: "Unrecognized agent tools are blocked while PiCM privacy exclusions are active" };
+        }
+        return runtime(ctx.cwd).gate.checkPrivacyPath(
+          event.toolName,
+          event.input?.path,
+          workflow.excludedPaths,
+        );
+      }
+      return { allowed: true };
     } catch (error) {
       return { allowed: false, reason: `gate exception: ${error instanceof Error ? error.message : error}` };
     }
@@ -322,8 +490,8 @@ export function createRuntimeCoordinator({
       appendEntry("picm-maintenance-due", { dueKey: decision.dueKey, action: "notify" });
       ctx.ui.notify(`[picm-factory] PiCM maintenance is due (scheduled for ${decision.maintenance.nextDueAt}). Run /picm-maintain when ready.`, "info");
     } else if (decision.action === "dispatch") {
-      beginAutomatic(ctx);
       try {
+        await beginAutomatic(ctx);
         sendUserMessage(scheduledPrompt);
       } catch (error) {
         settle(ctx);

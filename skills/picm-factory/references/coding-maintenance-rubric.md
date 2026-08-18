@@ -6,16 +6,16 @@ Apply the general `maintenance-rubric.md` posture, severity labels, repair tiers
 
 ## Security before maintenance
 
-Apply the coding adoption guide's **Git ignored means unreadable** boundary before any scan:
+Apply the coding adoption guide's **excluded means unreadable** boundary before any scan:
 
-- derive candidates through Git-aware listing, using the real worktree when present or the extension's isolated transient Git view when `.git` is absent;
-- honor root and nested `.gitignore` rules in either mode without initializing the user's workspace;
-- begin the authorized scan phase and rely on the extension's immediate `git check-ignore --no-index` gate for built-in path-tool calls;
-- skip ignored paths even if tracked;
-- use `picm_scan_control inventory` instead of agent Bash for candidate discovery, and prohibit broad traversal or custom-tool routes the deterministic gate cannot evaluate; user-typed `!bash` remains unrestricted;
-- do not follow symlinks during automatic scans; the extension blocks direct symlink tool paths, and out-of-repository targets remain unreadable;
-- treat an explicitly included submodule as a separate worktree and repeat candidate listing, privacy confirmation, and per-path ignore checks there; never initialize or fetch it automatically;
-- ask about tracked secrets/private areas before content inspection.
+- for an ordinary invocation, call `preflight`, ask the privacy question, record exact exclusions with `privacy`, and call `begin` before inventory or content inspection;
+- scheduled automatic cycles load persisted privacy exclusions themselves and remain inventory-only;
+- derive candidates through protected inventory, using the real Git repository when present or isolated transient Git metadata only after privacy review when `.git` is absent;
+- honor root/nested `.gitignore`, `.git/info/exclude`, global Git excludes, persisted `privacy.excludedPaths`, and session additions as cumulative rules;
+- skip matching paths even if tracked;
+- use `picm_scan_control inventory` instead of agent Bash for candidate discovery; active scans block broad traversal, agent Bash, and unrecognized agent tools, while user-typed `!bash` remains unrestricted;
+- do not follow symlinks; out-of-repository targets remain unreadable;
+- treat an explicitly included submodule as a separate Git worktree and apply parent, local Git, and PiCM exclusions without initializing or fetching it automatically.
 
 Never quote sensitive findings into a maintenance report. Record generic risk descriptions and safe paths only when path disclosure itself is acceptable.
 

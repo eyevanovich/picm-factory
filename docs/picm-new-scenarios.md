@@ -7,8 +7,8 @@ Use these scenarios to smoke-test the `/picm-new` flow. The flow is intentionall
 For every scenario, `/picm-new` should:
 
 - load the `picm-factory` skill and relevant references
-- inspect the current folder lightly before writing
-- ask the baseline security/privacy question
+- run metadata-only preflight and ask the baseline security/privacy question before inventory or inspection
+- record exact persisted/session exclusions, call `begin`, then inspect the current folder lightly before writing
 - check git state before writes
 - recommend one primary layout profile and explain alternatives
 - preview exact file/folder actions before writing
@@ -57,7 +57,8 @@ Expected behavior:
 - classifies the folder as source-material-only, not existing architecture
 - asks whether to build the PiCM scaffold around existing material without moving or rewriting it
 - recommends `/picm-adopt` only if the current structure appears to encode an existing workspace architecture
-- proposes `.gitignore` entries only when sensitive/private/local-only material is identified
+- when root `.gitignore` is absent, offers exact `.gitignore` entries for commit protection only when sensitive/private/local-only material is identified
+- persists approved PiCM scan exclusions in `.picm/config.json` or keeps them session-only when the user declines a config write
 
 ## Scenario 3: existing architecture folder
 

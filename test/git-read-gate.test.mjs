@@ -4,6 +4,7 @@ import {
   existsSync,
   mkdirSync,
   mkdtempSync,
+  readFileSync,
   rmSync,
   symlinkSync,
   writeFileSync,
@@ -71,7 +72,7 @@ async function withFixture(run) {
   }
 }
 
-function extensionHarness({ entries = [], sendError } = {}) {
+function extensionHarness({ entries = [], sendError, confirm = true } = {}) {
   const handlers = new Map();
   const commands = new Map();
   const tools = new Map();
@@ -97,7 +98,10 @@ function extensionHarness({ entries = [], sendError } = {}) {
       getEntries: () => entries,
       getSessionId: () => sessionId,
     },
-    ui: { notify() {} },
+    ui: {
+      notify() {},
+      confirm: async () => confirm,
+    },
   });
   return { handlers, commands, tools, sent, context };
 }
@@ -126,6 +130,84 @@ test("allows Git candidates and blocks ignored, tracked-ignored, internal, and o
       assert.match((await gate.checkPath("read", "safe-dir-link/file.txt")).reason, /symlink/);
     }
   });
+});
+
+test("honors repository-local info/exclude for tracked and untracked paths", async (t) => {
+  const root = mkdtempSync(join(tmpdir(), "picm-info-exclude-test-"));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  git(root, "init", "-q");
+  write(join(root, "safe.txt"));
+  write(join(root, "local-secret.txt"));
+  write(join(root, "tracked-secret.txt"));
+  git(root, "add", "tracked-secret.txt");
+  write(join(root, ".git", "info", "exclude"), "local-secret.txt\ntracked-secret.txt\n");
+  const gate = createGitReadGate({ cwd: root, packageRoot: root });
+  t.after(() => gate.dispose());
+
+  const preflight = await gate.preflight();
+  assert.equal(preflight.gitRepository, true);
+  assert.equal(preflight.rootGitignore, "missing");
+  assert.equal(preflight.gitInfoExclude, "file");
+  const inventory = await gate.refreshInventory();
+  assert.equal(inventory.candidates.has("safe.txt"), true);
+  assert.equal(inventory.candidates.has("local-secret.txt"), false);
+  assert.equal(inventory.candidates.has("tracked-secret.txt"), false);
+  assert.match((await gate.checkPath("read", "local-secret.txt")).reason, /ignored by Git/);
+  assert.match((await gate.checkPath("read", "tracked-secret.txt")).reason, /ignored by Git/);
+});
+
+test("filters and immediately blocks persisted or session privacy exclusions", async () => {
+  await withFixture(async ({ root, packageRoot }) => {
+    write(join(root, "private", "nested", "secret.txt"));
+    write(join(root, "private-note.txt"));
+    const gate = createGitReadGate({ cwd: root, packageRoot });
+    const exclusions = ["private"];
+
+    const inventory = await gate.refreshInventory(undefined, exclusions);
+    assert.equal(inventory.candidates.has("private/nested/secret.txt"), false);
+    assert.equal(inventory.candidates.has("private-note.txt"), true);
+    assert.match(
+      (await gate.checkPath("read", "private/nested/secret.txt", exclusions)).reason,
+      /PiCM privacy policy/,
+    );
+    assert.equal((await gate.checkPath("read", "private-note.txt", exclusions)).allowed, true);
+    assert.match(
+      (await gate.checkPrivacyPath("read", "private/nested/secret.txt", exclusions)).reason,
+      /PiCM privacy policy/,
+    );
+  });
+});
+
+test("preflight detects a non-Git workspace without creating isolated metadata", async () => {
+  const root = resolve("/virtual/non-git-preflight");
+  let createdTemporaryGit = false;
+  const missing = () => {
+    const error = new Error("missing");
+    error.code = "ENOENT";
+    throw error;
+  };
+  const gate = createGitReadGate({
+    cwd: root,
+    packageRoot: "/virtual/package",
+    runGit: async (_cwd, args) => args[0] === "rev-parse"
+      ? { code: 128, stdout: "", stderr: "fatal: not a git repository (or any of the parent directories): .git" }
+      : { code: 0, stdout: "", stderr: "" },
+    fs: {
+      lstat: async () => missing(),
+      mkdtemp: async () => { createdTemporaryGit = true; return "/virtual/temp"; },
+      realpath: async (path) => path,
+      rm: async () => {},
+    },
+  });
+
+  assert.deepEqual(await gate.preflight(), {
+    root,
+    gitRepository: false,
+    rootGitignore: "missing",
+    gitInfoExclude: "missing",
+  });
+  assert.equal(createdTemporaryGit, false);
+  await gate.dispose();
 });
 
 test("allows safe prospective writes and blocks ignored prospective writes and traversal", async () => {
@@ -187,13 +269,15 @@ test("uses isolated Git metadata to honor gitignore without modifying a non-Git 
   write(join(root, "nested", ".gitignore"), "!keep.log\n");
   write(join(root, "nested", "drop.log"));
   write(join(root, "nested", "keep.log"));
+  write(join(root, "config-private.txt"));
   const gate = createGitReadGate({ cwd: root, packageRoot: root });
   t.after(() => gate.dispose());
 
-  const inventory = await gate.refreshInventory();
+  const inventory = await gate.refreshInventory(undefined, ["config-private.txt"]);
   assert.equal(inventory.isolated, true);
   assert.equal(inventory.candidates.has("safe.txt"), true);
   assert.equal(inventory.candidates.has("nested/keep.log"), true);
+  assert.equal(inventory.candidates.has("config-private.txt"), false);
   assert.equal((await gate.checkPath("read", "safe.txt")).allowed, true);
   assert.equal((await gate.checkPath("read", "nested/keep.log")).allowed, true);
   assert.match((await gate.checkPath("read", "ignored.txt")).reason, /ignored by Git/);
@@ -418,7 +502,7 @@ test("extension gate is inactive outside explicit PiCM scan phases", async () =>
   });
 });
 
-test("explicit PiCM scans honor gitignore in non-Git workspaces", async (t) => {
+test("explicit PiCM scans require privacy review before honoring gitignore in non-Git workspaces", async (t) => {
   const root = mkdtempSync(join(tmpdir(), "picm-non-git-scan-test-"));
   t.after(() => rmSync(root, { recursive: true, force: true }));
   write(join(root, ".gitignore"), "ignored.txt\n");
@@ -426,8 +510,29 @@ test("explicit PiCM scans honor gitignore in non-Git workspaces", async (t) => {
   write(join(root, "ignored.txt"));
   const h = extensionHarness();
   const ctx = h.context(root, "non-git-session");
+  const scanControl = h.tools.get("picm_scan_control");
 
   await h.commands.get("picm-maintain").handler("", ctx);
+  const pending = await h.handlers.get("tool_call")(
+    { toolName: "read", input: { path: "safe.txt" } },
+    ctx,
+  );
+  assert.equal(pending.block, true);
+  assert.match(pending.reason, /privacy review/);
+
+  const preflight = await scanControl.execute("id", { action: "preflight" }, undefined, undefined, ctx);
+  assert.equal(preflight.details.gitRepository, false);
+  assert.equal(preflight.details.rootGitignore, "file");
+  assert.equal(existsSync(join(root, ".git")), false);
+  await scanControl.execute(
+    "id",
+    { action: "privacy", excludedPaths: [], persist: false },
+    undefined,
+    undefined,
+    ctx,
+  );
+  await scanControl.execute("id", { action: "begin" }, undefined, undefined, ctx);
+
   assert.equal((await h.handlers.get("tool_call")(
     { toolName: "read", input: { path: "safe.txt" } },
     ctx,
@@ -443,28 +548,109 @@ test("explicit PiCM scans honor gitignore in non-Git workspaces", async (t) => {
   await h.handlers.get("session_shutdown")({}, ctx);
 });
 
-test("explicit PiCM commands scope the gate to the active session and scan phase", async () => {
+test("persistent privacy review writes config and protects later inventories", async () => {
+  await withFixture(async ({ root }) => {
+    write(join(root, "private", "secret.txt"));
+    const h = extensionHarness({ confirm: true });
+    const ctx = h.context(root, "persistent-privacy-session");
+    const scanControl = h.tools.get("picm_scan_control");
+    await h.commands.get("picm-adopt").handler("coding", ctx);
+
+    const privacy = await scanControl.execute(
+      "id",
+      { action: "privacy", excludedPaths: ["private"], persist: true },
+      undefined,
+      undefined,
+      ctx,
+    );
+    assert.equal(privacy.details.ok, true);
+    assert.equal(privacy.details.configChanged, true);
+    assert.deepEqual(JSON.parse(readFileSync(join(root, ".picm/config.json"), "utf8")), {
+      version: 1,
+      generatedBy: "picm-factory",
+      privacy: { excludedPaths: ["private"] },
+    });
+
+    await scanControl.execute("id", { action: "begin" }, undefined, undefined, ctx);
+    const inventory = await scanControl.execute("id", { action: "inventory" }, undefined, undefined, ctx);
+    assert.equal(inventory.details.candidates.includes("private/secret.txt"), false);
+    assert.equal((await h.handlers.get("tool_call")(
+      { toolName: "read", input: { path: "private/secret.txt" } },
+      ctx,
+    )).block, true);
+  });
+});
+
+test("declining persistent privacy keeps review incomplete", async () => {
+  await withFixture(async ({ root }) => {
+    const h = extensionHarness({ confirm: false });
+    const ctx = h.context(root, "declined-privacy-session");
+    const scanControl = h.tools.get("picm_scan_control");
+    await h.commands.get("picm-adopt").handler("coding", ctx);
+    const privacy = await scanControl.execute(
+      "id",
+      { action: "privacy", excludedPaths: ["safe-dir"], persist: true },
+      undefined,
+      undefined,
+      ctx,
+    );
+    assert.equal(privacy.details.ok, false);
+    assert.equal(privacy.details.code, "PRIVACY_APPLY_DECLINED");
+    await assert.rejects(
+      scanControl.execute("id", { action: "begin" }, undefined, undefined, ctx),
+      /PICM_PRIVACY_NOT_REVIEWED/,
+    );
+  });
+});
+
+test("explicit PiCM commands enforce privacy review, session scope, and durable exclusions", async () => {
   await withFixture(async ({ root }) => {
     const h = extensionHarness();
     const ctx = h.context(root, "authorized-session");
     const unrelated = h.context(root, "unrelated-session");
+    const scanControl = h.tools.get("picm_scan_control");
     await h.commands.get("picm-adopt").handler("coding", ctx);
     assert.equal(h.sent.length, 1);
 
     const blockedRead = await h.handlers.get("tool_call")(
-      { toolName: "read", input: { path: ".env" } },
+      { toolName: "read", input: { path: "safe.txt" } },
       ctx,
     );
     assert.equal(blockedRead.block, true);
-    assert.match(blockedRead.reason, /ignored by Git/);
-    const blockedBash = await h.handlers.get("tool_call")(
-      { toolName: "bash", input: { command: "git diff HEAD~1" } },
+    assert.match(blockedRead.reason, /privacy review/);
+    await assert.rejects(
+      scanControl.execute("id", { action: "inventory" }, undefined, undefined, ctx),
+      /PICM_SCAN_NOT_ACTIVE/,
+    );
+    await assert.rejects(
+      scanControl.execute("id", { action: "begin" }, undefined, undefined, ctx),
+      /PICM_PRIVACY_NOT_REVIEWED/,
+    );
+
+    const preflight = await scanControl.execute("id", { action: "preflight" }, undefined, undefined, ctx);
+    assert.equal(preflight.details.gitRepository, true);
+    assert.equal(preflight.details.rootGitignore, "file");
+    const privacy = await scanControl.execute(
+      "id",
+      { action: "privacy", excludedPaths: ["safe-dir"], persist: false },
+      undefined,
+      undefined,
       ctx,
     );
-    assert.equal(blockedBash.block, true);
-    assert.equal(h.handlers.has("user_bash"), false);
+    assert.equal(privacy.details.privacyReviewed, true);
+    assert.deepEqual(privacy.details.excludedPaths, ["safe-dir"]);
+    assert.equal((await h.handlers.get("tool_call")(
+      { toolName: "read", input: { path: "safe.txt" } },
+      ctx,
+    )).block, true);
+    assert.match((await h.handlers.get("tool_call")(
+      { toolName: "read", input: { path: "safe.txt" } },
+      ctx,
+    )).reason, /Begin the privacy-reviewed/);
 
-    const scanControl = h.tools.get("picm_scan_control");
+    const begun = await scanControl.execute("id", { action: "begin" }, undefined, undefined, ctx);
+    assert.equal(begun.details.authorized, true);
+    assert.equal(begun.details.active, true);
     const inventory = await scanControl.execute(
       "id",
       { action: "inventory" },
@@ -473,6 +659,7 @@ test("explicit PiCM commands scope the gate to the active session and scan phase
       ctx,
     );
     assert.equal(inventory.details.candidates.includes("safe.txt"), true);
+    assert.equal(inventory.details.candidates.includes("safe-dir/file.txt"), false);
     assert.equal(inventory.details.candidates.includes(".env"), false);
 
     assert.equal(await h.handlers.get("tool_call")(
@@ -483,16 +670,30 @@ test("explicit PiCM commands scope the gate to the active session and scan phase
       scanControl.execute("id", { action: "begin" }, undefined, undefined, unrelated),
       /PICM_SCAN_NOT_AUTHORIZED/,
     );
+    assert.equal((await h.handlers.get("tool_call")(
+      { toolName: "read", input: { path: "safe-dir/file.txt" } },
+      ctx,
+    )).block, true);
+    assert.equal((await h.handlers.get("tool_call")(
+      { toolName: "mystery_filesystem_tool", input: { path: "safe.txt" } },
+      ctx,
+    )).block, true);
 
     await h.handlers.get("agent_settled")({}, ctx);
-    assert.equal(await h.handlers.get("tool_call")(
-      { toolName: "read", input: { path: ".env" } },
+    const stillPrivate = await h.handlers.get("tool_call")(
+      { toolName: "read", input: { path: "safe-dir/file.txt" } },
       ctx,
-    ), undefined);
+    );
+    assert.equal(stillPrivate.block, true);
+    assert.match(stillPrivate.reason, /PiCM privacy policy/);
+    const blockedBash = await h.handlers.get("tool_call")(
+      { toolName: "bash", input: { command: "cat safe-dir/file.txt" } },
+      ctx,
+    );
+    assert.equal(blockedBash.block, true);
 
-    const begun = await scanControl.execute("id", { action: "begin" }, undefined, undefined, ctx);
-    assert.equal(begun.details.authorized, true);
-    assert.equal(begun.details.active, true);
+    const restarted = await scanControl.execute("id", { action: "begin" }, undefined, undefined, ctx);
+    assert.equal(restarted.details.active, true);
     assert.equal((await h.handlers.get("tool_call")(
       { toolName: "read", input: { path: ".env.tracked" } },
       ctx,
@@ -501,19 +702,13 @@ test("explicit PiCM commands scope the gate to the active session and scan phase
     const ended = await scanControl.execute("id", { action: "end" }, undefined, undefined, ctx);
     assert.equal(ended.details.authorized, true);
     assert.equal(ended.details.active, false);
+    const completed = await scanControl.execute("id", { action: "complete" }, undefined, undefined, ctx);
+    assert.equal(completed.details.authorized, false);
+    assert.equal(completed.details.active, false);
     assert.equal(await h.handlers.get("tool_call")(
       { toolName: "bash", input: { command: "git diff --check" } },
       ctx,
     ), undefined);
-
-    await scanControl.execute("id", { action: "begin" }, undefined, undefined, ctx);
-    const completed = await scanControl.execute("id", { action: "complete" }, undefined, undefined, ctx);
-    assert.equal(completed.details.authorized, false);
-    assert.equal(completed.details.active, false);
-    await assert.rejects(
-      scanControl.execute("id", { action: "begin" }, undefined, undefined, ctx),
-      /PICM_SCAN_NOT_AUTHORIZED/,
-    );
 
     await h.commands.get("picm-new").handler("", ctx);
     await h.handlers.get("session_shutdown")({}, ctx);
@@ -528,21 +723,24 @@ test("explicit PiCM commands scope the gate to the active session and scan phase
   });
 });
 
-test("explicit PiCM scan authorization survives resuming the same session", async () => {
+test("privacy-reviewed scan authorization and exclusions survive resuming the same session", async () => {
   await withFixture(async ({ root }) => {
     const entries = [];
     const sessionId = "resumed-session";
     const first = extensionHarness({ entries });
     const firstCtx = first.context(root, sessionId);
+    const firstControl = first.tools.get("picm_scan_control");
 
     await first.commands.get("picm-adopt").handler("coding", firstCtx);
-    await first.tools.get("picm_scan_control").execute(
+    await firstControl.execute(
       "id",
-      { action: "end" },
+      { action: "privacy", excludedPaths: ["safe-dir"], persist: false },
       undefined,
       undefined,
       firstCtx,
     );
+    await firstControl.execute("id", { action: "begin" }, undefined, undefined, firstCtx);
+    await firstControl.execute("id", { action: "end" }, undefined, undefined, firstCtx);
     await first.handlers.get("session_shutdown")({ reason: "quit" }, firstCtx);
 
     const resumed = extensionHarness({ entries });
@@ -561,6 +759,13 @@ test("explicit PiCM scan authorization survives resuming the same session", asyn
     );
     assert.equal(restored.details.authorized, true);
     assert.equal(restored.details.active, false);
+    assert.equal(restored.details.privacyReviewed, true);
+    assert.equal(restored.details.scanStarted, true);
+    assert.deepEqual(restored.details.excludedPaths, ["safe-dir"]);
+    assert.equal((await resumed.handlers.get("tool_call")(
+      { toolName: "read", input: { path: "safe-dir/file.txt" } },
+      resumedCtx,
+    )).block, true);
 
     const begun = await resumed.tools.get("picm_scan_control").execute(
       "id",
