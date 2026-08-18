@@ -47,6 +47,7 @@ Recommended default. Run all Light checks, plus:
 - compare root and local responsibility descriptions for conflict;
 - check that verification guidance still points to authoritative manifests/scripts/tests;
 - inspect generated/do-not-edit and cross-boundary constraints for obvious staleness;
+- when optional impact notes or operational status are present, check their cited evidence and flag unsupported or stale claims;
 - run one representative coding cold-agent walk.
 
 Keep discovery manifest/documentation-level. Do not build a full semantic dependency graph.
@@ -72,12 +73,14 @@ Walk:
 
 1. **Orient from root.** Can the agent identify coding versus workflow routes and find the repository map/equivalent?
 2. **Choose the boundary.** Can it locate the component that owns the task without reading the whole repository?
-3. **Recover the change surface.** Can it find the supported entry point/public surface, important constraints, and adjacent dependencies?
+3. **Recover the change surface.** Can it find the supported entry point/public surface, important constraints, and adjacent dependencies? When an optional impact note exists, does it expose a non-obvious effect instead of restating imports or wiring?
 4. **Recover verification.** Can it identify the authoritative tests/checks and where their commands are defined?
 5. **Respect boundaries.** Are generated/do-not-edit, security, migration, or cross-component coordination rules visible before editing?
 6. **Review outcome.** Is the expected review surface a code diff plus test/check result, with cross-boundary effects and unknowns reported?
 
 Report a Warning when a normal task cannot reach an owner, entry point, or verification source without guesswork. A longer route is not automatically wrong if every read narrows context.
+
+When evaluating an optional impact note, record whether it prevented broad searching, exposed a missed non-local dependency, or merely duplicated facts already obvious from code. Recommend trimming or removing notes that do not narrow the route. Do not claim context savings unless the comparison measured them.
 
 ## Drift checks
 
@@ -132,6 +135,21 @@ Do not infer semantic architecture from imports alone. Mark confidence and ask w
 
 Typical repair: Tier 2 contract fix; Tier 3 only when changing durable architectural judgment.
 
+### Optional impact and operational-status drift
+
+Check these only when the map or local context uses them. Look for:
+
+- impact notes that restate imports or wiring without adding non-local guidance;
+- potentially affected surfaces whose cited evidence moved or disappeared;
+- known exclusions stated without explicit evidence;
+- a `live`, `leftover`, or `ghost` label contradicted by current entry points, registration, deprecation guidance, or a replacement path;
+- an agent-inferred status presented as human-confirmed;
+- ambiguity that should be downgraded to `unknown` pending user confirmation.
+
+Do not infer `leftover` or `ghost` from missing imports alone. Propose the smallest evidence-backed correction, preserve recorded user judgment, and ask before changing a consequential or ambiguous classification.
+
+Typical repair: Tier 2 context fix; Tier 3 when the classification records durable user or architectural judgment.
+
 ### Documentation drift
 
 Look for:
@@ -153,7 +171,7 @@ In the normal maintenance report Summary, state:
 - maintenance preset;
 - areas deliberately not inspected.
 
-Coding findings should include evidence and confidence when they rely on inferred boundaries. Keep map presence, map correctness, and human approval separate.
+Coding findings should include evidence and confidence when they rely on inferred boundaries. Keep map presence, map correctness, and human approval separate. When comparing context efficiency, report purposeful files opened, searches performed, missed dependencies, and task correctness; report exact token savings only when the runtime exposes a reliable measurement.
 
 For each proposed map change, identify whether it edits:
 

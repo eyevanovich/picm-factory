@@ -89,6 +89,8 @@ Expected behavior:
 - `monorepo-distributed` routes through `AGENTS.md` → `CONTEXT-MAP.md` → the selected app/package `CONTEXT.md`.
 - Distributed mapping treats `apps/api` and `packages/shared` as meaningful boundaries because they have distinct responsibilities, entry points, and tests—not merely because they are workspace members.
 - The map points to authoritative manifests/tests rather than copying large command or dependency inventories.
+- It does not add impact notes merely to restate the visible `apps/api` → `packages/shared` import relationship.
+- It omits operational status when status would not change navigation, and uses `unknown` rather than guessing when evidence is insufficient.
 - Completion guidance separates user actions from agent behavior: it tells the user to state a normal coding task and review the presented diff/check result, while routing and verification remain expected agent behavior. It does not tell the user to open or read `AGENTS.md` or manually follow the repository map.
 
 ### Hybrid composition
@@ -99,6 +101,23 @@ Expected behavior for `hybrid-release-code`:
 - Allows `workflows/release` and coding scope to overlap.
 - Routes ordinary code work through `CONTEXT-MAP.md`, release work through `workflows/release/CONTEXT.md`, and release-related code changes through both.
 - Does not force every directory into exclusive coding or workflow ownership.
+
+### Optional navigation-note calibration
+
+Use disposable copies of `monorepo-distributed` and `hybrid-release-code` to test whether optional notes narrow context rather than add prose.
+
+1. Run a representative change against `monorepo-distributed` without extra hints. Record purposeful files opened, searches performed, missed dependencies, and whether the plan is correct. The agent should follow imports and existing routing without proposing an expanded impact map.
+2. Run coding adoption against a fresh `hybrid-release-code` copy with one explicit user hint about a non-local consumer or operational step that is not represented by imports. Ask the flow to preview guidance only; do not approve writes.
+3. Repeat the representative change with that concise, source- or user-cited note present in the disposable copy. Record the same observations. Capture exact token usage only when the runtime exposes a reliable measure.
+
+Expected behavior:
+
+- The optional note names only the non-obvious potentially affected surface, evidence/confirmation, confidence, and unresolved uncertainty.
+- A known exclusion appears only when the user or visible evidence explicitly supports it.
+- The agent does not copy the import graph or create a complete dependency catalog.
+- `live`, `leftover`, or `ghost` is proposed only with cited evidence; ambiguous or consequential status is presented for user confirmation, and otherwise remains `unknown` or omitted.
+- Maintenance recommends trimming a note that does not reduce searches, prevent a missed dependency, or improve the resulting plan.
+- The comparison reports observed navigation and correctness rather than assuming context savings.
 
 ### Curated documentation adoption
 

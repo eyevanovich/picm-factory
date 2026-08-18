@@ -179,9 +179,35 @@ A useful root map should identify, where supported by evidence:
 - generated/do-not-edit areas;
 - explicit unknowns and low-confidence inferences.
 
-Prefer pointers to manifests, scripts, tests, and architecture decisions over copied dependency lists or command definitions. Do not claim ownership, coupling, or invariants that cannot be supported by visible evidence or user confirmation.
+Prefer pointers to manifests, scripts, tests, and architecture decisions over copied dependency lists or command definitions. Do not claim ownership, coupling, or invariants that cannot be supported by visible evidence or user confirmation. Do not duplicate relationships an agent can recover cheaply from ordinary imports, manifests, registration, or wiring.
 
 A local coding context should remain concise and cover only the boundary's purpose, read-first files, entry points, dependencies/constraints, change risks, verification, coordination boundaries, and known unknowns.
+
+### Optional non-obvious change-impact notes
+
+Default to omission. Add an impact note only when a recurring or high-risk edit has important effects that ordinary code navigation does not reveal cheaply, such as external consumers, generated artifacts, migrations, configuration or reflection-based registration, deployment steps, or user-confirmed operational coupling.
+
+A useful note contains:
+
+- potentially affected non-local surfaces;
+- known exclusions only when explicitly supported;
+- source paths, architecture decisions, or user confirmation;
+- confidence and unresolved uncertainty.
+
+Do not turn impact notes into copied import graphs or complete dependency catalogs. Absence of a visible import or caller is not evidence for a known exclusion. Put unsupported effects in **Unknowns**.
+
+### Optional operational status
+
+Use an operational status only when it changes how an agent should navigate or edit an area:
+
+- **live** — visible evidence or user confirmation shows the area is active and authoritative;
+- **leftover** — the area remains present but explicit evidence identifies another path as primary or records this one as deprecated;
+- **ghost** — the area is planned, stubbed, documented, or named but evidence shows it is not wired into current behavior;
+- **unknown** — available evidence cannot support one of the other classifications.
+
+An agent may propose a status with citations and confidence. Ask the user to confirm an ambiguous or consequential classification. User confirmation is strong evidence, while absence of imports alone is insufficient because configuration, reflection, plugins, generated code, and external consumers can hide use. Maintenance may flag possible drift, but must not silently relabel user-confirmed status.
+
+Neither impact notes nor operational status are coding-readiness requirements. Keep them out of maps when they do not reduce navigation uncertainty.
 
 ## Curated documentation analysis
 
