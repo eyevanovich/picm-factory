@@ -169,7 +169,7 @@ export function createRuntimeCoordinator({
         throw new Error("PICM_PREFLIGHT_INCOMPLETE: complete picm_scan_control preflight before privacy review");
       }
       const store = runtime(ctx.cwd).store;
-      const current = await store.read();
+      const current = await store.readPrivacyForReview();
       if (!current.ok) throw new Error(`${current.code}: ${current.message}`);
       const additions = mergePrivacyExcludedPaths(ctx.cwd, excludedPaths);
       let persistedPrivacy = current.privacy;
@@ -197,7 +197,7 @@ export function createRuntimeCoordinator({
             message: "No privacy settings were changed and scan privacy review remains incomplete",
           };
         }
-        const update = await store.compareAndUpdatePrivacy(current.privacy, nextPrivacy);
+        const update = await store.compareAndUpdatePrivacyForReview(current.privacy, nextPrivacy);
         if (!update.ok) throw new Error(`${update.code}: ${update.message}`);
         if (update.conflict) throw new Error(`${update.code}: ${update.message}`);
         persistedPrivacy = nextPrivacy;
@@ -365,7 +365,7 @@ export function createRuntimeCoordinator({
         reason: "PiCM privacy review must complete before any agent tool can inspect or change the project",
       };
     }
-    if (workflow && !workflow.scanStarted && scan?.cwd !== ctx.cwd) {
+    if (workflow && scan?.cwd !== ctx.cwd) {
       if (event.toolName === "picm_scan_control") return { allowed: true };
       return {
         allowed: false,

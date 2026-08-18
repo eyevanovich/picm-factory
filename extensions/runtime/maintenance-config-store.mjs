@@ -82,7 +82,7 @@ export function createMaintenanceConfigStore({
     return { ok: true, exists: true };
   }
 
-  async function read() {
+  async function read({ authorizeAccess = true } = {}) {
     const directoryDecision = await validateDirectory();
     if (!directoryDecision.ok) return directoryDecision;
     if (!directoryDecision.exists) {
@@ -99,8 +99,10 @@ export function createMaintenanceConfigStore({
     if (stat.isSymbolicLink()) return errorDecision("CONFIG_SYMLINK_BLOCKED", "PiCM config must not be a symlink");
     if (!stat.isFile()) return errorDecision("CONFIG_NOT_FILE", "PiCM config must be a regular file");
 
-    const access = await authorize("read");
-    if (!access.ok) return access;
+    if (authorizeAccess) {
+      const access = await authorize("read");
+      if (!access.ok) return access;
+    }
 
     try {
       const text = await fs.readFile(configPath, "utf8");
@@ -193,15 +195,18 @@ export function createMaintenanceConfigStore({
     conditional = false,
     conflictCode,
     conflictMessage,
+    authorizeAccess = true,
   } = {}) {
-    const initial = await read();
+    const initial = await read({ authorizeAccess });
     if (!initial.ok) return initial;
     if (!conditional && !initial.exists && validValue === undefined) {
       return { ok: true, changed: false, exists: false, [field]: undefined };
     }
 
-    const writeAccess = await authorize("write");
-    if (!writeAccess.ok) return writeAccess;
+    if (authorizeAccess) {
+      const writeAccess = await authorize("write");
+      if (!writeAccess.ok) return writeAccess;
+    }
 
     let lockHandle;
     let lockToken;
@@ -219,10 +224,12 @@ export function createMaintenanceConfigStore({
 
       const underLockDirectory = await validateDirectory();
       if (!underLockDirectory.ok) return underLockDirectory;
-      const underLockAccess = await authorize("write");
-      if (!underLockAccess.ok) return underLockAccess;
+      if (authorizeAccess) {
+        const underLockAccess = await authorize("write");
+        if (!underLockAccess.ok) return underLockAccess;
+      }
 
-      const current = await read();
+      const current = await read({ authorizeAccess });
       if (!current.ok) return current;
       if (conditional && !valuesEqual(current[field], expectedValue)) {
         return {
@@ -249,8 +256,10 @@ export function createMaintenanceConfigStore({
 
       const beforeTempDirectory = await validateDirectory();
       if (!beforeTempDirectory.ok) return beforeTempDirectory;
-      const beforeTempAccess = await authorize("write");
-      if (!beforeTempAccess.ok) return beforeTempAccess;
+      if (authorizeAccess) {
+        const beforeTempAccess = await authorize("write");
+        if (!beforeTempAccess.ok) return beforeTempAccess;
+      }
 
       // Preserve ordinary permission bits; special mode bits are intentionally stripped.
       const ordinaryMode = current.exists ? current.mode & 0o777 : 0o644;
@@ -263,8 +272,10 @@ export function createMaintenanceConfigStore({
 
       const beforeRenameDirectory = await validateDirectory();
       if (!beforeRenameDirectory.ok) return beforeRenameDirectory;
-      const beforeRenameAccess = await authorize("write");
-      if (!beforeRenameAccess.ok) return beforeRenameAccess;
+      if (authorizeAccess) {
+        const beforeRenameAccess = await authorize("write");
+        if (!beforeRenameAccess.ok) return beforeRenameAccess;
+      }
       await fs.rename(tempPath, configPath);
 
       try {
@@ -356,6 +367,28 @@ export function createMaintenanceConfigStore({
     });
   }
 
+  async function readPrivacyForReview() {
+    return read({ authorizeAccess: false });
+  }
+
+  async function compareAndUpdatePrivacyForReview(expectedPrivacy, privacy) {
+    let validExpected;
+    let validPrivacy;
+    try {
+      validExpected = expectedPrivacy === undefined ? undefined : validatePrivacyPolicy(expectedPrivacy, cwd);
+      validPrivacy = privacy === undefined ? undefined : validatePrivacyPolicy(privacy, cwd);
+    } catch (error) {
+      return errorDecision(error.code ?? "INVALID_PRIVACY_POLICY", messageOf(error));
+    }
+    return mutateConfigField("privacy", validPrivacy, {
+      expectedValue: validExpected,
+      conditional: true,
+      conflictCode: "PRIVACY_POLICY_CONFLICT",
+      conflictMessage: "privacy exclusions changed before the conditional update",
+      authorizeAccess: false,
+    });
+  }
+
   return {
     configPath,
     read,
@@ -363,5 +396,7 @@ export function createMaintenanceConfigStore({
     compareAndUpdateMaintenance,
     updatePrivacy,
     compareAndUpdatePrivacy,
+    readPrivacyForReview,
+    compareAndUpdatePrivacyForReview,
   };
 }

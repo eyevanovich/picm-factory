@@ -731,11 +731,11 @@ test("explicit PiCM commands enforce privacy review, session scope, and durable 
 
     await h.handlers.get("agent_settled")({}, ctx);
     const stillPrivate = await h.handlers.get("tool_call")(
-      { toolName: "read", input: { path: "safe-dir/file.txt" } },
+      { toolName: "read", input: { path: "safe.txt" } },
       ctx,
     );
     assert.equal(stillPrivate.block, true);
-    assert.match(stillPrivate.reason, /PiCM privacy policy/);
+    assert.match(stillPrivate.reason, /Begin the privacy-reviewed/);
     const blockedBash = await h.handlers.get("tool_call")(
       { toolName: "bash", input: { command: "cat safe-dir/file.txt" } },
       ctx,
