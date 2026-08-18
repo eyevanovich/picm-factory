@@ -129,7 +129,22 @@ export default function picmFactoryExtension(pi: ExtensionAPI) {
           );
         }
       } else if (params.action === "complete") {
-        recordClearedWorkflow(ctx);
+        if (result.completed) {
+          pi.appendEntry(scanWorkflowEntryType, {
+            status: "completed",
+            cwd: result.cwd,
+            command: result.command,
+            expiresAt: result.expiresAt,
+            preflightComplete: result.preflightComplete,
+            privacyReviewed: result.privacyReviewed,
+            scanStarted: result.scanStarted,
+            maintenanceResetAttempted: result.maintenanceResetAttempted,
+            completed: true,
+            excludedPaths: result.excludedPaths,
+          });
+        } else {
+          recordClearedWorkflow(ctx);
+        }
       }
       return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }], details: result };
     },
@@ -188,7 +203,7 @@ export default function picmFactoryExtension(pi: ExtensionAPI) {
   });
 
   pi.on("agent_settled", async (_event, ctx) => {
-    coordinator.settle(ctx);
+    if (coordinator.settle(ctx)) recordClearedWorkflow(ctx);
   });
 
   pi.on("session_shutdown", async (_event, ctx) => {

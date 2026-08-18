@@ -72,6 +72,7 @@ export function createRuntimeCoordinator({
       privacyReviewed: workflow.privacyReviewed,
       scanStarted: workflow.scanStarted,
       maintenanceResetAttempted: workflow.maintenanceResetAttempted,
+      completed: workflow.completed,
       excludedPaths: [...workflow.excludedPaths],
     };
   }
@@ -98,7 +99,7 @@ export function createRuntimeCoordinator({
   function restoreWorkflow(ctx, state) {
     clearWorkflow(ctx);
     if (
-      state?.status !== "authorized" ||
+      (state?.status !== "authorized" && state?.status !== "completed") ||
       state.cwd !== ctx.cwd ||
       !EXPLICIT_SCAN_COMMANDS.has(state.command)
     ) {
@@ -129,7 +130,7 @@ export function createRuntimeCoordinator({
       scanStarted: privacyReviewed && state.scanStarted === true,
       maintenanceResetAttempted:
         privacyReviewed && state.maintenanceResetAttempted === true,
-      completed: false,
+      completed: state.status === "completed",
       excludedPaths,
     });
     return true;
@@ -285,8 +286,10 @@ export function createRuntimeCoordinator({
       return {
         ok: true,
         action,
+        ...(workflow ? workflowState(workflow) : {}),
         authorized: false,
         active: false,
+        completed: Boolean(workflow),
       };
     }
     const current = workflowFor(ctx);
@@ -294,7 +297,7 @@ export function createRuntimeCoordinator({
     return {
       ok: true,
       action,
-      authorized: Boolean(current),
+      authorized: Boolean(current) && !current.completed,
       active: active?.cwd === ctx.cwd,
       ...(current ? workflowState(current) : {}),
     };
@@ -348,8 +351,12 @@ export function createRuntimeCoordinator({
 
   function settle(ctx) {
     clearAutomatic(ctx);
-    if (workflowFor(ctx)?.completed) clearWorkflow(ctx);
-    else clearActiveScan(ctx);
+    if (workflowFor(ctx)?.completed) {
+      clearWorkflow(ctx);
+      return true;
+    }
+    clearActiveScan(ctx);
+    return false;
   }
 
   async function checkToolCall(event, ctx) {

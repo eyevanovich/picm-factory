@@ -763,6 +763,17 @@ test("explicit PiCM commands enforce privacy review, session scope, and durable 
     const completed = await scanControl.execute("id", { action: "complete" }, undefined, undefined, ctx);
     assert.equal(completed.details.authorized, false);
     assert.equal(completed.details.active, false);
+    assert.equal(completed.details.completed, true);
+    await h.handlers.get("session_tree")({}, ctx);
+    const completedStatus = await scanControl.execute(
+      "id",
+      { action: "status" },
+      undefined,
+      undefined,
+      ctx,
+    );
+    assert.equal(completedStatus.details.authorized, false);
+    assert.equal(completedStatus.details.completed, true);
     const blockedAfterCompletion = await h.handlers.get("tool_call")(
       { toolName: "bash", input: { command: "git diff --check" } },
       ctx,
