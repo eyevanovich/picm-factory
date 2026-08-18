@@ -631,6 +631,10 @@ const commandDecisionSignals = [
   ".picm/",
   "preview",
   "non-destructive",
+  "type a space",
+  "/picm-new [workflow description]",
+  "/picm-adopt [coding | adoption request]",
+  "/picm-maintain [coding | routing",
 ];
 for (const file of commandDecisionGuidanceFiles) {
   const text = readFileSync(join(root, file), "utf8").toLowerCase();

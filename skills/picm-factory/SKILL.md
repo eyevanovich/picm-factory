@@ -207,6 +207,15 @@ Process:
 
 Explain in plain language without requiring PiCM/ICM jargon.
 
+Start with a compact syntax reference and explain that slash commands accept optional text after the command. In interactive Pi, type a space after `/picm-adopt` or `/picm-maintain` to show registered argument completions.
+
+- `/picm-new [workflow description]` — optional free-form seed context for the interview.
+- `/picm-adopt [coding | adoption request]` — `coding` skips the initial repository classification; other text describes the requested adoption focus.
+- `/picm-maintain [coding | routing | handoffs | stale-context | security | trace "drift symptom"]` — focuses the advisory check or investigates one concrete symptom.
+- `/picm-help` — shows this syntax, examples, setup, and safety guidance.
+
+Clarify that these are optional command arguments, not required flags. A bare command remains valid.
+
 Command decision guide:
 
 - **New or mostly empty folder; starting a new workflow** → `/picm-new`. It interviews, previews a minimal workspace, and writes only after approval.

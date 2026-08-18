@@ -40,6 +40,8 @@ during a general `/picm-maintain` smoke. Record fixture-specific observations he
 
 Expected behavior:
 
+- Starts with a compact command-syntax and argument reference, says bare commands remain valid, and explains: type a space after `/picm-adopt` or `/picm-maintain` to show registered argument completions.
+- Shows `/picm-new [workflow description]`, `/picm-adopt [coding | adoption request]`, and `/picm-maintain [coding | routing | handoffs | stale-context | security | trace "drift symptom"]` as optional conversational arguments rather than required flags.
 - Uses plain situations rather than requiring PiCM/ICM terminology.
 - Routes new or mostly empty folders to `/picm-new` and existing source-code, agent/workflow, or Claude-style folders to the read-only `/picm-adopt` flow.
 - Presents `/picm-adopt coding` as an optional shortcut for a known repository or monorepo while explaining that regular `/picm-adopt` can offer the same Coding Repository profile.

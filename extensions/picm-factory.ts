@@ -14,25 +14,41 @@ type CommandName = "picm-new" | "picm-adopt" | "picm-maintain" | "picm-help";
 const scanWorkflowEntryType = "picm-scan-workflow";
 
 const commandDescriptions: Record<CommandName, string> = {
-  "picm-new": "Create a new PiCM folder-agent workspace through an interview-led setup flow",
-  "picm-adopt": "Adopt an existing workflow or coding repository non-invasively",
-  "picm-maintain": "Check workflow and coding-context health using the maintenance rubric",
-  "picm-help": "Show PiCM Factory setup and command guidance",
+  "picm-new": "Create a workspace; optionally add a workflow description after the command",
+  "picm-adopt": "Adopt an existing workspace safely; type a space for optional arguments",
+  "picm-maintain": "Check workspace health; type a space for focus and trace arguments",
+  "picm-help": "Show command syntax, arguments, examples, setup, and safety guidance",
 };
 
 const adoptArgumentCompletions = [
-  { value: "coding", label: "coding — adopt as a Coding Repository or add codebase mapping" },
+  {
+    value: "coding",
+    label: "coding",
+    description: "Skip initial classification and enter Coding Repository adoption",
+  },
 ];
 
 const maintainArgumentCompletions = [
-  { value: "coding", label: "coding — check repository context-map drift" },
-  { value: 'trace "final output drifted from approved source"', label: 'trace "drift symptom"' },
-  { value: 'trace "handoffs are losing uncertainty"', label: 'trace "handoff symptom"' },
-  { value: 'trace "stage output no longer matches prior decisions"', label: 'trace "stage alignment symptom"' },
-  { value: "routing", label: "routing" },
-  { value: "handoffs", label: "handoffs" },
-  { value: "stale-context", label: "stale-context" },
-  { value: "security", label: "security" },
+  { value: "coding", label: "coding", description: "Check repository context-map drift" },
+  {
+    value: 'trace "final output drifted from approved source"',
+    label: 'trace "drift symptom"',
+    description: "Investigate one concrete drift symptom",
+  },
+  {
+    value: 'trace "handoffs are losing uncertainty"',
+    label: 'trace "handoff symptom"',
+    description: "Investigate a handoff problem",
+  },
+  {
+    value: 'trace "stage output no longer matches prior decisions"',
+    label: 'trace "stage alignment symptom"',
+    description: "Investigate stage-output drift",
+  },
+  { value: "routing", label: "routing", description: "Focus on task and context routing" },
+  { value: "handoffs", label: "handoffs", description: "Focus on handoff contracts" },
+  { value: "stale-context", label: "stale-context", description: "Focus on stale context" },
+  { value: "security", label: "security", description: "Focus on security boundaries" },
 ];
 
 function buildPrompt(command: CommandName, args: string): string {

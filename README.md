@@ -7,7 +7,7 @@ It gives Pi four project-local commands:
 - `/picm-new` — create a new folder-agent workspace through an interview-led setup flow
 - `/picm-adopt` — inspect an existing workflow or coding repository and add PiCM support non-invasively (`/picm-adopt coding` is an optional shortcut)
 - `/picm-maintain` — check routing/context health and suggest improvements
-- `/picm-help` — show setup and command guidance
+- `/picm-help` — show command syntax, argument examples, setup, and safety guidance
 
 ## Which command should I use?
 
@@ -23,6 +23,27 @@ You do not need to know PiCM or ICM terminology. Choose based on what is already
 | You are still unsure. | `/picm-help` | Repeats this guide and the safety/install model. |
 
 When a folder already has workspace architecture, prefer `/picm-adopt` over `/picm-new`. Adoption does not mean conversion: it scans and reports first, then requires an exact preview and separate approval before writing or restructuring anything.
+
+## Command arguments and autocomplete
+
+Slash commands accept optional text after the command. Bare commands remain valid. In interactive Pi, type a space after `/picm-adopt` or `/picm-maintain` to see registered argument completions.
+
+| Syntax | Argument behavior |
+| --- | --- |
+| `/picm-new [workflow description]` | Supplies optional free-form seed context for the setup interview. |
+| `/picm-adopt [coding | adoption request]` | `coding` skips the initial repository classification; other text describes the adoption focus. |
+| `/picm-maintain [coding | routing | handoffs | stale-context | security | trace "drift symptom"]` | Focuses the advisory check or investigates one concrete symptom. |
+| `/picm-help` | Shows this command reference together with setup and safety guidance. |
+
+Arguments are conversational input rather than required flags. For example:
+
+```text
+/picm-new Create a three-stage publishing workflow
+/picm-adopt coding
+/picm-adopt Include the optional file-role inventory; preview only
+/picm-maintain routing
+/picm-maintain trace "final output drifted from the approved source"
+```
 
 ## Install Pi
 

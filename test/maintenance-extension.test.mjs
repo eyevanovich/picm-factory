@@ -84,6 +84,29 @@ function oldDue(mode) {
   return createPolicy({ mode, intervalValue: 1, intervalUnit: "days", now: "2020-01-01T00:00:00.000Z" });
 }
 
+test("command descriptions and completions expose optional arguments", () => {
+  const h = harness();
+  assert.match(h.commands.get("picm-new").description, /optionally add a workflow description/);
+  assert.match(h.commands.get("picm-adopt").description, /type a space for optional arguments/);
+  assert.match(h.commands.get("picm-maintain").description, /type a space for focus and trace arguments/);
+  assert.match(h.commands.get("picm-help").description, /command syntax, arguments, examples/);
+
+  const adopt = h.commands.get("picm-adopt").getArgumentCompletions("");
+  assert.deepEqual(adopt, [{
+    value: "coding",
+    label: "coding",
+    description: "Skip initial classification and enter Coding Repository adoption",
+  }]);
+  assert.deepEqual(h.commands.get("picm-adopt").getArgumentCompletions("  COD"), adopt);
+  assert.equal(h.commands.get("picm-adopt").getArgumentCompletions("unknown"), null);
+
+  const maintain = h.commands.get("picm-maintain").getArgumentCompletions("");
+  assert.equal(maintain.length, 8);
+  assert.equal(maintain.every((item) => typeof item.description === "string" && item.description.length > 0), true);
+  assert.equal(h.commands.get("picm-maintain").getArgumentCompletions("tr").length, 3);
+  assert.equal(h.commands.get("picm-maintain").getArgumentCompletions("unknown"), null);
+});
+
 test("TUI due nudge notifies once without resetting the cycle", async (t) => {
   const cwd = fixture(t, oldDue("nudge"));
   const h = harness();
