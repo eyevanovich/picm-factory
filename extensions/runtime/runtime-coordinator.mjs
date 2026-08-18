@@ -87,6 +87,7 @@ export function createRuntimeCoordinator({
       privacyReviewed: false,
       scanStarted: false,
       maintenanceResetAttempted: false,
+      completed: false,
       excludedPaths: [],
     };
     scanWorkflows.set(sessionId, workflow);
@@ -128,6 +129,7 @@ export function createRuntimeCoordinator({
       scanStarted: privacyReviewed && state.scanStarted === true,
       maintenanceResetAttempted:
         privacyReviewed && state.maintenanceResetAttempted === true,
+      completed: false,
       excludedPaths,
     });
     return true;
@@ -139,6 +141,9 @@ export function createRuntimeCoordinator({
     const workflow = workflowFor(ctx);
     const automaticState = automaticFor(ctx);
     const automatic = Boolean(automaticState);
+    if (workflow?.completed && action !== "status" && action !== "complete") {
+      throw new Error("PICM_SCAN_COMPLETE: wait for the completed workflow to settle before starting another scan action");
+    }
     if (automaticState?.expiresAt <= Date.now()) {
       throw new Error("PICM_AUTOMATIC_SCAN_EXPIRED: automatic advisory safety boundary expired before settlement");
     }
@@ -275,7 +280,14 @@ export function createRuntimeCoordinator({
     } else if (action === "end") {
       clearActiveScan(ctx);
     } else if (action === "complete") {
-      clearWorkflow(ctx);
+      if (workflow) workflow.completed = true;
+      clearActiveScan(ctx);
+      return {
+        ok: true,
+        action,
+        authorized: false,
+        active: false,
+      };
     }
     const current = workflowFor(ctx);
     const active = activeScans.get(sessionIdFor(ctx));
@@ -336,7 +348,8 @@ export function createRuntimeCoordinator({
 
   function settle(ctx) {
     clearAutomatic(ctx);
-    clearActiveScan(ctx);
+    if (workflowFor(ctx)?.completed) clearWorkflow(ctx);
+    else clearActiveScan(ctx);
   }
 
   async function checkToolCall(event, ctx) {
@@ -358,6 +371,13 @@ export function createRuntimeCoordinator({
     const workflow = workflowFor(ctx);
     const sessionId = sessionIdFor(ctx);
     const scan = activeScans.get(sessionId);
+    if (workflow?.completed) {
+      if (event.toolName === "picm_scan_control") return { allowed: true };
+      return {
+        allowed: false,
+        reason: "The completed PiCM workflow must settle before agent tools can access the project",
+      };
+    }
     if (workflow && !workflow.privacyReviewed) {
       if (event.toolName === "picm_scan_control") return { allowed: true };
       return {
