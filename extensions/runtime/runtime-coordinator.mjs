@@ -316,13 +316,15 @@ export function createRuntimeCoordinator({
   }
 
   async function dispose(ctx) {
-    const completed = workflowFor(ctx)?.completed === true;
     clearAutomatic(ctx);
     clearWorkflow(ctx);
     const value = runtimes.get(ctx.cwd);
     runtimes.delete(ctx.cwd);
     await value?.gate.dispose();
-    return completed;
+  }
+
+  function isWorkflowCompleted(ctx) {
+    return workflowFor(ctx)?.completed === true;
   }
 
   function isAutomatic(ctx) {
@@ -577,6 +579,7 @@ export function createRuntimeCoordinator({
     checkToolCall,
     clearWorkflow,
     dispose,
+    isWorkflowCompleted,
     maintenancePolicy,
     resetCycle,
     restoreWorkflow,

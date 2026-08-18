@@ -207,7 +207,12 @@ export default function picmFactoryExtension(pi: ExtensionAPI) {
   });
 
   pi.on("session_shutdown", async (_event, ctx) => {
-    if (await coordinator.dispose(ctx)) recordClearedWorkflow(ctx);
+    const completed = coordinator.isWorkflowCompleted(ctx);
+    try {
+      await coordinator.dispose(ctx);
+    } finally {
+      if (completed) recordClearedWorkflow(ctx);
+    }
   });
 
   for (const command of Object.keys(commandDescriptions) as CommandName[]) {
