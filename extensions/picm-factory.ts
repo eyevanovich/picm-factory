@@ -51,10 +51,16 @@ const maintainArgumentCompletions = [
   { value: "security", label: "security", description: "Focus on security boundaries" },
 ];
 
+const adoptionPrivacyQuestion = "PiCM already honors `.gitignore`, nested Git ignore rules, and repository-local `.git/info/exclude`. It also protects Git internals, symlinks, nested repository/submodule boundaries, and paths outside this project. Only name additional sensitive project-relative paths not already covered by those protections. Reply with exact paths, or `none`.";
+
 function buildPrompt(command: CommandName, args: string): string {
   const mode = command.replace("picm-", "");
   const argText = args.trim() ? `\n\nUser arguments:\n${args.trim()}` : "";
-  return `Use the picm-factory skill. Load its SKILL.md before proceeding.\n\nMode: ${mode}\nCommand: /${command}${argText}`;
+  const commandContext = `Mode: ${mode}\nCommand: /${command}${argText}`;
+  if (command === "picm-adopt") {
+    return `Privacy-first startup — follow this order exactly:\n1. Call \`picm_scan_control\` with \`action: "preflight"\`. Do not load the skill or use any other tool yet.\n2. After preflight, ask this exact question and wait for the user's reply:\n\n${adoptionPrivacyQuestion}\n\n3. Call \`picm_scan_control\` with \`action: "privacy"\` and every additional exact path from the reply (an empty list for \`none\`). Use \`persist: true\` only if the user requests durable exclusions.\n4. Only after privacy review completes, load the \`picm-factory\` skill and its \`SKILL.md\`, then continue normal adoption.\n\n${commandContext}`;
+  }
+  return `Use the picm-factory skill. Load its SKILL.md before proceeding.\n\n${commandContext}`;
 }
 
 function scheduledMaintenancePrompt(): string {

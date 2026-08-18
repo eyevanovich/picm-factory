@@ -324,8 +324,14 @@ const adoptionPrivacyQuestionGuidance = {
     "sensitive eligible paths PiCM cannot infer",
   ],
   "prompts/picm-adopt.md": [
-    "In both paths, after metadata-only preflight and before scanning",
-    "automatic Git/PiCM protections from additional sensitive project-relative paths",
+    "before loading the skill or using any project-reading tool",
+    "Only name additional sensitive project-relative paths not already covered",
+    "Only after privacy review completes, load the `picm-factory` skill",
+  ],
+  "extensions/picm-factory.ts": [
+    "Privacy-first startup — follow this order exactly",
+    "Only name additional sensitive project-relative paths not already covered",
+    "Only after privacy review completes, load the \\`picm-factory\\` skill",
   ],
   "docs/layout-fixture-qa.md": [
     "both `/picm-adopt` classified as coding and `/picm-adopt coding` reassure the user",

@@ -107,6 +107,29 @@ test("command descriptions and completions expose optional arguments", () => {
   assert.equal(h.commands.get("picm-maintain").getArgumentCompletions("unknown"), null);
 });
 
+test("adopt coding dispatches preflight and exact privacy copy before skill loading", async (t) => {
+  const cwd = fixture(t);
+  const h = harness();
+
+  await h.commands.get("picm-adopt").handler("coding", h.context(cwd));
+
+  assert.equal(h.sent.length, 1);
+  const prompt = h.sent[0];
+  const preflight = prompt.indexOf("Call `picm_scan_control` with `action: \"preflight\"`");
+  const reassurance = prompt.indexOf("PiCM already honors `.gitignore`, nested Git ignore rules, and repository-local `.git/info/exclude`.");
+  const additionalPaths = prompt.indexOf("Only name additional sensitive project-relative paths not already covered by those protections. Reply with exact paths, or `none`.");
+  const privacy = prompt.indexOf("Call `picm_scan_control` with `action: \"privacy\"`");
+  const skill = prompt.indexOf("load the `picm-factory` skill and its `SKILL.md`");
+
+  assert.ok(preflight >= 0);
+  assert.ok(preflight < reassurance);
+  assert.ok(reassurance < additionalPaths);
+  assert.ok(additionalPaths < privacy);
+  assert.ok(privacy < skill);
+  assert.doesNotMatch(prompt.slice(0, preflight), /skill|SKILL\.md/);
+  assert.match(prompt, /Mode: adopt\nCommand: \/picm-adopt\n\nUser arguments:\ncoding/);
+});
+
 test("TUI due nudge notifies once without resetting the cycle", async (t) => {
   const cwd = fixture(t, oldDue("nudge"));
   const h = harness();
