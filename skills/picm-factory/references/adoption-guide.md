@@ -149,9 +149,8 @@ Classify routing quality:
 Suggested `CLAUDE.md` shim:
 
 ```markdown
-# Project Instructions
-
-Read `AGENTS.md` for canonical project instructions. This file exists for Claude Code compatibility.
+<!-- Points Claude at AGENTS.md via import; edit AGENTS.md, not this file. -->
+@AGENTS.md
 ```
 
 ## Routing proposal options
