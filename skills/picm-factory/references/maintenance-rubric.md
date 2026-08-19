@@ -23,7 +23,7 @@ For every non-trivial Warning or Suggestion, include a healing path:
 3. **Smallest safe repair** — the least invasive change that restores clarity.
 4. **Previewable change** — what file(s) could be edited after approval.
 
-Never apply repairs automatically. Offer exact edits only in `Changes I can apply with your approval` and wait for explicit approval before writing.
+Never apply repairs automatically. For every proposed project write, use `preview-review-protocol.md`: present the complete concise summary, complete mandatory exact review, and wait for separate explicit approval for the current proposal. A revision invalidates prior acceptance, review, and approval. Offer edits only in `Changes I can apply with your approval`.
 
 A configured automatic cycle means the first eligible interactive TUI session after `nextDueAt`, not a daemon or wall-clock job while Pi is closed. That cycle is chat-only and read-only: no agent-initiated Bash, report write, repair, commit, external side effect, or auto-heal. User-typed `!bash` remains unrestricted. The opted-in atomic update of `lastCycleAt`/`nextDueAt` is schedule bookkeeping and authorizes no other write. A due nudge only notifies and does not reset the cycle. Automatic maintenance may run with or without `.git`; it loads persisted PiCM exclusions, and when repository metadata is absent the extension's transient isolated Git view still honors `.gitignore` without modifying the workspace.
 
@@ -183,7 +183,7 @@ Healing paths:
 
 - Tier 2 contract fix: replace repeated mechanical steps with a concise pointer to a user-confirmed script path or MCP/tool name, plus expected inputs/outputs and review requirements.
 - If no script/tool has been named, ask whether the user wants an extraction proposal; do not invent, implement, or execute an integration as part of maintenance approval.
-- Preserve preview and explicit approval before file moves, sends, external API effects, or edits to context files.
+- Preserve the summary-preview and separate-approval gate before file moves, sends, external API effects, or edits to context files. Review linked move sources and destinations together under `preview-review-protocol.md`.
 
 ## 5. Living system hygiene and drift
 

@@ -118,16 +118,41 @@ test("adopt coding dispatches preflight and exact privacy copy before skill load
   const preflight = prompt.indexOf("Call `picm_scan_control` with `action: \"preflight\"`");
   const reassurance = prompt.indexOf("PiCM already honors `.gitignore`, nested Git ignore rules, and repository-local `.git/info/exclude`.");
   const additionalPaths = prompt.indexOf("Only name additional sensitive project-relative paths not already covered by those protections. Reply with exact paths, or `none`.");
-  const privacy = prompt.indexOf("Call `picm_scan_control` with `action: \"privacy\"`");
+  const summary = prompt.indexOf("complete concise `.picm/config.json` summary categories");
+  const acceptance = prompt.indexOf("obtain the user's summary acceptance");
+  const privacy = prompt.indexOf("call `picm_scan_control` with `action: \"privacy\"`");
+  const confirmation = prompt.indexOf("exact TUI patch confirmation");
   const skill = prompt.indexOf("load the `picm-factory` skill and its `SKILL.md`");
 
   assert.ok(preflight >= 0);
   assert.ok(preflight < reassurance);
   assert.ok(reassurance < additionalPaths);
-  assert.ok(additionalPaths < privacy);
-  assert.ok(privacy < skill);
+  assert.ok(additionalPaths < summary);
+  assert.ok(summary < acceptance);
+  assert.ok(acceptance < privacy);
+  assert.ok(privacy < confirmation);
+  assert.ok(confirmation < skill);
   assert.doesNotMatch(prompt.slice(0, preflight), /skill|SKILL\.md/);
   assert.match(prompt, /Mode: adopt\nCommand: \/picm-adopt\n\nUser arguments:\ncoding/);
+});
+
+test("maintain TUI dispatch receives persisted-privacy summary before tool call and skill load", async (t) => {
+  const cwd = fixture(t);
+  const h = harness();
+
+  await h.commands.get("picm-maintain").handler("routing", h.context(cwd));
+
+  const prompt = h.sent[0];
+  const question = prompt.indexOf("Only name additional sensitive project-relative paths not already covered by those protections. Reply with exact paths, or `none`.");
+  const summary = prompt.indexOf("complete concise `.picm/config.json` summary categories");
+  const acceptance = prompt.indexOf("obtain the user's summary acceptance");
+  const privacy = prompt.indexOf("call `picm_scan_control` with `action: \"privacy\"`");
+  const skill = prompt.indexOf("load the `picm-factory` skill and its `SKILL.md`");
+  assert.ok(question >= 0 && question < summary);
+  assert.ok(summary < acceptance && acceptance < privacy);
+  assert.ok(privacy < skill);
+  assert.match(prompt, /mark the safety\/configuration change as mandatory exact review/);
+  assert.match(prompt, /exact TUI patch confirmation is the mandatory exact review and separate write approval/);
 });
 
 test("TUI due nudge notifies once without resetting the cycle", async (t) => {
