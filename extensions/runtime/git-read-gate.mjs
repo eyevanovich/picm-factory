@@ -314,12 +314,12 @@ export function createGitReadGate({
       packagePath.startsWith("skills/picm-factory/templates/")
     );
     if (!trusted) return undefined;
-    return {
+    return allowedPathDecision({
       allowed: true,
       protected: true,
       reason: "trusted packaged PiCM resource",
       canonicalPath: resolvedPath.canonicalPath,
-    };
+    }, toolName, resolvedPath);
   }
 
   async function resolveExistingPath(inputPath, stripToolPrefix) {

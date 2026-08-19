@@ -12,7 +12,7 @@ import {
   unlinkSync,
   writeSync,
 } from "node:fs";
-import { dirname, join, relative, resolve, sep } from "node:path";
+import { basename, dirname, join, relative, resolve, sep } from "node:path";
 
 const IMAGE_TYPE_SNIFF_BYTES = 4100;
 const PNG_SIGNATURE = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
@@ -178,12 +178,18 @@ function removeCreatedFile(path, identity) {
   }
 }
 
+function descriptorPath(fd, child = "") {
+  const root = process.platform === "linux" ? "/proc/self/fd" : "/dev/fd";
+  return child ? join(root, String(fd), child) : join(root, String(fd));
+}
+
 function removeCreatedDirectories(createdDirectories) {
   for (const directory of [...createdDirectories].reverse()) {
     try {
-      const stat = lstatSync(directory.path);
+      const path = descriptorPath(directory.parentFd, directory.name);
+      const stat = lstatSync(path);
       if (stat.isSymbolicLink() || !sameIdentity(fileIdentity(stat), directory.identity)) continue;
-      rmdirSync(directory.path);
+      rmdirSync(path);
     } catch (error) {
       if (error?.code !== "ENOENT" && error?.code !== "ENOTEMPTY") throw error;
     }
@@ -199,30 +205,49 @@ function prepareParent(plan) {
   );
   const targetParent = dirname(plan.absolutePath);
   const suffix = relative(plan.existingPath, targetParent);
-  if (suffix === "") return [];
-  if (suffix === ".." || suffix.startsWith(`..${sep}`)) fail("write parent escaped its validated ancestor");
-
+  const directoryFds = [];
+  let parentFd;
   const createdDirectories = [];
-  let current = plan.existingPath;
-  for (const component of suffix.split(sep).filter(Boolean)) {
-    current = join(current, component);
-    let created = false;
-    try {
-      mkdirSync(current);
-      created = true;
-    } catch (error) {
-      if (error?.code !== "EEXIST") throw error;
-    }
-    const stat = lstatSync(current);
-    if (stat.isSymbolicLink() || !stat.isDirectory()) fail("write parent is not a real directory");
-    const expectedCanonical = resolve(
-      plan.canonicalExistingPath,
-      relative(plan.existingPath, current),
+  try {
+    parentFd = openSync(
+      plan.existingPath,
+      constants.O_RDONLY | (constants.O_DIRECTORY ?? 0) | (constants.O_NOFOLLOW ?? 0),
     );
-    if (canonical(current) !== expectedCanonical) fail("write parent changed canonical location");
-    if (created) createdDirectories.push({ path: current, identity: fileIdentity(stat) });
+    directoryFds.push(parentFd);
+    assertIdentity(fstatSync(parentFd), plan.existingIdentity, "validated write ancestor");
+    if (suffix === "") return { createdDirectories, directoryFds, parentFd };
+    if (suffix === ".." || suffix.startsWith(`..${sep}`)) {
+      fail("write parent escaped its validated ancestor");
+    }
+
+    for (const component of suffix.split(sep).filter(Boolean)) {
+      const current = descriptorPath(parentFd, component);
+      let created = false;
+      try {
+        mkdirSync(current);
+        created = true;
+      } catch (error) {
+        if (error?.code !== "EEXIST") throw error;
+      }
+      const stat = lstatSync(current);
+      if (stat.isSymbolicLink() || !stat.isDirectory()) fail("write parent is not a real directory");
+      if (created) createdDirectories.push({ parentFd, name: component, identity: fileIdentity(stat) });
+      const nextFd = openSync(
+        current,
+        constants.O_RDONLY | (constants.O_DIRECTORY ?? 0) | (constants.O_NOFOLLOW ?? 0),
+      );
+      directoryFds.push(nextFd);
+      assertIdentity(fstatSync(nextFd), fileIdentity(stat), "write parent");
+      parentFd = nextFd;
+    }
+    return { createdDirectories, directoryFds, parentFd };
+  } catch (error) {
+    try { removeCreatedDirectories(createdDirectories); } catch {}
+    for (const fd of [...directoryFds].reverse()) {
+      try { closeSync(fd); } catch {}
+    }
+    throw error;
   }
-  return createdDirectories;
 }
 
 function globMatches(fileName, pattern) {
@@ -306,6 +331,8 @@ export function createPathExecutionBinding(plan) {
   let fd;
   let created = false;
   let createdDirectories = [];
+  let directoryFds = [];
+  let boundPath = plan.absolutePath;
   try {
     if (plan.targetIdentity) {
       fd = openSync(plan.absolutePath, openFlags(plan.toolName));
@@ -320,22 +347,27 @@ export function createPathExecutionBinding(plan) {
       );
     } else {
       if (plan.toolName !== "write") fail("only writes may bind a missing target");
-      createdDirectories = prepareParent(plan);
+      const prepared = prepareParent(plan);
+      createdDirectories = prepared.createdDirectories;
+      directoryFds = prepared.directoryFds;
+      boundPath = descriptorPath(prepared.parentFd, basename(plan.absolutePath));
       try {
         fd = openSync(
-          plan.absolutePath,
+          boundPath,
           openFlags("write") | constants.O_CREAT | constants.O_EXCL,
           0o666,
         );
         created = true;
       } catch (error) {
         if (error?.code !== "EEXIST") throw error;
-        fd = openSync(plan.absolutePath, openFlags("write"));
+        fd = openSync(boundPath, openFlags("write"));
       }
       const descriptorStat = fstatSync(fd);
       if (!descriptorStat.isFile()) fail("prospective write target is not a regular file");
       const identity = fileIdentity(descriptorStat);
-      assertCurrentPath(plan.absolutePath, plan.canonicalPath, identity, "prospective write target");
+      const stat = lstatSync(boundPath);
+      if (stat.isSymbolicLink()) fail("prospective write target became a symlink after validation");
+      assertIdentity(stat, identity, "prospective write target");
     }
   } catch (error) {
     let descriptorIdentity;
@@ -349,12 +381,15 @@ export function createPathExecutionBinding(plan) {
     }
     if (created && descriptorIdentity) {
       try {
-        removeCreatedFile(plan.absolutePath, descriptorIdentity);
+        removeCreatedFile(boundPath, descriptorIdentity);
       } catch {}
     }
     try {
       removeCreatedDirectories(createdDirectories);
     } catch {}
+    for (const directoryFd of [...directoryFds].reverse()) {
+      try { closeSync(directoryFd); } catch {}
+    }
     throw error;
   }
 
@@ -424,8 +459,15 @@ export function createPathExecutionBinding(plan) {
       }
       if (created && !mutated) {
         try {
-          removeCreatedFile(plan.absolutePath, descriptorIdentity);
+          removeCreatedFile(boundPath, descriptorIdentity);
           removeCreatedDirectories(createdDirectories);
+        } catch (error) {
+          errors.push(error);
+        }
+      }
+      for (const directoryFd of [...directoryFds].reverse()) {
+        try {
+          closeSync(directoryFd);
         } catch (error) {
           errors.push(error);
         }

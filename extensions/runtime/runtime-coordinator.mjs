@@ -716,7 +716,8 @@ export function createRuntimeCoordinator({
           const currentWorkflow = workflowFor(ctx);
           if (currentWorkflow === workflow && !workflow.completed) {
             if (typeof trusted.canonicalPath === "string") event.input.path = trusted.canonicalPath;
-            return trusted;
+            const bindingFailure = bindAllowedPathDecision(event, ctx, trusted, workflow, scan);
+            return bindingFailure ?? trusted;
           }
         }
       }
