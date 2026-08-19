@@ -28,9 +28,11 @@ const required = [
   "test/maintenance-config-store.test.mjs",
   "test/maintenance-controller.test.mjs",
   "test/maintenance-extension.test.mjs",
+  "test/privacy-policy.test.mjs",
   "extensions/picm-factory.ts",
   "extensions/runtime/git-read-gate.mjs",
   "extensions/runtime/maintenance-policy.mjs",
+  "extensions/runtime/privacy-policy.mjs",
   "extensions/runtime/maintenance-config-store.mjs",
   "extensions/runtime/maintenance-controller.mjs",
   "extensions/runtime/runtime-coordinator.mjs",
@@ -109,6 +111,7 @@ const requiredPackageFiles = [
   "extensions/picm-factory.ts",
   "extensions/runtime/git-read-gate.mjs",
   "extensions/runtime/maintenance-policy.mjs",
+  "extensions/runtime/privacy-policy.mjs",
   "extensions/runtime/maintenance-config-store.mjs",
   "extensions/runtime/maintenance-controller.mjs",
   "extensions/runtime/runtime-coordinator.mjs",
@@ -246,12 +249,12 @@ for (const [file, signals] of Object.entries(mechanicalWorkGuidance)) {
 
 const codingGuidance = {
   "skills/picm-factory/SKILL.md": [
-    "Git ignored means unreadable during active PiCM scan phases",
-    "extension deterministically checks built-in path-tool calls",
-    "Outside an explicitly authorized scan phase",
+    "Every explicit workflow starts privacy-pending",
+    "repository-local `.git/info/exclude`",
+    "`.picm/config.json` privacy exclusions",
     "User-typed `!bash` is an explicit human action and is never intercepted",
-    "transient isolated Git metadata outside the workspace",
-    "not an OS sandbox",
+    "transient isolated Git metadata only after privacy review",
+    "stop rather than weakening the read boundary",
     "/picm-adopt coding",
     "Coding Repository",
     "codebase-map capability",
@@ -259,20 +262,20 @@ const codingGuidance = {
   ],
   "skills/picm-factory/references/coding-adoption-guide.md": [
     "git check-ignore --no-index",
-    "inactive during ordinary Pi work",
-    "User-typed `!bash` is never intercepted",
-    "temporary bare Git metadata",
-    "picm_scan_control",
+    "repository-local `.git/info/exclude`",
+    "User-typed `!bash` is an explicit human action and is never intercepted",
+    "temporary bare Git metadata only after privacy review",
+    "picm_scan_control preflight",
     "Root map",
     "Distributed map",
     "Scan and recommend",
     "Additive",
     "Curated",
     "CONTEXT-MAP.md",
-    "Do not follow symlinks during automatic scans",
+    "Do not follow symlinks during protected scans",
     "Treat each submodule as a separate repository boundary",
-    "blocks every agent Bash tool call",
-    "picm_scan_control inventory",
+    "blocks every agent Bash command and unrecognized agent tool",
+    "`inventory` for candidate discovery",
   ],
   "skills/picm-factory/references/coding-maintenance-rubric.md": [
     "### Light",
@@ -280,7 +283,7 @@ const codingGuidance = {
     "### Strict",
     "Coding cold-agent walk",
     "Future automation boundary",
-    "extension's immediate `git check-ignore --no-index` gate",
+    "`.git/info/exclude`",
     "picm_scan_control inventory",
   ],
   "skills/picm-factory/references/layout-profiles.md": [
@@ -304,6 +307,42 @@ for (const [file, signals] of Object.entries(codingGuidance)) {
   for (const signal of signals) {
     if (!text.includes(signal)) {
       console.error(`Coding-repository guidance ${file} missing signal: ${signal}`);
+      process.exit(1);
+    }
+  }
+}
+
+const adoptionPrivacyQuestionGuidance = {
+  "skills/picm-factory/SKILL.md": [
+    "PiCM already honors `.gitignore`, nested Git ignore rules",
+    "Only name additional sensitive project-relative paths not already covered",
+    "Reply with exact paths, or `none`",
+  ],
+  "skills/picm-factory/references/coding-adoption-guide.md": [
+    "PiCM already honors `.gitignore`, nested Git ignore rules",
+    "Only name additional sensitive project-relative paths not already covered",
+    "sensitive eligible paths PiCM cannot infer",
+  ],
+  "prompts/picm-adopt.md": [
+    "before loading the skill or using any project-reading tool",
+    "Only name additional sensitive project-relative paths not already covered",
+    "Only after privacy review completes, load the `picm-factory` skill",
+  ],
+  "extensions/picm-factory.ts": [
+    "Privacy-first startup — follow this order exactly",
+    "Only name additional sensitive project-relative paths not already covered",
+    "Only after privacy review completes, load the \\`picm-factory\\` skill",
+  ],
+  "docs/layout-fixture-qa.md": [
+    "both `/picm-adopt` classified as coding and `/picm-adopt coding` reassure the user",
+    "does not claim every secret is inferred",
+  ],
+};
+for (const [file, signals] of Object.entries(adoptionPrivacyQuestionGuidance)) {
+  const text = readFileSync(join(root, file), "utf8");
+  for (const signal of signals) {
+    if (!text.includes(signal)) {
+      console.error(`Adoption privacy-question guidance ${file} missing signal: ${signal}`);
       process.exit(1);
     }
   }
@@ -369,6 +408,13 @@ for (const signal of [
 ]) {
   if (!gitReadGate.includes(signal)) {
     console.error(`PiCM Git read gate missing signal: ${signal}`);
+    process.exit(1);
+  }
+}
+const privacyPolicy = readFileSync(join(root, "extensions/runtime/privacy-policy.mjs"), "utf8");
+for (const signal of ["normalizePrivacyExcludedPaths", "privacyPathMatches", "validatePrivacyPolicy"]) {
+  if (!privacyPolicy.includes(signal)) {
+    console.error(`PiCM privacy policy missing deterministic signal: ${signal}`);
     process.exit(1);
   }
 }
@@ -621,6 +667,10 @@ const commandDecisionSignals = [
   ".picm/",
   "preview",
   "non-destructive",
+  "type a space",
+  "/picm-new [workflow description]",
+  "/picm-adopt [coding | adoption request]",
+  "/picm-maintain [coding | routing",
 ];
 for (const file of commandDecisionGuidanceFiles) {
   const text = readFileSync(join(root, file), "utf8").toLowerCase();

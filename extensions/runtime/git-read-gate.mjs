@@ -4,6 +4,10 @@ import { tmpdir } from "node:os";
 import { dirname, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
+import {
+  normalizePrivacyExcludedPaths,
+  privacyPathMatches,
+} from "./privacy-policy.mjs";
 
 const execFileAsync = promisify(execFile);
 const PATH_TOOLS = new Set(["read", "edit", "write", "grep", "find", "ls"]);
@@ -118,6 +122,48 @@ export function createGitReadGate({
     if (!usingIsolatedGit) return runGit(worktree, args);
     const gitDir = await ensureIsolatedGit();
     return runGit(worktree, ["--git-dir", gitDir, "--work-tree", worktree, ...args]);
+  }
+
+  async function pathKind(path) {
+    try {
+      const stat = await fs.lstat(path);
+      if (stat.isSymbolicLink()) return "symlink";
+      if (stat.isFile()) return "file";
+      return "other";
+    } catch (error) {
+      if (error?.code === "ENOENT") return "missing";
+      throw error;
+    }
+  }
+
+  async function preflight() {
+    return withOperation(async () => {
+      const result = await runGit(cwd, ["rev-parse", "--show-toplevel"]);
+      let root;
+      let gitRepository;
+      let gitInfoExclude = "missing";
+      if (result.code === 0) {
+        root = await fs.realpath(resolve(result.stdout.trim()));
+        gitRepository = true;
+        const gitPath = await runGit(cwd, ["rev-parse", "--git-path", "info/exclude"]);
+        if (gitPath.code !== 0) {
+          throw new Error(`Git exclude discovery failed: ${gitPath.stderr.trim() || `exit ${gitPath.code}`}`);
+        }
+        gitInfoExclude = await pathKind(resolve(cwd, gitPath.stdout.trim()));
+      } else if (/fatal:\s+not a git repository\b/i.test(result.stderr)) {
+        root = await fs.realpath(resolve(cwd));
+        gitRepository = false;
+      } else {
+        throw new Error(`Git worktree discovery failed: ${result.stderr.trim() || `exit ${result.code}`}`);
+      }
+      const rootGitignore = await pathKind(join(root, ".gitignore"));
+      return {
+        root,
+        gitRepository,
+        rootGitignore,
+        gitInfoExclude,
+      };
+    });
   }
 
   async function discoverWorktree() {
@@ -289,8 +335,78 @@ export function createGitReadGate({
     }
   }
 
-  async function checkPathUnchecked(toolName, inputPath, { stripToolPrefix = true } = {}) {
+  async function privacyPathFor(canonicalPath) {
+    canonicalCwd ??= await fs.realpath(cwd);
+    if (!isInside(canonicalCwd, canonicalPath)) return undefined;
+    return toGitPath(canonicalCwd, canonicalPath);
+  }
+
+  async function privacyDecision(canonicalPath, exclusions) {
+    const privacyPath = await privacyPathFor(canonicalPath);
+    if (
+      privacyPath !== undefined &&
+      exclusions.some((exclusion) => privacyPathMatches(exclusion, privacyPath))
+    ) {
+      return {
+        allowed: false,
+        protected: true,
+        reason: "path is excluded by PiCM privacy policy",
+      };
+    }
+    return undefined;
+  }
+
+  async function filterPrivacyInventory(inventory, exclusions) {
+    if (exclusions.length === 0) return inventory;
+    canonicalCwd ??= await fs.realpath(cwd);
+    const canonicalInventoryRoot = await fs.realpath(inventory.worktree);
+    return {
+      ...inventory,
+      candidates: new Set([...inventory.candidates].filter((candidate) => {
+        const absolute = resolve(canonicalInventoryRoot, candidate);
+        if (!isInside(canonicalCwd, absolute)) return true;
+        const privacyPath = toGitPath(canonicalCwd, absolute);
+        return !exclusions.some((exclusion) => privacyPathMatches(exclusion, privacyPath));
+      })),
+    };
+  }
+
+  async function checkPrivacyPath(toolName, inputPath, privacyExcludedPaths = []) {
+    if (!PATH_TOOLS.has(toolName) || privacyExcludedPaths.length === 0) {
+      return { allowed: true, protected: false };
+    }
+    const exclusions = normalizePrivacyExcludedPaths(cwd, privacyExcludedPaths);
+    if (typeof inputPath !== "string" || inputPath.trim() === "") {
+      return { allowed: false, protected: true, reason: `${toolName} requires a path` };
+    }
+    try {
+      const resolvedPath = toolName === "write"
+        ? await resolveProspectivePath(inputPath, true)
+        : await resolveExistingPath(inputPath, true);
+      if (resolvedPath.blocked) {
+        return { allowed: false, protected: true, reason: resolvedPath.reason };
+      }
+      return await privacyDecision(resolvedPath.canonicalPath, exclusions) ?? {
+        allowed: true,
+        protected: true,
+        reason: "path is outside configured PiCM privacy exclusions",
+      };
+    } catch (error) {
+      return {
+        allowed: false,
+        protected: true,
+        reason: `privacy path resolution failed: ${error instanceof Error ? error.message : error}`,
+      };
+    }
+  }
+
+  async function checkPathUnchecked(
+    toolName,
+    inputPath,
+    { stripToolPrefix = true, privacyExcludedPaths = [] } = {},
+  ) {
     if (!PATH_TOOLS.has(toolName)) return { allowed: true, protected: false };
+    const exclusions = normalizePrivacyExcludedPaths(cwd, privacyExcludedPaths);
     await discoverWorktree();
     if (typeof inputPath !== "string" || inputPath.trim() === "") {
       if (TRAVERSAL_TOOLS.has(toolName)) {
@@ -333,6 +449,9 @@ export function createGitReadGate({
       return { allowed: false, protected: true, reason: "path traverses a symlink" };
     }
 
+    const privatePath = await privacyDecision(resolvedPath.canonicalPath, exclusions);
+    if (privatePath) return privatePath;
+
     const nestedBoundary = await boundaryForPath(resolvedPath.canonicalPath);
     const boundaryRoot = nestedBoundary ?? canonicalWorktree;
     const gitPath = toGitPath(boundaryRoot, resolvedPath.canonicalPath);
@@ -361,9 +480,12 @@ export function createGitReadGate({
       }
     }
 
-    const inventory = nestedBoundary
-      ? await inventoryForBoundary(nestedBoundary)
-      : await refreshInventoryUnchecked();
+    const inventory = await filterPrivacyInventory(
+      nestedBoundary
+        ? await inventoryForBoundary(nestedBoundary)
+        : await refreshInventoryUnchecked(),
+      exclusions,
+    );
     const ignoreResult = nestedBoundary
       ? await runGit(nestedBoundary, [
         "check-ignore",
@@ -409,14 +531,37 @@ export function createGitReadGate({
     };
   }
 
-  async function checkPath(toolName, inputPath) {
+  async function checkPath(toolName, inputPath, privacyExcludedPaths = []) {
     try {
-      return await withOperation(() => checkPathUnchecked(toolName, inputPath));
+      return await withOperation(() => checkPathUnchecked(
+        toolName,
+        inputPath,
+        { privacyExcludedPaths },
+      ));
     } catch (error) {
       return {
         allowed: false,
         protected: true,
         reason: `Git read gate failed closed: ${error instanceof Error ? error.message : error}`,
+      };
+    }
+  }
+
+  async function checkTrustedPackageRead(toolName, inputPath) {
+    if (toolName !== "read" || typeof inputPath !== "string" || inputPath.trim() === "") {
+      return { allowed: false, protected: true, reason: "only canonical packaged PiCM reads are allowed before scan begin" };
+    }
+    try {
+      const resolvedPath = await resolveExistingPath(inputPath, true);
+      if (!resolvedPath.blocked && await isTrustedPackageRead(resolvedPath.canonicalPath, toolName)) {
+        return { allowed: true, protected: true, reason: "trusted packaged PiCM resource" };
+      }
+      return { allowed: false, protected: true, reason: "only canonical packaged PiCM reads are allowed before scan begin" };
+    } catch (error) {
+      return {
+        allowed: false,
+        protected: true,
+        reason: `trusted package read validation failed: ${error instanceof Error ? error.message : error}`,
       };
     }
   }
@@ -429,9 +574,10 @@ export function createGitReadGate({
     };
   }
 
-  async function refreshInventory(inputPath) {
+  async function refreshInventory(inputPath, privacyExcludedPaths = []) {
     return withOperation(async () => {
-      const primary = await refreshInventoryUnchecked();
+      const exclusions = normalizePrivacyExcludedPaths(cwd, privacyExcludedPaths);
+      const primary = await filterPrivacyInventory(await refreshInventoryUnchecked(), exclusions);
       if (inputPath === undefined) return primary;
       const resolved = await resolveExistingPath(inputPath, true);
       if (resolved.blocked) throw new Error(resolved.reason);
@@ -459,7 +605,7 @@ export function createGitReadGate({
       if (parentIgnore.code !== 1) {
         throw new Error(`Parent Git ignore check was unresolved: ${parentIgnore.stderr.trim() || `exit ${parentIgnore.code}`}`);
       }
-      return inventoryForBoundary(nestedBoundary);
+      return filterPrivacyInventory(await inventoryForBoundary(nestedBoundary), exclusions);
     });
   }
 
@@ -478,5 +624,13 @@ export function createGitReadGate({
     if (root) await fs.rm(root, { recursive: true, force: true });
   }
 
-  return { checkBash, checkPath, dispose, refreshInventory };
+  return {
+    checkBash,
+    checkPath,
+    checkTrustedPackageRead,
+    checkPrivacyPath,
+    dispose,
+    preflight,
+    refreshInventory,
+  };
 }

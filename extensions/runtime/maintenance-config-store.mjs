@@ -2,6 +2,10 @@ import * as nodeFs from "node:fs/promises";
 import { randomUUID } from "node:crypto";
 import { relative, resolve, join } from "node:path";
 import { validatePolicy } from "./maintenance-policy.mjs";
+import {
+  validatePrivacyPolicy,
+  validateStoredPrivacyPolicy,
+} from "./privacy-policy.mjs";
 
 function errorDecision(code, message) {
   return { ok: false, code, message };
@@ -11,7 +15,7 @@ function messageOf(error) {
   return error instanceof Error ? error.message : String(error);
 }
 
-function policiesEqual(left, right) {
+function valuesEqual(left, right) {
   return JSON.stringify(left) === JSON.stringify(right);
 }
 
@@ -36,8 +40,8 @@ export function createMaintenanceConfigStore({
     }
   },
 } = {}) {
-  if (!cwd) throw new Error("Maintenance config store requires cwd");
-  if (!gate) throw new Error("Maintenance config store requires a Git read gate");
+  if (!cwd) throw new Error("PiCM config store requires cwd");
+  if (!gate) throw new Error("PiCM config store requires a Git read gate");
 
   const directory = join(cwd, ".picm");
   const configPath = join(directory, "config.json");
@@ -81,7 +85,7 @@ export function createMaintenanceConfigStore({
     return { ok: true, exists: true };
   }
 
-  async function read() {
+  async function read({ authorizeAccess = true } = {}) {
     const directoryDecision = await validateDirectory();
     if (!directoryDecision.ok) return directoryDecision;
     if (!directoryDecision.exists) {
@@ -95,11 +99,13 @@ export function createMaintenanceConfigStore({
       if (error?.code === "ENOENT") return { ok: true, exists: false, config: undefined, maintenance: undefined };
       return errorDecision("CONFIG_STAT_FAILED", messageOf(error));
     }
-    if (stat.isSymbolicLink()) return errorDecision("CONFIG_SYMLINK_BLOCKED", "maintenance config must not be a symlink");
-    if (!stat.isFile()) return errorDecision("CONFIG_NOT_FILE", "maintenance config must be a regular file");
+    if (stat.isSymbolicLink()) return errorDecision("CONFIG_SYMLINK_BLOCKED", "PiCM config must not be a symlink");
+    if (!stat.isFile()) return errorDecision("CONFIG_NOT_FILE", "PiCM config must be a regular file");
 
-    const access = await authorize("read");
-    if (!access.ok) return access;
+    if (authorizeAccess) {
+      const access = await authorize("read");
+      if (!access.ok) return access;
+    }
 
     try {
       const text = await fs.readFile(configPath, "utf8");
@@ -108,14 +114,14 @@ export function createMaintenanceConfigStore({
         return errorDecision("CONFIG_INVALID_JSON_OBJECT", "maintenance config root must be a JSON object");
       }
       let maintenance;
-      if (Object.hasOwn(config, "maintenance")) {
-        try {
-          maintenance = validatePolicy(config.maintenance);
-        } catch (error) {
-          return errorDecision(error.code ?? "INVALID_POLICY", messageOf(error));
-        }
+      let privacy;
+      try {
+        if (Object.hasOwn(config, "maintenance")) maintenance = validatePolicy(config.maintenance);
+        if (Object.hasOwn(config, "privacy")) privacy = validateStoredPrivacyPolicy(config.privacy, cwd);
+      } catch (error) {
+        return errorDecision(error.code ?? "INVALID_CONFIG", messageOf(error));
       }
-      return { ok: true, exists: true, config, maintenance, mode: stat.mode };
+      return { ok: true, exists: true, config, maintenance, privacy, mode: stat.mode };
     } catch (error) {
       return errorDecision(
         error instanceof SyntaxError ? "CONFIG_INVALID_JSON" : "CONFIG_READ_FAILED",
@@ -180,22 +186,30 @@ export function createMaintenanceConfigStore({
         }
         if (await recoverStaleLock()) continue;
         if (!waitForLock || attempt >= lockRetries) {
-          return errorDecision("CONFIG_LOCKED", "maintenance config is locked by another update");
+          return errorDecision("CONFIG_LOCKED", "PiCM config is locked by another update");
         }
         await delay(lockRetryMs);
       }
     }
   }
 
-  async function mutateMaintenance(validMaintenance, { expectedMaintenance, conditional = false } = {}) {
-    const initial = await read();
+  async function mutateConfigField(field, validValue, {
+    expectedValue,
+    conditional = false,
+    conflictCode,
+    conflictMessage,
+    authorizeAccess = true,
+  } = {}) {
+    const initial = await read({ authorizeAccess });
     if (!initial.ok) return initial;
-    if (!conditional && !initial.exists && validMaintenance === undefined) {
-      return { ok: true, changed: false, exists: false, maintenance: undefined };
+    if (!conditional && !initial.exists && validValue === undefined) {
+      return { ok: true, changed: false, exists: false, [field]: undefined };
     }
 
-    const writeAccess = await authorize("write");
-    if (!writeAccess.ok) return writeAccess;
+    if (authorizeAccess) {
+      const writeAccess = await authorize("write");
+      if (!writeAccess.ok) return writeAccess;
+    }
 
     let lockHandle;
     let lockToken;
@@ -213,38 +227,42 @@ export function createMaintenanceConfigStore({
 
       const underLockDirectory = await validateDirectory();
       if (!underLockDirectory.ok) return underLockDirectory;
-      const underLockAccess = await authorize("write");
-      if (!underLockAccess.ok) return underLockAccess;
+      if (authorizeAccess) {
+        const underLockAccess = await authorize("write");
+        if (!underLockAccess.ok) return underLockAccess;
+      }
 
-      const current = await read();
+      const current = await read({ authorizeAccess });
       if (!current.ok) return current;
-      if (conditional && !policiesEqual(current.maintenance, expectedMaintenance)) {
+      if (conditional && !valuesEqual(current[field], expectedValue)) {
         return {
           ok: true,
           changed: false,
           conflict: true,
-          code: "MAINTENANCE_POLICY_CONFLICT",
-          message: "maintenance policy changed before the conditional update",
-          maintenance: current.maintenance,
+          code: conflictCode,
+          message: conflictMessage,
+          [field]: current[field],
         };
       }
 
       const nextConfig = current.exists
         ? { ...current.config }
         : { version: 1, generatedBy: "picm-factory" };
-      if (validMaintenance === undefined) delete nextConfig.maintenance;
-      else nextConfig.maintenance = validMaintenance;
+      if (validValue === undefined) delete nextConfig[field];
+      else nextConfig[field] = validValue;
 
       const currentSerialized = current.exists ? `${JSON.stringify(current.config, null, 2)}\n` : undefined;
       const nextSerialized = `${JSON.stringify(nextConfig, null, 2)}\n`;
       if (currentSerialized === nextSerialized) {
-        return { ok: true, changed: false, exists: true, config: nextConfig, maintenance: validMaintenance };
+        return { ok: true, changed: false, exists: true, config: nextConfig, [field]: validValue };
       }
 
       const beforeTempDirectory = await validateDirectory();
       if (!beforeTempDirectory.ok) return beforeTempDirectory;
-      const beforeTempAccess = await authorize("write");
-      if (!beforeTempAccess.ok) return beforeTempAccess;
+      if (authorizeAccess) {
+        const beforeTempAccess = await authorize("write");
+        if (!beforeTempAccess.ok) return beforeTempAccess;
+      }
 
       // Preserve ordinary permission bits; special mode bits are intentionally stripped.
       const ordinaryMode = current.exists ? current.mode & 0o777 : 0o644;
@@ -257,8 +275,10 @@ export function createMaintenanceConfigStore({
 
       const beforeRenameDirectory = await validateDirectory();
       if (!beforeRenameDirectory.ok) return beforeRenameDirectory;
-      const beforeRenameAccess = await authorize("write");
-      if (!beforeRenameAccess.ok) return beforeRenameAccess;
+      if (authorizeAccess) {
+        const beforeRenameAccess = await authorize("write");
+        if (!beforeRenameAccess.ok) return beforeRenameAccess;
+      }
       await fs.rename(tempPath, configPath);
 
       try {
@@ -274,13 +294,13 @@ export function createMaintenanceConfigStore({
           changed: true,
           committed: true,
           code: "CONFIG_COMMITTED_SYNC_FAILED",
-          warning: `maintenance config was committed but directory sync failed: ${messageOf(error)}`,
+          warning: `PiCM config was committed but directory sync failed: ${messageOf(error)}`,
           exists: true,
           config: nextConfig,
-          maintenance: validMaintenance,
+          [field]: validValue,
         };
       }
-      return { ok: true, changed: true, committed: true, exists: true, config: nextConfig, maintenance: validMaintenance };
+      return { ok: true, changed: true, committed: true, exists: true, config: nextConfig, [field]: validValue };
     } catch (error) {
       return errorDecision("CONFIG_WRITE_FAILED", messageOf(error));
     } finally {
@@ -303,7 +323,7 @@ export function createMaintenanceConfigStore({
     } catch (error) {
       return errorDecision(error.code ?? "INVALID_POLICY", messageOf(error));
     }
-    return mutateMaintenance(validMaintenance);
+    return mutateConfigField("maintenance", validMaintenance);
   }
 
   async function compareAndUpdateMaintenance(expectedMaintenance, maintenance) {
@@ -315,8 +335,71 @@ export function createMaintenanceConfigStore({
     } catch (error) {
       return errorDecision(error.code ?? "INVALID_POLICY", messageOf(error));
     }
-    return mutateMaintenance(validMaintenance, { expectedMaintenance: validExpected, conditional: true });
+    return mutateConfigField("maintenance", validMaintenance, {
+      expectedValue: validExpected,
+      conditional: true,
+      conflictCode: "MAINTENANCE_POLICY_CONFLICT",
+      conflictMessage: "maintenance policy changed before the conditional update",
+    });
   }
 
-  return { configPath, read, updateMaintenance, compareAndUpdateMaintenance };
+  async function updatePrivacy(privacy) {
+    let validPrivacy;
+    try {
+      validPrivacy = privacy === undefined ? undefined : validatePrivacyPolicy(privacy, cwd);
+    } catch (error) {
+      return errorDecision(error.code ?? "INVALID_PRIVACY_POLICY", messageOf(error));
+    }
+    return mutateConfigField("privacy", validPrivacy);
+  }
+
+  async function compareAndUpdatePrivacy(expectedPrivacy, privacy) {
+    let validExpected;
+    let validPrivacy;
+    try {
+      validExpected = expectedPrivacy === undefined ? undefined : validateStoredPrivacyPolicy(expectedPrivacy, cwd);
+      validPrivacy = privacy === undefined ? undefined : validatePrivacyPolicy(privacy, cwd);
+    } catch (error) {
+      return errorDecision(error.code ?? "INVALID_PRIVACY_POLICY", messageOf(error));
+    }
+    return mutateConfigField("privacy", validPrivacy, {
+      expectedValue: validExpected,
+      conditional: true,
+      conflictCode: "PRIVACY_POLICY_CONFLICT",
+      conflictMessage: "privacy exclusions changed before the conditional update",
+    });
+  }
+
+  async function readPrivacyForReview() {
+    return read({ authorizeAccess: false });
+  }
+
+  async function compareAndUpdatePrivacyForReview(expectedPrivacy, privacy) {
+    let validExpected;
+    let validPrivacy;
+    try {
+      validExpected = expectedPrivacy === undefined ? undefined : validateStoredPrivacyPolicy(expectedPrivacy, cwd);
+      validPrivacy = privacy === undefined ? undefined : validatePrivacyPolicy(privacy, cwd);
+    } catch (error) {
+      return errorDecision(error.code ?? "INVALID_PRIVACY_POLICY", messageOf(error));
+    }
+    return mutateConfigField("privacy", validPrivacy, {
+      expectedValue: validExpected,
+      conditional: true,
+      conflictCode: "PRIVACY_POLICY_CONFLICT",
+      conflictMessage: "privacy exclusions changed before the conditional update",
+      authorizeAccess: false,
+    });
+  }
+
+  return {
+    configPath,
+    read,
+    updateMaintenance,
+    compareAndUpdateMaintenance,
+    updatePrivacy,
+    compareAndUpdatePrivacy,
+    readPrivacyForReview,
+    compareAndUpdatePrivacyForReview,
+  };
 }

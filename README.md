@@ -7,7 +7,7 @@ It gives Pi four project-local commands:
 - `/picm-new` — create a new folder-agent workspace through an interview-led setup flow
 - `/picm-adopt` — inspect an existing workflow or coding repository and add PiCM support non-invasively (`/picm-adopt coding` is an optional shortcut)
 - `/picm-maintain` — check routing/context health and suggest improvements
-- `/picm-help` — show setup and command guidance
+- `/picm-help` — show command syntax, argument examples, setup, and safety guidance
 
 ## Which command should I use?
 
@@ -23,6 +23,27 @@ You do not need to know PiCM or ICM terminology. Choose based on what is already
 | You are still unsure. | `/picm-help` | Repeats this guide and the safety/install model. |
 
 When a folder already has workspace architecture, prefer `/picm-adopt` over `/picm-new`. Adoption does not mean conversion: it scans and reports first, then requires an exact preview and separate approval before writing or restructuring anything.
+
+## Command arguments and autocomplete
+
+Slash commands accept optional text after the command. Bare commands remain valid. In interactive Pi, type a space after `/picm-adopt` or `/picm-maintain` to see registered argument completions.
+
+| Syntax | Argument behavior |
+| --- | --- |
+| `/picm-new [workflow description]` | Supplies optional free-form seed context for the setup interview. |
+| `/picm-adopt [coding | adoption request]` | `coding` skips the initial repository classification; other text describes the adoption focus. |
+| `/picm-maintain [coding | routing | handoffs | stale-context | security | trace "drift symptom"]` | Focuses the advisory check or investigates one concrete symptom. |
+| `/picm-help` | Shows this command reference together with setup and safety guidance. |
+
+Arguments are conversational input rather than required flags. For example:
+
+```text
+/picm-new Create a three-stage publishing workflow
+/picm-adopt coding
+/picm-adopt Include the optional file-role inventory; preview only
+/picm-maintain routing
+/picm-maintain trace "final output drifted from the approved source"
+```
 
 ## Install Pi
 
@@ -94,17 +115,17 @@ For coding repositories, regular `/picm-adopt` can safely detect repository sign
 - Light, Balanced, or Strict manual maintenance;
 - hybrid workspaces where codebase mapping overlaps Stage Pipeline, Specialist Folder, Team / Role OS, or custom layouts.
 
-Coding scans treat Git ignore rules as a hard read boundary. The read gate is inactive during ordinary Pi work and activates only for scan phases inside an explicitly invoked `/picm-new`, `/picm-adopt`, or `/picm-maintain` workflow. PiCM Factory does not activate from natural-language requests; use one of those commands to authorize a workflow. Quitting and resuming the same Pi session preserves an unexpired workflow authorization but restores it scan-inactive; completion, explicit clearing, dispatch failure, or expiry revokes it. During an active scan phase, `picm_scan_control inventory` derives candidates through Git without shell execution, and the extension checks direct path-tool calls with `git check-ignore --no-index` immediately before execution, including previously tracked ignored files. It conservatively blocks symlinks, paths outside the worktree, `.git` internals, recursive directory traversal, and every agent Bash tool call. Non-ignored Git candidates remain readable for context-map derivation. Explicitly included submodules are treated as separate worktrees with the same checks. User-typed `!bash` is never intercepted; it is an explicit human action.
+Every explicit PiCM workflow starts privacy-pending rather than scan-active. `picm_scan_control preflight` checks Git status plus root `.gitignore` and repository-local `.git/info/exclude` presence without inventorying files or creating temporary Git metadata. PiCM then explains that Git ignore rules and its path protections apply automatically, and asks only for additional sensitive project-relative paths not already covered. This list remains important for sensitive eligible files PiCM cannot infer. Exact exclusions are recorded before `begin` can activate a scan. Approved durable exclusions live in `.picm/config.json` under `privacy.excludedPaths`; session additions are merged, survive same-session resume, and remain enforced until completion or expiry revokes the workflow.
 
-PiCM scans and maintenance may run with or without `.git`. When repository metadata is absent, the extension creates transient bare Git metadata in the operating system's temporary directory and points it at the workspace only for candidate and ignore evaluation. This preserves Git's root/nested `.gitignore` and negation semantics without creating `.git` or modifying project files; the temporary metadata is removed on session shutdown.
+Protected scans combine root/nested `.gitignore`, `.git/info/exclude`, global Git excludes, persisted PiCM exclusions, and current-session exclusions. Any matching source removes the path from inventory and blocks direct access, including tracked Git matches. Active scans also block symlinks, paths outside the worktree, `.git` internals, recursive traversal, every agent Bash call, and unrecognized agent tools. Explicitly included submodules receive parent, local Git, and PiCM privacy checks. User-typed `!bash` is never intercepted because it is an explicit human action.
 
-This deterministic gate covers Pi's built-in path tools and blocks agent Bash during active scans; it is not an OS-level sandbox. Dynamically constructed shell paths therefore cannot be used by the agent during a guarded scan. Unrelated custom filesystem tools and filesystem time-of-check/time-of-use races remain limitations, so the skill prohibits those bypasses and keeps the privacy check mandatory.
+PiCM scans and maintenance may run with or without `.git`. When repository metadata is absent, the extension creates transient bare Git metadata only after privacy review and points it at the workspace for remaining candidate and Git-exclude evaluation. It never creates project `.git` metadata and removes the temporary metadata on session shutdown. This is a deterministic PiCM tool boundary rather than an OS sandbox; filesystem time-of-check/time-of-use races remain a limitation.
 
 ## Maintenance cadence
 
 During new-workspace or adoption setup, PiCM Factory can record a shared maintenance policy in `.picm/config.json`: manual, a nudge, or an automatic advisory cycle. Scheduling requires `.picm/config.json` to be non-ignored and a regular, non-symlink file beneath a regular, non-symlink `.picm/` directory. The recommended default offer is a monthly nudge; positive custom intervals may use days, weeks, or calendar months. Skipping or declining leaves maintenance manual and writes no schedule.
 
-The extension stores explicit UTC `lastCycleAt` and `nextDueAt` timestamps. `/picm-new`, `/picm-adopt`, and `/picm-maintain` reset an existing scheduled cycle; `/picm-help` does not. A due nudge only notifies. Automatic means one read-only advisory maintenance run in the first eligible interactive TUI session after the due time—not wall-clock execution while Pi is closed, and never print, JSON, RPC, or other headless execution. It works in Git and non-Git workspaces while honoring any `.gitignore` through the same Git-backed scan boundary. The scheduled timestamp update is authorized by the user's opt-in; reports, repairs, commits, and all other writes or external side effects still require their own preview and approval.
+The extension stores explicit UTC `lastCycleAt` and `nextDueAt` timestamps. `/picm-new`, `/picm-adopt`, and `/picm-maintain` reset an existing scheduled cycle once, only after their metadata-only preflight and privacy review succeed; `/picm-help`, failed or declined privacy review, and pre-privacy cancellation do not. A due nudge only notifies. Automatic means one read-only advisory maintenance run in the first eligible interactive TUI session after the due time—not wall-clock execution while Pi is closed, and never print, JSON, RPC, or other headless execution. It works in Git and non-Git workspaces while honoring Git and persisted PiCM exclusions through the same protected-scan boundary. The scheduled timestamp update is authorized by the user's opt-in; reports, repairs, commits, and all other writes or external side effects still require their own preview and approval.
 
 ## Safety model
 
@@ -114,11 +135,11 @@ PiCM Factory is intentionally conservative:
 - Non-destructive by default: preview planned edits before writing.
 - Git encouraged, but no automatic commits.
 - Secrets-first handling: do not commit `.env`, keys, tokens, credentials, or sensitive client data accidentally.
-- Git-ignore-gated PiCM scans: during explicitly authorized scan phases, built-in path reads are checked immediately before execution and agent Bash is blocked; ordinary Pi work and user-typed `!bash` are unaffected.
+- Privacy-first protected scans: no inventory or project tool runs before privacy review; Git and PiCM exclusions are checked immediately before access, agent Bash and unknown tools are blocked, and ordinary Pi work plus user-typed `!bash` remain unaffected outside the workflow.
 - `.pi/` belongs to Pi package configuration and controls which project-local Pi resources load.
-- `.picm/` belongs to small PiCM metadata/reports. It is maintainer-only context, not the normal workflow or source of truth.
+- `.picm/` belongs to small PiCM metadata/reports and optional `privacy.excludedPaths`. It is maintainer-only context, not the normal workflow or source of truth.
 
-When sensitive, private, or local-only paths are identified, PiCM Factory should propose exact `.gitignore` entries for the user to review instead of adding generic patterns.
+When sensitive, private, or local-only paths are identified, PiCM Factory can persist them for scans in `.picm/config.json`. If the repository lacks root `.gitignore`, it separately offers exact Git-ignore entries for commit protection instead of adding generic patterns.
 
 ## Acknowledgments
 

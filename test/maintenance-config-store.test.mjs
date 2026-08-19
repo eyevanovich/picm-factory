@@ -32,6 +32,42 @@ test("creates only minimal metadata plus explicitly set maintenance", async (t) 
   });
 });
 
+test("persists and conditionally updates normalized privacy exclusions", async (t) => {
+  const { cwd, gate } = await repository(t);
+  const store = createMaintenanceConfigStore({ cwd, gate, randomId: () => "privacy" });
+  const first = await store.updatePrivacy({ excludedPaths: ["secrets/key.txt", "secrets/", ".env"] });
+  assert.equal(first.ok, true);
+  assert.deepEqual(first.privacy, { excludedPaths: [".env", "secrets"] });
+  assert.deepEqual(JSON.parse(await fs.readFile(join(cwd, ".picm/config.json"), "utf8")), {
+    version: 1,
+    generatedBy: "picm-factory",
+    privacy: { excludedPaths: [".env", "secrets"] },
+  });
+
+  const conflict = await store.compareAndUpdatePrivacy(
+    { excludedPaths: ["different"] },
+    { excludedPaths: ["private"] },
+  );
+  assert.equal(conflict.conflict, true);
+  assert.equal(conflict.code, "PRIVACY_POLICY_CONFLICT");
+  assert.deepEqual((await store.read()).privacy, { excludedPaths: [".env", "secrets"] });
+});
+
+test("rejects malformed or outside privacy exclusions", async (t) => {
+  const { cwd, gate } = await repository(t);
+  const store = createMaintenanceConfigStore({ cwd, gate });
+  assert.equal((await store.updatePrivacy({ excludedPaths: ["../outside"] })).code, "PRIVACY_EXCLUDED_PATH_OUTSIDE");
+
+  await fs.mkdir(join(cwd, ".picm"));
+  await fs.writeFile(join(cwd, ".picm/config.json"), JSON.stringify({
+    version: 1,
+    privacy: { excludedPaths: "secrets" },
+  }));
+  const invalid = await store.read();
+  assert.equal(invalid.ok, false);
+  assert.equal(invalid.code, "PRIVACY_EXCLUDED_PATHS_INVALID");
+});
+
 test("does not create a config for absent manual policy", async (t) => {
   const { cwd, gate } = await repository(t);
   const store = createMaintenanceConfigStore({ cwd, gate });
@@ -71,7 +107,7 @@ test("blocks ignored and symlink maintenance configs or directories", async (t) 
   await fs.writeFile(join(linked.cwd, "actual.json"), "{}\n");
   await fs.symlink(join(linked.cwd, "actual.json"), join(linked.cwd, ".picm/config.json"));
   const linkedResult = await createMaintenanceConfigStore(linked).read();
-  assert.deepEqual(linkedResult, { ok: false, code: "CONFIG_SYMLINK_BLOCKED", message: "maintenance config must not be a symlink" });
+  assert.deepEqual(linkedResult, { ok: false, code: "CONFIG_SYMLINK_BLOCKED", message: "PiCM config must not be a symlink" });
 
   const linkedDirectory = await repository(t);
   await fs.mkdir(join(linkedDirectory.cwd, "actual-picm"));
@@ -282,4 +318,49 @@ test("reclaims orphaned unique recovery links", async (t) => {
 
   assert.equal(result.ok, true);
   assert.equal((await fs.readdir(join(cwd, ".picm"))).some((entry) => entry.includes(".lock.recovery-")), false);
+});
+
+test("legacy opaque privacy objects remain readable and merge exclusions without data loss", async (t) => {
+  const { cwd, gate } = await repository(t);
+  await fs.mkdir(join(cwd, ".picm"));
+  const path = join(cwd, ".picm/config.json");
+  const legacyPrivacy = { owner: "security-team", legacyMode: "private" };
+  await fs.writeFile(path, `${JSON.stringify({ version: 1, custom: "keep", privacy: legacyPrivacy }, null, 2)}\n`);
+  const store = createMaintenanceConfigStore({ cwd, gate });
+
+  const review = await store.readPrivacyForReview();
+  assert.equal(review.ok, true);
+  assert.deepEqual(review.privacy, legacyPrivacy);
+  assert.deepEqual(JSON.parse(await fs.readFile(path, "utf8")).privacy, legacyPrivacy);
+
+  const updated = await store.compareAndUpdatePrivacyForReview(
+    review.privacy,
+    { ...review.privacy, excludedPaths: ["private", "private/nested"] },
+  );
+  assert.equal(updated.ok, true);
+  assert.equal(updated.changed, true);
+  assert.deepEqual(JSON.parse(await fs.readFile(path, "utf8")), {
+    version: 1,
+    custom: "keep",
+    privacy: {
+      owner: "security-team",
+      legacyMode: "private",
+      excludedPaths: ["private"],
+    },
+  });
+});
+
+test("legacy non-object privacy requires non-destructive migration", async (t) => {
+  const { cwd, gate } = await repository(t);
+  await fs.mkdir(join(cwd, ".picm"));
+  const path = join(cwd, ".picm/config.json");
+  const original = `${JSON.stringify({ version: 1, privacy: "security-owned" }, null, 2)}\n`;
+  await fs.writeFile(path, original);
+  const store = createMaintenanceConfigStore({ cwd, gate });
+
+  const result = await store.readPrivacyForReview();
+  assert.equal(result.ok, false);
+  assert.equal(result.code, "PRIVACY_LEGACY_MIGRATION_REQUIRED");
+  assert.match(result.message, /migrate it explicitly/);
+  assert.equal(await fs.readFile(path, "utf8"), original);
 });

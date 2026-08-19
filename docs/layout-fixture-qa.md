@@ -40,6 +40,8 @@ during a general `/picm-maintain` smoke. Record fixture-specific observations he
 
 Expected behavior:
 
+- Starts with a compact command-syntax and argument reference, says bare commands remain valid, and explains: type a space after `/picm-adopt` or `/picm-maintain` to show registered argument completions.
+- Shows `/picm-new [workflow description]`, `/picm-adopt [coding | adoption request]`, and `/picm-maintain [coding | routing | handoffs | stale-context | security | trace "drift symptom"]` as optional conversational arguments rather than required flags.
 - Uses plain situations rather than requiring PiCM/ICM terminology.
 - Routes new or mostly empty folders to `/picm-new` and existing source-code, agent/workflow, or Claude-style folders to the read-only `/picm-adopt` flow.
 - Presents `/picm-adopt coding` as an optional shortcut for a known repository or monorepo while explaining that regular `/picm-adopt` can offer the same Coding Repository profile.
@@ -75,7 +77,7 @@ Run both regular and explicit entry paths against disposable Git copies:
 
 Expected behavior:
 
-- Regular `/picm-adopt` uses only shallow Git-ignore-aware path signals before offering the Coding Repository profile; it does not require the shortcut.
+- After privacy review, regular `/picm-adopt` uses only shallow protected-inventory path signals before offering the Coding Repository profile; it does not require the shortcut.
 - `/picm-adopt coding` skips the initial classification question but preserves the same security, scan, preview, and approval rules.
 - The flow offers root, distributed, and scan-and-recommend mapping; additive and curated adoption; and Light, Balanced, or Strict maintenance.
 - The user can choose Coding Repository as the primary profile or add codebase mapping to another primary profile.
@@ -89,6 +91,8 @@ Expected behavior:
 - `monorepo-distributed` routes through `AGENTS.md` → `CONTEXT-MAP.md` → the selected app/package `CONTEXT.md`.
 - Distributed mapping treats `apps/api` and `packages/shared` as meaningful boundaries because they have distinct responsibilities, entry points, and tests—not merely because they are workspace members.
 - The map points to authoritative manifests/tests rather than copying large command or dependency inventories.
+- It does not add impact notes merely to restate the visible `apps/api` → `packages/shared` import relationship.
+- It omits operational status when status would not change navigation, and uses `unknown` rather than guessing when evidence is insufficient.
 - Completion guidance separates user actions from agent behavior: it tells the user to state a normal coding task and review the presented diff/check result, while routing and verification remain expected agent behavior. It does not tell the user to open or read `AGENTS.md` or manually follow the repository map.
 
 ### Hybrid composition
@@ -99,6 +103,23 @@ Expected behavior for `hybrid-release-code`:
 - Allows `workflows/release` and coding scope to overlap.
 - Routes ordinary code work through `CONTEXT-MAP.md`, release work through `workflows/release/CONTEXT.md`, and release-related code changes through both.
 - Does not force every directory into exclusive coding or workflow ownership.
+
+### Optional navigation-note calibration
+
+Use disposable copies of `monorepo-distributed` and `hybrid-release-code` to test whether optional notes narrow context rather than add prose.
+
+1. Run a representative change against `monorepo-distributed` without extra hints. Record purposeful files opened, searches performed, missed dependencies, and whether the plan is correct. The agent should follow imports and existing routing without proposing an expanded impact map.
+2. Run coding adoption against a fresh `hybrid-release-code` copy with one explicit user hint about a non-local consumer or operational step that is not represented by imports. Ask the flow to preview guidance only; do not approve writes.
+3. Repeat the representative change with that concise, source- or user-cited note present in the disposable copy. Record the same observations. Capture exact token usage only when the runtime exposes a reliable measure.
+
+Expected behavior:
+
+- The optional note names only the non-obvious potentially affected surface, evidence/confirmation, confidence, and unresolved uncertainty.
+- A known exclusion appears only when the user or visible evidence explicitly supports it.
+- The agent does not copy the import graph or create a complete dependency catalog.
+- `live`, `leftover`, or `ghost` is proposed only with cited evidence; ambiguous or consequential status is presented for user confirmation, and otherwise remains `unknown` or omitted.
+- Maintenance recommends trimming a note that does not reduce searches, prevent a missed dependency, or improve the resulting plan.
+- The comparison reports observed navigation and correctness rather than assuming context savings.
 
 ### Curated documentation adoption
 
@@ -112,7 +133,7 @@ Expected behavior:
 - Separately highlights proposed rewrites, merges, moves, archive candidates, or deletions.
 - Treats choosing Curated as permission to draft a proposal, not permission to apply it.
 
-### Git-ignore read boundary
+### Protected privacy and Git-exclude boundary
 
 Prepare the ignored-file fixture in a disposable Git repository:
 
@@ -132,6 +153,9 @@ git -c user.name="PiCM Fixture" -c user.email="fixture@example.invalid" commit -
 printf 'SYNTHETIC_ONLY=do-not-read\n' > .env
 mkdir -p secrets
 printf 'SYNTHETIC FAKE KEY - DO NOT READ\n' > secrets/fake-key.pem
+printf 'LOCAL_EXCLUDE=do-not-read\n' > local-excluded.txt
+printf 'local-excluded.txt\n' >> .git/info/exclude
+printf 'CONFIG_EXCLUDE=do-not-read\n' > config-excluded.txt
 pi install -l /path/to/picm-factory
 pi
 ```
@@ -140,11 +164,16 @@ Expected behavior:
 
 - Before an explicit PiCM command, the extension leaves ordinary Pi reads, user-level skills, screenshots/outside paths, Git inspection, and agent tools untouched; use only the synthetic fixture when demonstrating that pass-through.
 - User-typed `!bash` is never intercepted, including during an active PiCM scan or automatic maintenance cycle.
-- `/picm-new`, `/picm-adopt`, and `/picm-maintain` authorize their workflow and activate the gate for the command's first scan turn; `/picm-help` and natural-language requests do not.
-- After an agent turn settles, the scan gate is inactive. A later interview turn calls `picm_scan_control begin` before scanning and `end` afterward. Session shutdown clears only in-memory active state; resuming the same session restores valid workflow authorization inactive. Workflow completion, explicit clearing, dispatch failure, or expiry revokes authorization durably so it cannot be restored on resume.
-- Uses `picm_scan_control inventory` to derive candidates through Git without agent Bash, and runs `git check-ignore --no-index` before reading each candidate.
-- In a second disposable fixture, omit `.git` but keep `.gitignore`; verify explicit and automatic maintenance scans still dispatch, block ignored agent reads, allow safe candidates, create no project `.git`, and remove transient isolated Git metadata on shutdown.
-- Does not open, quote, summarize, hash, or otherwise inspect untracked ignored `.env`, tracked ignored `.env.tracked`, or `secrets/fake-key.pem`, including through `git show`, broad traversal, or another worktree.
+- `/picm-new`, `/picm-adopt`, and `/picm-maintain` authorize a privacy-pending workflow; `/picm-help` and natural-language requests do not. Before privacy review, every agent tool except `picm_scan_control` is blocked.
+- `picm_scan_control preflight` reports Git status plus root `.gitignore` and `.git/info/exclude` presence without candidate inventory or temporary Git metadata. Immediately afterward, both `/picm-adopt` classified as coding and `/picm-adopt coding` reassure the user that Git ignore rules, Git internals, symlinks, repository/submodule boundaries, and outside-project paths are already protected, then ask only for additional sensitive project-relative paths or `none`.
+- The additional-path question does not claim every secret is inferred or treat ignore rules as sufficient for sensitive eligible files. The workflow records `config-excluded.txt`, previews `privacy.excludedPaths`, and persists it only after exact confirmation.
+- After privacy review but before `begin`, only canonical packaged PiCM skill, reference, and template reads succeed; project-local lookalikes and other project resource reads remain blocked.
+- `begin` is refused before privacy review. After review, `inventory` combines root/nested `.gitignore`, `.git/info/exclude`, global Git excludes, persisted PiCM config, and session additions. A later scan phase calls `begin` again and `end` afterward.
+- Session shutdown clears only active scan state; resuming the same session restores valid privacy-reviewed authorization and exclusions inactive. Workflow completion, explicit clearing, dispatch failure, or expiry revokes authorization durably.
+- Uses `picm_scan_control inventory` to derive candidates without agent Bash and checks Git plus PiCM exclusions immediately before each path-tool execution. Unknown agent tools are blocked during active scans; confirmed privacy paths remain blocked between scan phases.
+- In a second disposable fixture, omit `.git` but keep `.gitignore`; verify preflight creates no temporary metadata, then privacy review allows explicit and automatic maintenance scans to block excluded reads, allow safe candidates, create no project `.git`, and remove post-review transient metadata on shutdown.
+- In a third disposable fixture, omit both `.git` and `.gitignore`; verify preflight asks privacy before creating transient metadata and persisted/session exclusions protect the scan.
+- Does not open, quote, summarize, hash, or otherwise inspect untracked ignored `.env`, tracked ignored `.env.tracked`, `secrets/fake-key.pem`, `.git/info/exclude`-matched `local-excluded.txt`, or config-excluded `config-excluded.txt`, including through `git show`, broad traversal, or another worktree.
 - Does not follow `ignored-target-link` to the ignored `.env` target.
 - Visible Pi tool logs contain no read of any ignored file or symlink target.
 - Still asks whether tracked files or other approved paths contain secrets; ignore rules are not treated as proof that every remaining path is safe.
@@ -175,7 +204,7 @@ Expected behavior:
 - `monorepo-distributed` checks root/local responsibility agreement and manifest-level workspace coverage without attempting a full semantic dependency graph.
 - `hybrid-release-code` checks both coding and workflow routes for mixed release-related changes.
 - Preserves human-authored map content and proposes the smallest evidence-backed patch rather than regenerating whole files.
-- Applies the Git-ignore read boundary before every coding scan.
+- Applies the privacy-first Git and PiCM exclusion boundary before every coding scan.
 
 ### Stage Pipeline
 

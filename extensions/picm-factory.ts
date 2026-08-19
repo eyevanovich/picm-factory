@@ -1,5 +1,10 @@
-import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import {
+  withFileMutationQueue,
+  type ExtensionAPI,
+  type ExtensionContext,
+} from "@earendil-works/pi-coding-agent";
 import { StringEnum } from "@earendil-works/pi-ai";
+import { join } from "node:path";
 import { Type } from "typebox";
 import { packageRootFromImportMeta } from "./runtime/git-read-gate.mjs";
 import { createRuntimeCoordinator } from "./runtime/runtime-coordinator.mjs";
@@ -9,35 +14,61 @@ type CommandName = "picm-new" | "picm-adopt" | "picm-maintain" | "picm-help";
 const scanWorkflowEntryType = "picm-scan-workflow";
 
 const commandDescriptions: Record<CommandName, string> = {
-  "picm-new": "Create a new PiCM folder-agent workspace through an interview-led setup flow",
-  "picm-adopt": "Adopt an existing workflow or coding repository non-invasively",
-  "picm-maintain": "Check workflow and coding-context health using the maintenance rubric",
-  "picm-help": "Show PiCM Factory setup and command guidance",
+  "picm-new": "Create a workspace; optionally add a workflow description after the command",
+  "picm-adopt": "Adopt an existing workspace safely; type a space for optional arguments",
+  "picm-maintain": "Check workspace health; type a space for focus and trace arguments",
+  "picm-help": "Show command syntax, arguments, examples, setup, and safety guidance",
 };
 
 const adoptArgumentCompletions = [
-  { value: "coding", label: "coding — adopt as a Coding Repository or add codebase mapping" },
+  {
+    value: "coding",
+    label: "coding",
+    description: "Skip initial classification and enter Coding Repository adoption",
+  },
 ];
 
 const maintainArgumentCompletions = [
-  { value: "coding", label: "coding — check repository context-map drift" },
-  { value: 'trace "final output drifted from approved source"', label: 'trace "drift symptom"' },
-  { value: 'trace "handoffs are losing uncertainty"', label: 'trace "handoff symptom"' },
-  { value: 'trace "stage output no longer matches prior decisions"', label: 'trace "stage alignment symptom"' },
-  { value: "routing", label: "routing" },
-  { value: "handoffs", label: "handoffs" },
-  { value: "stale-context", label: "stale-context" },
-  { value: "security", label: "security" },
+  { value: "coding", label: "coding", description: "Check repository context-map drift" },
+  {
+    value: 'trace "final output drifted from approved source"',
+    label: 'trace "drift symptom"',
+    description: "Investigate one concrete drift symptom",
+  },
+  {
+    value: 'trace "handoffs are losing uncertainty"',
+    label: 'trace "handoff symptom"',
+    description: "Investigate a handoff problem",
+  },
+  {
+    value: 'trace "stage output no longer matches prior decisions"',
+    label: 'trace "stage alignment symptom"',
+    description: "Investigate stage-output drift",
+  },
+  { value: "routing", label: "routing", description: "Focus on task and context routing" },
+  { value: "handoffs", label: "handoffs", description: "Focus on handoff contracts" },
+  { value: "stale-context", label: "stale-context", description: "Focus on stale context" },
+  { value: "security", label: "security", description: "Focus on security boundaries" },
 ];
 
-function buildPrompt(command: CommandName, args: string): string {
+const adoptionPrivacyQuestion = "PiCM already honors `.gitignore`, nested Git ignore rules, and repository-local `.git/info/exclude`. It also protects Git internals, symlinks, nested repository/submodule boundaries, and paths outside this project. Only name additional sensitive project-relative paths not already covered by those protections. Reply with exact paths, or `none`.";
+
+function buildPrompt(
+  command: CommandName,
+  args: string,
+  privacyBootstrap = command === "picm-adopt",
+): string {
   const mode = command.replace("picm-", "");
   const argText = args.trim() ? `\n\nUser arguments:\n${args.trim()}` : "";
-  return `Use the picm-factory skill. Load its SKILL.md before proceeding.\n\nMode: ${mode}\nCommand: /${command}${argText}`;
+  const commandContext = `Mode: ${mode}\nCommand: /${command}${argText}`;
+  if (privacyBootstrap) {
+    return `Privacy-first startup — follow this order exactly:\n1. Call \`picm_scan_control\` with \`action: "preflight"\`. Do not load the skill or use any other tool yet.\n2. After preflight, ask this exact question and wait for the user's reply:\n\n${adoptionPrivacyQuestion}\n\n3. Call \`picm_scan_control\` with \`action: "privacy"\` and every additional exact path from the reply (an empty list for \`none\`). Use \`persist: true\` only if the user requests durable exclusions.\n4. Only after privacy review completes, load the \`picm-factory\` skill and its \`SKILL.md\`, then continue the ${mode} workflow.\n\n${commandContext}`;
+  }
+  return `Use the picm-factory skill. Load its SKILL.md before proceeding.\n\n${commandContext}`;
 }
 
 function scheduledMaintenancePrompt(): string {
-  return `${buildPrompt("picm-maintain", "scheduled read-only advisory cycle")}\n\nThis is an automatic due-cycle advisory. Do not edit or write files, run Bash, create a report, repair anything, commit, send data, or cause external side effects. Report findings in chat only.`;
+  return `${buildPrompt("picm-maintain", "scheduled read-only advisory cycle", false)}\n\nThis is an automatic due-cycle advisory. Do not edit or write files, run Bash, create a report, repair anything, commit, send data, or cause external side effects. Report findings in chat only.`;
 }
 
 export default function picmFactoryExtension(pi: ExtensionAPI) {
@@ -59,28 +90,67 @@ export default function picmFactoryExtension(pi: ExtensionAPI) {
   pi.registerTool({
     name: "picm_scan_control",
     label: "PiCM Scan Control",
-    description: "Control Git-guarded scan phases inside an explicitly authorized PiCM command workflow",
-    promptSnippet: "Begin, inventory, end, complete, or inspect an explicitly authorized PiCM scan phase",
+    description: "Preflight, privacy-review, and control protected scan phases inside an explicitly authorized PiCM workflow",
+    promptSnippet: "Preflight, record privacy exclusions, and control protected PiCM scan phases",
     promptGuidelines: [
-      "Only an explicit /picm-new, /picm-adopt, or /picm-maintain command authorizes this tool; natural-language requests do not.",
-      "The command's first turn is already scan-active. Use inventory to obtain Git-derived candidate paths without Bash; on later interview turns call begin before scanning, end afterward, and complete when the workflow finishes.",
-      "An active automatic advisory session may use only inventory; it does not authorize begin, end, complete, status, Bash, or writes.",
+      "Only an explicit /picm-new, /picm-adopt, or /picm-maintain command authorizes picm_scan_control; natural-language requests do not.",
+      "After an explicit command, call picm_scan_control preflight before any scan, ask the privacy question, then call privacy with every exact project-relative excluded path before begin.",
+      "Use picm_scan_control privacy with persist true only when the user requests durable exclusions; the action presents the exact .picm/config.json patch for TUI confirmation.",
+      "Use picm_scan_control inventory only after begin, end after each scan phase, and complete when the PiCM workflow finishes.",
+      "An active automatic advisory session may use only picm_scan_control inventory; it does not authorize begin, end, complete, status, Bash, or writes.",
     ],
     parameters: Type.Object({
-      action: StringEnum(["begin", "inventory", "end", "complete", "status"] as const),
+      action: StringEnum(["preflight", "privacy", "begin", "inventory", "end", "complete", "status"] as const),
       path: Type.Optional(Type.String({ minLength: 1 })),
+      excludedPaths: Type.Optional(Type.Array(Type.String({ minLength: 1 }))),
+      persist: Type.Optional(Type.Boolean()),
     }),
     async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
-      const result = await coordinator.scanControl(ctx, params.action, params.path);
-      if (params.action === "begin" && result.authorized) {
+      const run = () => coordinator.scanControl(ctx, params);
+      const result = params.action === "privacy" && params.persist
+        ? await withFileMutationQueue(join(ctx.cwd, ".picm", "config.json"), run)
+        : await run();
+      if (
+        result.ok &&
+        (params.action === "preflight" || params.action === "privacy" || params.action === "begin") &&
+        result.authorized &&
+        !result.completed &&
+        !coordinator.isWorkflowCompleted(ctx)
+      ) {
         pi.appendEntry(scanWorkflowEntryType, {
           status: "authorized",
-          cwd: ctx.cwd,
+          cwd: result.cwd,
           command: result.command,
           expiresAt: result.expiresAt,
+          preflightComplete: result.preflightComplete,
+          privacyReviewed: result.privacyReviewed,
+          scanStarted: result.scanStarted,
+          maintenanceResetAttempted: result.maintenanceResetAttempted,
+          excludedPaths: result.excludedPaths,
         });
+        if (result.maintenanceReset && !result.maintenanceReset.ok && ctx.hasUI) {
+          ctx.ui.notify(
+            `[picm-factory] Maintenance cycle was not reset: ${result.maintenanceReset.message}`,
+            "warning",
+          );
+        }
       } else if (params.action === "complete") {
-        recordClearedWorkflow(ctx);
+        if (result.completed) {
+          pi.appendEntry(scanWorkflowEntryType, {
+            status: "completed",
+            cwd: result.cwd,
+            command: result.command,
+            expiresAt: result.expiresAt,
+            preflightComplete: result.preflightComplete,
+            privacyReviewed: result.privacyReviewed,
+            scanStarted: result.scanStarted,
+            maintenanceResetAttempted: result.maintenanceResetAttempted,
+            completed: true,
+            excludedPaths: result.excludedPaths,
+          });
+        } else {
+          recordClearedWorkflow(ctx);
+        }
       }
       return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }], details: result };
     },
@@ -119,7 +189,7 @@ export default function picmFactoryExtension(pi: ExtensionAPI) {
   pi.on("tool_call", async (event, ctx) => {
     const decision = await coordinator.checkToolCall(event, ctx);
     if (!decision.allowed) {
-      const reason = `[picm-factory] Blocked by Git read gate: ${decision.reason}`;
+      const reason = `[picm-factory] Blocked by PiCM scan gate: ${decision.reason}`;
       if (ctx.hasUI) ctx.ui.notify(reason, "warning");
       return { block: true, reason };
     }
@@ -139,11 +209,37 @@ export default function picmFactoryExtension(pi: ExtensionAPI) {
   });
 
   pi.on("agent_settled", async (_event, ctx) => {
-    coordinator.settle(ctx);
+    if (coordinator.settle(ctx)) recordClearedWorkflow(ctx);
   });
 
   pi.on("session_shutdown", async (_event, ctx) => {
-    await coordinator.dispose(ctx);
+    const completed = coordinator.isWorkflowCompleted(ctx);
+    let cleanupError: unknown;
+    let cleanupFailed = false;
+    try {
+      await coordinator.dispose(ctx);
+    } catch (error) {
+      cleanupError = error;
+      cleanupFailed = true;
+    }
+    let persistenceError: unknown;
+    let persistenceFailed = false;
+    if (completed) {
+      try {
+        recordClearedWorkflow(ctx);
+      } catch (error) {
+        persistenceError = error;
+        persistenceFailed = true;
+      }
+    }
+    if (cleanupFailed && persistenceFailed) {
+      throw new AggregateError(
+        [cleanupError, persistenceError],
+        "PiCM shutdown cleanup and terminal-state persistence both failed",
+      );
+    }
+    if (cleanupFailed) throw cleanupError;
+    if (persistenceFailed) throw persistenceError;
   });
 
   for (const command of Object.keys(commandDescriptions) as CommandName[]) {
@@ -160,17 +256,18 @@ export default function picmFactoryExtension(pi: ExtensionAPI) {
       handler: async (args, ctx) => {
         await ctx.waitForIdle();
         if (command !== "picm-help") {
-          const reset = await coordinator.resetCycle(ctx);
-          if (!reset.ok && ctx.hasUI) {
-            ctx.ui.notify(`[picm-factory] Maintenance cycle was not reset: ${reset.message}`, "warning");
-          }
           const authorization = coordinator.authorizeWorkflow(ctx, command);
           pi.appendEntry(scanWorkflowEntryType, { status: "authorized", ...authorization });
         } else if (coordinator.clearWorkflow(ctx)) {
           recordClearedWorkflow(ctx);
         }
         try {
-          pi.sendUserMessage(buildPrompt(command, args));
+          pi.sendUserMessage(buildPrompt(
+            command,
+            args,
+            command === "picm-adopt" ||
+              ((command === "picm-new" || command === "picm-maintain") && ctx.mode === "tui"),
+          ));
         } catch (error) {
           if (command !== "picm-help") {
             coordinator.clearWorkflow(ctx);

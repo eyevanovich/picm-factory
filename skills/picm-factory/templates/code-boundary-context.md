@@ -13,6 +13,19 @@ Describe the responsibility this boundary owns and what belongs elsewhere.
 - Components that commonly change with this one:
 - Cross-boundary review or migration requirements:
 
+## Non-obvious change impact (optional)
+Omit this section when ordinary imports, manifests, and wiring already reveal the change surface.
+
+- Potentially affected non-local surfaces:
+- Known exclusions, only when supported by evidence:
+- Evidence / confidence:
+
+## Operational status (optional)
+Include only when the status changes how an agent should navigate or edit this boundary.
+
+- Status: `live`, `leftover`, `ghost`, or `unknown`
+- Evidence / user confirmation:
+
 ## Constraints
 - Invariants and compatibility requirements:
 - Generated/do-not-edit areas:

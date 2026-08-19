@@ -24,7 +24,7 @@ Omit the coding-task row unless coding mapping is enabled. If the map is small a
 ## Rules
 - Keep context files concise and useful.
 - Do not copy secrets or sensitive source material into instructions/examples unless explicitly approved.
-- During scan phases explicitly invoked through `/picm-new`, `/picm-adopt`, or `/picm-maintain`, use the PiCM Git-backed inventory and read gate; never inspect ignored file contents. This rule does not restrict ordinary Pi work or user-typed `!bash`.
+- For `/picm-new`, `/picm-adopt`, and `/picm-maintain`, complete PiCM privacy review before scanning and use protected inventory; never inspect Git-ignored or PiCM-excluded contents. This rule does not restrict ordinary Pi work or user-typed `!bash`.
 - Ask before overwriting, moving, renaming, or deleting files.
 - Prefer small iterative improvements over rebuilding the whole system.
 - Use only user-named scripts/tools for deterministic mechanics; keep judgment, side-effect approval, and review visible.

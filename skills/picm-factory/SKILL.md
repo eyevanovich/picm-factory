@@ -18,7 +18,8 @@ PiCM Factory helps users create and maintain folder-agent workflows and coding-r
 ## Hard rules
 
 1. **Security first.** Ask whether the workspace contains secrets, regulated data, client data, or personal/private material before creating or modifying context files.
-2. **Explicit activation and guarded scans only.** Run this skill only from an explicit `/picm-new`, `/picm-adopt`, or `/picm-maintain` command prompt (`/picm-help` is guidance only). If a user makes a natural-language PiCM request, ask them to invoke the appropriate command and do not inspect files. The command's first turn is already scan-active. Use `picm_scan_control` with `inventory` to obtain Git-derived candidates without shell execution. On later interview turns, including after quitting and resuming the same session, call `begin` immediately before a filesystem scan, `end` when that scan phase finishes, and `complete` when the PiCM workflow is finished. A valid resumed authorization is scan-inactive; completion or expiry remains revoked. Git ignored means unreadable during active PiCM scan phases: the extension deterministically checks built-in path-tool calls with `git check-ignore --no-index` immediately before execution and conservatively blocks ignored/tracked-ignored paths, symlinks, `.git`, outside-worktree paths, non-candidates, directory traversal, and every agent Bash tool call. User-typed `!bash` is an explicit human action and is never intercepted. Outside an explicitly authorized scan phase, the gate is inactive and ordinary Pi tools behave normally. Build coding-scan candidates through the inventory action and never inspect ignored file contents. When `.git` is absent, the extension uses transient isolated Git metadata outside the workspace so Git still derives candidates and honors `.gitignore` without initializing or modifying the user's folder. The gate is not an OS sandbox; dynamically constructed agent shell paths are unavailable during guarded scans, while unrelated custom filesystem tools and filesystem time-of-check/time-of-use races remain limitations, so do not use those routes to bypass it. Treat an explicitly included submodule as a separate Git worktree with the same checks and request its inventory by passing its present worktree root as `path`. If the Git executable is unavailable, stop the scan because ignore rules cannot be enforced deterministically.
+2. **Explicit activation, privacy review, and guarded scans only.** Run this skill only from an explicit `/picm-new`, `/picm-adopt`, or `/picm-maintain` command prompt (`/picm-help` is guidance only). If a user makes a natural-language PiCM request, ask them to invoke the appropriate command and do not inspect files. Every explicit workflow starts privacy-pending with agent tools blocked. First call `picm_scan_control` with `preflight`; this metadata-only check reports whether the workspace is a Git repository and whether root `.gitignore` and repository-local `.git/info/exclude` exist without creating isolated Git metadata or inventorying files. Ask the security/privacy question before any scan. Then call `privacy` with every exact project-relative path the user excluded; use `persist: true` only when the user requests durable PiCM exclusions, and let the action present the exact `privacy.excludedPaths` patch for TUI confirmation before writing `.picm/config.json`. The privacy action merges persisted config exclusions and session additions monotonically. Call `begin` only after successful preflight and privacy review, use `inventory` to obtain protected candidates without shell execution, call `end` when that scan phase finishes, and call `complete` when the PiCM workflow is finished. A valid resumed authorization restores its reviewed exclusions scan-inactive only when its saved state proves preflight completed; legacy or incomplete state remains privacy-pending. Completion or expiry remains revoked. During active scans, the extension combines root/nested `.gitignore`, `.git/info/exclude`, global Git excludes, `.picm/config.json` privacy exclusions, and current-session exclusions; any matching source blocks the path. It filters excluded paths from inventory and checks built-in path-tool calls immediately before execution, conservatively blocking ignored/tracked-ignored paths, privacy-excluded paths, symlinks, `.git`, outside-worktree paths, non-candidates, directory traversal, every agent Bash call, and unrecognized agent tools. Confirmed privacy paths remain blocked for the whole authorized workflow, including between scan phases and after same-session resume. User-typed `!bash` is an explicit human action and is never intercepted. Outside an explicitly authorized workflow, ordinary Pi tools behave normally. Build coding-scan candidates through `inventory` and never inspect excluded contents. When `.git` is absent, create transient isolated Git metadata only after privacy review so Git can derive candidates and honor any root/nested/global ignore rules without initializing or modifying the user's folder. Treat an explicitly included submodule as a separate Git worktree with the same checks and request its inventory by passing its present worktree root as `path`. If Git or privacy-config validation is unavailable, stop rather than weakening the read boundary.
+   When the command prompt already completed preflight and privacy review, do not repeat that bootstrap. Before `begin`, read only canonical packaged PiCM `SKILL.md`, reference, and template resources; project copies and all other agent tools remain blocked.
 3. **Non-destructive by default.** Do not move, rename, overwrite, or delete existing files unless the user explicitly approves the exact action.
 4. **Preview before writes.** Show planned file changes before applying them, including brand-new scaffolds in confirmed empty-enough workspaces.
 5. **Project-local install.** PiCM should be loaded through project-local `.pi/settings.json` from `pi install -l ...`. Verify this when relevant; do not recreate Pi package config during normal use.
@@ -27,7 +28,7 @@ PiCM Factory helps users create and maintain folder-agent workflows and coding-r
 8. **Layouts are profiles, not laws.** Recommend structure, but do not fail a user because they organize differently. Coding Repository may be the primary profile, while codebase mapping may also be a composable capability alongside another primary profile.
 9. **Encourage git, never auto-commit.** Check/warn on git status before writes. If no git repo exists, suggest `git init`. Never commit for the user.
 10. **Keep mechanical work out of prompt bloat.** When useful, recommend local scripts or named MCP/tool integrations for deterministic fetching, file movement, formatting, sending, or API work. Keep judgment and review in visible context; do not turn the extension into an executor or orchestrator.
-11. **Scheduled maintenance stays advisory.** Maintenance can remain manual, show a nudge, or run automatically in the first eligible interactive TUI session after it is due. Scheduling requires `.picm/config.json` to be non-ignored and a regular non-symlink file under a regular non-symlink `.picm/` directory. Nothing runs while Pi is closed or in print, JSON, RPC, or headless modes. Automatic cycles may update their opted-in timestamps but must not write reports, repair files, commit, or cause external side effects. For a standalone policy write, pass the `previewId` returned by `picm_maintenance_policy` preview into apply so the confirmed patch reuses the exact previewed timestamps.
+11. **Scheduled maintenance stays advisory.** Maintenance can remain manual, show a nudge, or run automatically in the first eligible interactive TUI session after it is due. Scheduling requires `.picm/config.json` to be non-ignored and a regular non-symlink file under a regular non-symlink `.picm/` directory. Nothing runs while Pi is closed or in print, JSON, RPC, or headless modes. Automatic cycles may update their opted-in timestamps but must not write reports, repair files, commit, or cause external side effects. Explicit new, adoption, and maintenance workflows reset an existing scheduled cycle only after successful preflight and privacy review. For a standalone policy write, pass the `previewId` returned by `picm_maintenance_policy` preview into apply so the confirmed patch reuses the exact previewed timestamps.
 
 ## Reference docs
 
@@ -36,7 +37,7 @@ Load only what you need:
 - `references/interview-guide.md` — `/picm-new` interview flow.
 - `references/layout-profiles.md` — layout profile definitions and recommendation rules.
 - `references/adoption-guide.md` — `/picm-adopt` non-invasive process.
-- `references/coding-adoption-guide.md` — coding-repository detection, Git-ignore-safe scanning, mapping choices, and additive/curated adoption.
+- `references/coding-adoption-guide.md` — coding-repository detection, privacy-first protected scanning, mapping choices, and additive/curated adoption.
 - `references/maintenance-rubric.md` — `/picm-maintain` validation rubric.
 - `references/coding-maintenance-rubric.md` — Light/Balanced/Strict coding-map drift checks.
 
@@ -48,20 +49,20 @@ Goal: create a minimal viable scaffold that is useful immediately and can evolve
 
 Process:
 
-1. Inspect the current folder lightly.
-   - Use `pwd` and `git status --short` when in a Git worktree, then derive the shallow path sample through Git candidate listing rather than directory traversal. Outside Git, use a shallow non-recursive listing only.
+1. Run `picm_scan_control preflight`, ask the security/privacy question, record exact exclusions with `privacy`, and call `begin`. Do not inspect the folder before this sequence completes.
+2. Inspect the current folder lightly.
+   - Use the preflight root and protected Git candidate inventory for the shallow path sample rather than Bash or directory traversal.
    - Classify the folder as empty enough, source-material-only, or existing workspace architecture.
-2. Apply `/picm-new` safety.
+3. Apply `/picm-new` safety.
    - Empty enough: `.git/`, `.pi/`, `README.md`, `LICENSE`, `.gitignore`, `.env.example`, package manifests/lockfiles, editor folders, and OS noise are okay.
    - Source-material-only: folders/files such as `src/`, `docs/`, `notes/`, `assets/`, `data/`, transcripts, briefs, screenshots, or domain documents. Ask whether to build around them without moving or rewriting them.
-   - Existing architecture: `AGENTS.md`, `CLAUDE.md`, `CONTEXT.md`, `REFERENCES.md`, `identity.md`, `rules.md`, `examples.md`, `workflows/`, `reference/`, numbered stage folders, `stages/`, `.picm/`.
+   - Existing architecture: `AGENTS.md`, `CLAUDE.md`, `CONTEXT.md`, `REFERENCES.md`, `identity.md`, `rules.md`, `examples.md`, `workflows/`, `reference/`, numbered folders, `stages/`, `.picm/`.
    - If existing architecture is present, recommend `/picm-adopt`. If the user insists on `/picm-new`, require them to choose the intent (`adopt existing` vs `add/replace scaffold`) and approve exact file actions after preview.
    - Do not move, rename, overwrite, or delete source material or architecture files unless the user explicitly approves the exact action.
-3. Apply git safety before writes.
+4. Apply git safety before writes.
    - If no git repo exists, recommend `git init`; require explicit confirmation to proceed without git.
    - If the repo is dirty, show `git status --short`; require explicit confirmation before writes.
    - Never auto-commit and never auto-run `git init`.
-4. Ask the security/privacy check.
 5. Run the core interview from `references/interview-guide.md`; ask branching follow-ups only when needed. If `/picm-new` arguments were provided, treat them as seed context and ask only missing critical questions. Before proposing extra stages, roles, folders, references, or examples, ask or infer: **What will you run first?**
 6. Recommend a layout profile from `references/layout-profiles.md`, explain why, then present alternatives. For mixed workflows, choose one primary profile and borrow secondary patterns sparingly.
 7. Draft the smallest scaffold that supports that first real run. Include required root routing/context and only the active stages, roles, specialist recipes, references, examples, artifact paths, and user-named scripts/tools needed now. Defer speculative structure until real use proves it useful. For Stage Pipeline workspaces, make each active stage contract answer: what it reads, what it does, what it writes, and where human review happens. Mention a script, MCP server/tool, or other integration in generated routing/contracts only when the user has named it; never invent an integration to fill a template.
@@ -81,7 +82,7 @@ Typical files for a new scaffold:
 - Existing or planned local scripts and MCP/tool integrations only when the user names them and explains their purpose. Record the exact path or tool name and the human/AI review boundary; do not scaffold runtime execution logic.
 - For Stage Pipeline stages, prefer named inspectable output files (often under a stage `output/` folder) when downstream stages will consume the result after human review.
 - Do not pre-create empty input/output/work folders just because a contract names a future path. Create those folders only when adding a real seed file, reference file, first-run artifact, or when the user explicitly wants physical directories now.
-- `.picm/config.json` — tiny metadata only: `version`, `profile`, `generatedBy`, `createdAt`, key path hints, and optional deterministic `maintenance` policy/check-in timestamps.
+- `.picm/config.json` — tiny metadata only: `version`, `profile`, `generatedBy`, `createdAt`, key path hints, optional deterministic `maintenance` policy/check-in timestamps, and optional `privacy.excludedPaths` used by protected scans.
 
 Scaffold quality rules:
 
@@ -131,12 +132,12 @@ Load `references/adoption-guide.md` before running this mode. Load `references/c
 
 Process:
 
-1. Start read-only. Do not write or edit anything during discovery.
-2. If arguments start with `coding`, enter coding adoption directly. Otherwise, use a shallow path-only classification: derive candidates through Git in a worktree, or use a shallow non-recursive listing outside Git. Offer **Coding Repository**, **add codebase mapping to the existing profile**, or **continue normal adoption** when coding signals appear. Do not deep-scan merely to classify the repo.
-3. Scan for existing architecture files/folders and visible conventions. During coding scans, use the extension's Git-backed candidate view and immediate `git check-ignore --no-index` check before every read. An existing worktree is used directly; without `.git`, the extension uses isolated transient Git metadata outside the workspace and still honors `.gitignore`. Ignored files are out of scope without exception.
+1. Start privacy-first and otherwise read-only. Call `picm_scan_control preflight`, then ask before any inventory or file read: “PiCM already honors `.gitignore`, nested Git ignore rules, and repository-local `.git/info/exclude`. It also protects Git internals, symlinks, nested repository/submodule boundaries, and paths outside this project. Only name additional sensitive project-relative paths not already covered by those protections. Reply with exact paths, or `none`.” These protections are automatic; the user's reply supplies additional exclusions for sensitive eligible paths PiCM cannot infer. Then call `privacy` with every exact project-relative exclusion. If the user chooses persistence, let the privacy action present and apply the exact `privacy.excludedPaths` patch to `.picm/config.json` only after its TUI confirmation; this confirmed control write is the only allowed pre-discovery write. If the Git repository has no root `.gitignore`, separately offer an exact `.gitignore` proposal for commit protection, but do not require it because PiCM config exclusions protect scans. Call `begin` only after privacy review.
+2. If arguments start with `coding`, enter coding adoption directly. Otherwise, use protected shallow candidate inventory for path-only classification. Offer **Coding Repository**, **add codebase mapping to the existing profile**, or **continue normal adoption** when coding signals appear. Do not deep-scan merely to classify the repo.
+3. Scan for existing architecture files/folders and visible conventions. Use protected inventory and immediate checks before every read. Git protection includes root/nested `.gitignore`, repository-local `.git/info/exclude`, and global excludes; PiCM also applies persisted config and current-session exclusions. Without `.git`, isolated transient Git metadata is created only after privacy review. Excluded files are out of scope without exception.
 4. Identify whether Pi can already use `CLAUDE.md` or `AGENTS.md`, and classify routing quality as adequate, partial, placeholder/unrelated, or conflicting/risky.
 5. For a complex, cluttered, or unfamiliar workspace—or when requested—offer the adoption guide's optional file-role inventory. Keep it a representative path-to-role-to-rationale orientation aid, separate from readiness, and never treat a classification as approval to move, rename, archive, delete, merge, or rewrite anything.
-6. Ask the security/privacy check before content-heavy discovery and before proposing report/config/context writes. For coding adoption, also ask for mapping approach (**root**, **distributed**, or **scan and recommend**), adoption depth (**additive** or **curated**), maintenance preset (**Light**, **Balanced**, or **Strict**), and optional user boundary hints.
+6. For coding adoption, ask for mapping approach (**root**, **distributed**, or **scan and recommend**), adoption depth (**additive** or **curated**), maintenance preset (**Light**, **Balanced**, or **Strict**), and optional user boundary hints.
 7. Infer the closest primary layout profile, but treat custom structure as valid. Use **Coding Repository** when coding is primary; otherwise keep the workflow profile and add the codebase-map capability. Coding/workflow scopes may overlap.
 8. Produce an adoption report using qualitative readiness labels:
    - **Ready** — adequate visible routing exists and approved `.picm/config.json` can mark the repo adopted.
@@ -180,9 +181,9 @@ Modes:
 
 Process:
 
-1. Inspect current routing/context structure.
-2. Read `.picm/config.json` only if present and relevant.
-3. If the repo uses the Coding Repository profile, `capabilities.codebaseMap`, or visible `CONTEXT-MAP.md`, load `references/coding-maintenance-rubric.md`. Apply its Git-ignore-safe scan boundary before any coding inspection and use the configured Light/Balanced/Strict preset (Balanced when absent, after telling the user).
+1. Unless this is a scheduled automatic cycle, run `picm_scan_control preflight`, ask the security/privacy question, record exact exclusions with `privacy`, and call `begin` before inspecting anything. Scheduled cycles load persisted config exclusions automatically and remain inventory-only.
+2. Inspect current routing/context structure through protected inventory. `.picm/config.json` is maintainer metadata loaded by the extension for privacy and maintenance policy; consult its workflow fields only when relevant.
+3. If the repo uses the Coding Repository profile, `capabilities.codebaseMap`, or visible `CONTEXT-MAP.md`, load `references/coding-maintenance-rubric.md`. Apply its complete protected-scan boundary before any coding inspection and use the configured Light/Balanced/Strict preset (Balanced when absent, after telling the user).
 4. If `.picm/config.json` says `adoption.status: "scanned"`, short-circuit broad maintenance into an adoption-blocker report. Use the linked adoption report or brief scan summary when present, explain that the repo is scanned but not fully adopted, and guide the user toward fixing root routing before deeper health checks.
 5. Apply `references/maintenance-rubric.md`. During a general health check, run its cold-agent walk test against one representative task: orient from root, reach the local contract, identify exact inputs/job/output/human check, then read each named input, output, review, or equivalent visible artifact. Report artifact presence separately from correctness and human approval, warn when required contract pointers are absent, and do not pass a criterion that was not inspected.
 6. If arguments start with `trace` or describe a concrete symptom, focus on a heuristic investigation of likely drift sources instead of doing a broad audit. Trace mode does not require the general cold-agent walk test.
@@ -206,6 +207,15 @@ Process:
 ## Mode: help (`/picm-help`)
 
 Explain in plain language without requiring PiCM/ICM jargon.
+
+Start with a compact syntax reference and explain that slash commands accept optional text after the command. In interactive Pi, type a space after `/picm-adopt` or `/picm-maintain` to show registered argument completions.
+
+- `/picm-new [workflow description]` — optional free-form seed context for the interview.
+- `/picm-adopt [coding | adoption request]` — `coding` skips the initial repository classification; other text describes the requested adoption focus.
+- `/picm-maintain [coding | routing | handoffs | stale-context | security | trace "drift symptom"]` — focuses the advisory check or investigates one concrete symptom.
+- `/picm-help` — shows this syntax, examples, setup, and safety guidance.
+
+Clarify that these are optional command arguments, not required flags. A bare command remains valid.
 
 Command decision guide:
 

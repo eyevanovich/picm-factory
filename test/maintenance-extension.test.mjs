@@ -84,6 +84,52 @@ function oldDue(mode) {
   return createPolicy({ mode, intervalValue: 1, intervalUnit: "days", now: "2020-01-01T00:00:00.000Z" });
 }
 
+test("command descriptions and completions expose optional arguments", () => {
+  const h = harness();
+  assert.match(h.commands.get("picm-new").description, /optionally add a workflow description/);
+  assert.match(h.commands.get("picm-adopt").description, /type a space for optional arguments/);
+  assert.match(h.commands.get("picm-maintain").description, /type a space for focus and trace arguments/);
+  assert.match(h.commands.get("picm-help").description, /command syntax, arguments, examples/);
+
+  const adopt = h.commands.get("picm-adopt").getArgumentCompletions("");
+  assert.deepEqual(adopt, [{
+    value: "coding",
+    label: "coding",
+    description: "Skip initial classification and enter Coding Repository adoption",
+  }]);
+  assert.deepEqual(h.commands.get("picm-adopt").getArgumentCompletions("  COD"), adopt);
+  assert.equal(h.commands.get("picm-adopt").getArgumentCompletions("unknown"), null);
+
+  const maintain = h.commands.get("picm-maintain").getArgumentCompletions("");
+  assert.equal(maintain.length, 8);
+  assert.equal(maintain.every((item) => typeof item.description === "string" && item.description.length > 0), true);
+  assert.equal(h.commands.get("picm-maintain").getArgumentCompletions("tr").length, 3);
+  assert.equal(h.commands.get("picm-maintain").getArgumentCompletions("unknown"), null);
+});
+
+test("adopt coding dispatches preflight and exact privacy copy before skill loading", async (t) => {
+  const cwd = fixture(t);
+  const h = harness();
+
+  await h.commands.get("picm-adopt").handler("coding", h.context(cwd));
+
+  assert.equal(h.sent.length, 1);
+  const prompt = h.sent[0];
+  const preflight = prompt.indexOf("Call `picm_scan_control` with `action: \"preflight\"`");
+  const reassurance = prompt.indexOf("PiCM already honors `.gitignore`, nested Git ignore rules, and repository-local `.git/info/exclude`.");
+  const additionalPaths = prompt.indexOf("Only name additional sensitive project-relative paths not already covered by those protections. Reply with exact paths, or `none`.");
+  const privacy = prompt.indexOf("Call `picm_scan_control` with `action: \"privacy\"`");
+  const skill = prompt.indexOf("load the `picm-factory` skill and its `SKILL.md`");
+
+  assert.ok(preflight >= 0);
+  assert.ok(preflight < reassurance);
+  assert.ok(reassurance < additionalPaths);
+  assert.ok(additionalPaths < privacy);
+  assert.ok(privacy < skill);
+  assert.doesNotMatch(prompt.slice(0, preflight), /skill|SKILL\.md/);
+  assert.match(prompt, /Mode: adopt\nCommand: \/picm-adopt\n\nUser arguments:\ncoding/);
+});
+
 test("TUI due nudge notifies once without resetting the cycle", async (t) => {
   const cwd = fixture(t, oldDue("nudge"));
   const h = harness();
@@ -151,8 +197,14 @@ test("TUI automatic cycle resets, dispatches once, and blocks side effects until
   assert.equal(h.sent.length, 1);
 });
 
-test("due automatic maintenance runs in non-Git workspaces while honoring gitignore", async (t) => {
+test("due automatic maintenance runs in non-Git workspaces while honoring Git and PiCM exclusions", async (t) => {
   const cwd = nonGitFixture(t, oldDue("automatic"));
+  writeFileSync(join(cwd, "config-private.txt"), "CONFIG_PRIVATE=do-not-read\n");
+  const before = JSON.parse(readFileSync(join(cwd, ".picm/config.json"), "utf8"));
+  writeFileSync(join(cwd, ".picm/config.json"), `${JSON.stringify({
+    ...before,
+    privacy: { excludedPaths: ["config-private.txt"] },
+  }, null, 2)}\n`);
   const h = harness();
   const ctx = h.context(cwd, "tui", "non-git-automatic-session");
 
@@ -174,6 +226,7 @@ test("due automatic maintenance runs in non-Git workspaces while honoring gitign
   assert.equal(inventory.details.isolated, true);
   assert.equal(inventory.details.candidates.includes("safe.txt"), true);
   assert.equal(inventory.details.candidates.includes(".env"), false);
+  assert.equal(inventory.details.candidates.includes("config-private.txt"), false);
   assert.equal(await h.handlers.get("tool_call")(
     { toolName: "read", input: { path: "safe.txt" } },
     ctx,
@@ -184,6 +237,12 @@ test("due automatic maintenance runs in non-Git workspaces while honoring gitign
   );
   assert.equal(blocked.block, true);
   assert.match(blocked.reason, /ignored by Git/);
+  const blockedPrivate = await h.handlers.get("tool_call")(
+    { toolName: "read", input: { path: "config-private.txt" } },
+    ctx,
+  );
+  assert.equal(blockedPrivate.block, true);
+  assert.match(blockedPrivate.reason, /PiCM privacy policy/);
   assert.equal(h.handlers.has("user_bash"), false);
   assert.equal(existsSync(join(cwd, ".git")), false);
   const config = JSON.parse(readFileSync(join(cwd, ".picm/config.json"), "utf8"));
@@ -274,11 +333,23 @@ test("non-TUI startup is a no-op for print, json, and rpc", async (t) => {
   }
 });
 
-test("new, adopt, and maintain reset scheduled cycles while help does not", async (t) => {
+test("new, adopt, and maintain reset scheduled cycles only after preflight and privacy", async (t) => {
   for (const command of ["picm-new", "picm-adopt", "picm-maintain"]) {
     const cwd = fixture(t, oldDue("nudge"));
     const h = harness();
-    await h.commands.get(command).handler("", h.context(cwd));
+    const ctx = h.context(cwd);
+    const before = readFileSync(join(cwd, ".picm/config.json"), "utf8");
+    await h.commands.get(command).handler("", ctx);
+    assert.equal(readFileSync(join(cwd, ".picm/config.json"), "utf8"), before);
+    await h.scanControl.execute("id", { action: "preflight" }, undefined, undefined, ctx);
+    assert.equal(readFileSync(join(cwd, ".picm/config.json"), "utf8"), before);
+    await h.scanControl.execute(
+      "id",
+      { action: "privacy", excludedPaths: [], persist: false },
+      undefined,
+      undefined,
+      ctx,
+    );
     const config = JSON.parse(readFileSync(join(cwd, ".picm/config.json"), "utf8"));
     assert.notEqual(config.maintenance.lastCycleAt, "2020-01-01T00:00:00.000Z");
     assert.equal(h.sent.length, 1);
@@ -288,6 +359,95 @@ test("new, adopt, and maintain reset scheduled cycles while help does not", asyn
   const before = readFileSync(join(helpCwd, ".picm/config.json"), "utf8");
   await help.commands.get("picm-help").handler("", help.context(helpCwd));
   assert.equal(readFileSync(join(helpCwd, ".picm/config.json"), "utf8"), before);
+});
+
+test("maintenance reset is skipped when privacy is declined, incomplete, cancelled, or unproven on restore", async (t) => {
+  const declinedCwd = fixture(t, oldDue("nudge"));
+  const declined = harness({ confirm: false });
+  const declinedCtx = declined.context(declinedCwd, "tui", "declined-reset-session");
+  const declinedBefore = readFileSync(join(declinedCwd, ".picm/config.json"), "utf8");
+  await declined.commands.get("picm-adopt").handler("", declinedCtx);
+  await declined.scanControl.execute("id", { action: "preflight" }, undefined, undefined, declinedCtx);
+  const privacy = await declined.scanControl.execute(
+    "id",
+    { action: "privacy", excludedPaths: ["private"], persist: true },
+    undefined,
+    undefined,
+    declinedCtx,
+  );
+  assert.equal(privacy.details.code, "PRIVACY_APPLY_DECLINED");
+  assert.equal(readFileSync(join(declinedCwd, ".picm/config.json"), "utf8"), declinedBefore);
+
+  const cancelledCwd = fixture(t, oldDue("nudge"));
+  const cancelled = harness();
+  const cancelledCtx = cancelled.context(cancelledCwd, "tui", "cancelled-reset-session");
+  const cancelledBefore = readFileSync(join(cancelledCwd, ".picm/config.json"), "utf8");
+  await cancelled.commands.get("picm-maintain").handler("", cancelledCtx);
+  await cancelled.scanControl.execute("id", { action: "preflight" }, undefined, undefined, cancelledCtx);
+  await cancelled.commands.get("picm-help").handler("", cancelledCtx);
+  assert.equal(readFileSync(join(cancelledCwd, ".picm/config.json"), "utf8"), cancelledBefore);
+
+  const restoredCwd = fixture(t, oldDue("nudge"));
+  const restoredBefore = readFileSync(join(restoredCwd, ".picm/config.json"), "utf8");
+  const restored = harness({ entries: [{
+    type: "custom",
+    customType: "picm-scan-workflow",
+    data: {
+      status: "authorized",
+      cwd: restoredCwd,
+      command: "picm-maintain",
+      expiresAt: new Date(Date.now() + 60_000).toISOString(),
+      privacyReviewed: true,
+      scanStarted: true,
+      maintenanceResetAttempted: true,
+      excludedPaths: [],
+    },
+  }] });
+  const restoredCtx = restored.context(restoredCwd, "tui", "legacy-restore-session");
+  await restored.handlers.get("session_start")({ reason: "resume" }, restoredCtx);
+  const status = await restored.scanControl.execute("id", { action: "status" }, undefined, undefined, restoredCtx);
+  assert.equal(status.details.preflightComplete, false);
+  assert.equal(status.details.privacyReviewed, false);
+  assert.equal(status.details.maintenanceResetAttempted, false);
+  await assert.rejects(
+    restored.scanControl.execute("id", { action: "begin" }, undefined, undefined, restoredCtx),
+    /PICM_PREFLIGHT_INCOMPLETE/,
+  );
+  assert.equal(readFileSync(join(restoredCwd, ".picm/config.json"), "utf8"), restoredBefore);
+});
+
+test("non-Git command startup and preflight do not read maintenance config or create Git metadata", async (t) => {
+  const cwd = nonGitFixture(t, oldDue("nudge"));
+  const h = harness();
+  const ctx = h.context(cwd, "tui", "non-git-privacy-order-session");
+  const before = readFileSync(join(cwd, ".picm/config.json"), "utf8");
+
+  await h.commands.get("picm-maintain").handler("", ctx);
+  assert.equal(readFileSync(join(cwd, ".picm/config.json"), "utf8"), before);
+  assert.equal(existsSync(join(cwd, ".git")), false);
+
+  const preflight = await h.scanControl.execute("id", { action: "preflight" }, undefined, undefined, ctx);
+  assert.equal(preflight.details.gitRepository, false);
+  assert.equal(preflight.details.preflightComplete, true);
+  assert.equal(readFileSync(join(cwd, ".picm/config.json"), "utf8"), before);
+  assert.equal(existsSync(join(cwd, ".git")), false);
+
+  await h.scanControl.execute(
+    "id",
+    { action: "privacy", excludedPaths: [], persist: false },
+    undefined,
+    undefined,
+    ctx,
+  );
+  const reset = JSON.parse(readFileSync(join(cwd, ".picm/config.json"), "utf8"));
+  assert.notEqual(reset.maintenance.lastCycleAt, "2020-01-01T00:00:00.000Z");
+  assert.equal(existsSync(join(cwd, ".git")), false);
+
+  await h.scanControl.execute("id", { action: "begin" }, undefined, undefined, ctx);
+  const inventory = await h.scanControl.execute("id", { action: "inventory" }, undefined, undefined, ctx);
+  assert.equal(inventory.details.isolated, true);
+  assert.equal(inventory.details.candidates.includes("safe.txt"), true);
+  assert.equal(existsSync(join(cwd, ".git")), false);
 });
 
 test("policy tool applies the exact accepted confirmation", async (t) => {

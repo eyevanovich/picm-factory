@@ -46,7 +46,7 @@ Start read-only. Look for:
 
 Also note likely stable-reference areas vs per-run working artifacts or outputs. Do not copy sensitive/private source content into the report or config.
 
-If a shallow path check suggests a coding repository, offer coding adoption without reading source merely to classify it. Derive even this shallow classification from Git candidates rather than directory traversal. Use the real worktree when present; when `.git` is absent, the extension uses isolated transient Git metadata outside the workspace and still honors `.gitignore` without initializing the user's folder. When coding adoption is selected, load `coding-adoption-guide.md` before further scanning. Its Git-ignore boundary is mandatory: derive candidate paths through Git and run `git check-ignore --no-index` before every read. Never inspect ignored file contents, even when tracked.
+Before any shallow path check, run `picm_scan_control preflight`, ask the privacy question using the automatic-protections reassurance and additional-path wording in `coding-adoption-guide.md`, record exact exclusions with `privacy`, and call `begin`. If the root has no `.gitignore`, offer an exact Git-ignore proposal but retain PiCM protection through persisted config or session exclusions when the user declines. Then offer coding adoption without reading source merely to classify it, deriving the shallow sample from protected inventory rather than directory traversal. When coding adoption is selected, load `coding-adoption-guide.md` before further scanning. Its complete exclusion boundary is mandatory: root/nested `.gitignore`, `.git/info/exclude`, global Git excludes, persisted `privacy.excludedPaths`, and current-session exclusions are cumulative, and matching contents are unreadable even when tracked.
 
 ## Optional file-role inventory
 
@@ -174,7 +174,7 @@ Default approved adoption writes are minimal and live under `.picm/`:
 .picm/adoption-report.md
 ```
 
-Use config to preserve compatibility metadata and provenance, not workflow instructions.
+Use config to preserve compatibility metadata, provenance, maintenance policy, and approved PiCM scan exclusions—not workflow instructions.
 
 Near the final config preview, offer maintenance cadence: manual, a recommended monthly nudge, or automatic read-only advisory maintenance at the first eligible interactive TUI session after it is due. Explain that scheduling requires `.picm/config.json` to remain non-ignored and a regular non-symlink file beneath a regular non-symlink `.picm/` directory. Accept positive integer day/week/month intervals. Skipped or declined leaves no policy object. Use `picm_maintenance_policy` preview for deterministic `lastCycleAt` and `nextDueAt`, then include the exact object in the same adoption preview. Cadence selection does not approve the config write. Once opted in, cycle timestamp resets are authorized schedule bookkeeping; reports, repairs, commits, and all other writes still require separate approval.
 
@@ -230,7 +230,7 @@ Scanned-only example:
 
 Keep `scanSummary` brief. Put detailed findings in `.picm/adoption-report.md`.
 
-When coding mapping is enabled, preserve one primary `profile` and add a minimal optional `capabilities.codebaseMap` object with the resulting `shape` (`root` or `distributed`), approved `roots`, map/equivalent path, selected local contexts, and maintenance preset. A Coding Repository profile implies this capability; a hybrid retains its workflow profile and adds the same capability. Roots may overlap workflow folders.
+When coding mapping is enabled, preserve one primary `profile` and add a minimal optional `capabilities.codebaseMap` object with the resulting `shape` (`root` or `distributed`), approved `roots`, map/equivalent path, selected local contexts, and maintenance preset. A Coding Repository profile implies this capability; a hybrid retains its workflow profile and adds the same capability. Roots may overlap workflow folders. Approved durable scan exclusions live separately under `privacy.excludedPaths` and remain effective even when `.gitignore` is absent or later changes.
 
 Even `.picm/` writes require the same two-step gate as visible routing edits:
 
@@ -322,5 +322,5 @@ Do not do these without explicit user approval for the exact action:
 - treat an inventory classification as permission to move, rename, archive, delete, merge, or rewrite a file
 - label a file dead or obsolete when visible evidence only supports “unclear”
 - treat an option choice or preview request as write approval
-- read a Git-ignored file during coding detection, adoption, or maintenance
-- bypass ignore rules through direct reads, `git show`, broad traversal, another worktree, or tracked-file status
+- read a Git-ignored or PiCM-excluded file during coding detection, adoption, or maintenance
+- bypass Git or PiCM exclusion rules through direct reads, `git show`, broad traversal, another worktree, or tracked-file status
