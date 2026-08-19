@@ -1,6 +1,6 @@
 # Layout Fixture QA
 
-Use these fixtures for manual smoke testing of PiCM layout guidance, `/picm-maintain`, and `/picm-adopt`.
+Use these fixtures for manual smoke testing of PiCM layout guidance, `/picm-maintain`, `/picm-adopt`, and `/picm-optimize`.
 
 Interactive command tests should run in a visible Zellij pane. Do not rely on a headless `bash` run for `/picm-maintain` or `/picm-adopt` because the flows may ask clarifying or approval questions.
 
@@ -41,11 +41,11 @@ during a general `/picm-maintain` smoke. Record fixture-specific observations he
 Expected behavior:
 
 - Starts with a compact command-syntax and argument reference, says bare commands remain valid, and explains: type a space after `/picm-adopt` or `/picm-maintain` to show registered argument completions.
-- Shows `/picm-new [workflow description]`, `/picm-adopt [coding | adoption request]`, and `/picm-maintain [coding | routing | handoffs | stale-context | security | trace "drift symptom"]` as optional conversational arguments rather than required flags.
+- Shows `/picm-new [workflow description]`, `/picm-adopt [coding | adoption request]`, `/picm-maintain [coding | routing | handoffs | stale-context | security | trace "drift symptom"]`, and `/picm-optimize`.
 - Uses plain situations rather than requiring PiCM/ICM terminology.
 - Routes new or mostly empty folders to `/picm-new` and existing source-code, agent/workflow, or Claude-style folders to the read-only `/picm-adopt` flow.
 - Presents `/picm-adopt coding` as an optional shortcut for a known repository or monorepo while explaining that regular `/picm-adopt` can offer the same Coding Repository profile.
-- Routes general workspace health/drift to `/picm-maintain` and one concrete symptom to `/picm-maintain trace "describe what drifted"`.
+- Routes general workspace health/drift to `/picm-maintain`, one concrete symptom to `/picm-maintain trace "describe what drifted"`, and repetitive or diffuse agent-facing documentation to `/picm-optimize`.
 - Recommends `/picm-adopt` when the user is unsure whether an existing folder should use new or adopt.
 - Explains project-local install, preview-before-write, non-destructive adoption, git/security safety, and `.pi/` versus `.picm/`.
 
@@ -55,6 +55,20 @@ Observed smoke: 2026-07-19 in a visible Zellij/Pi pane against an empty disposab
 - Identified `.pi/settings.json` as project-local Pi configuration and `.picm/` as maintainer metadata/reports outside normal workflow context.
 - Required previews and explicit approval for writes, preserved existing files by default, and included git and secrets guidance.
 - Wrote no project files beyond the expected local `.pi/` package installation.
+
+## `/picm-optimize` smoke check
+
+Run against a disposable copy of `test/fixtures/coding-repository/existing-doc-duplication`.
+
+Expected behavior:
+
+- Completes `preflight`, the additional-path privacy question, `privacy`, `begin`, protected `inventory`, guarded reads, `end`, and final `complete`; it never uses agent Bash, broad traversal, Git history, symlink following, or another worktree to discover documentation.
+- Inspects all agent-facing documentation in scope, including root/local instructions, context maps/contracts, routed reference/workflow docs, and prompt/skill guidance when present. It records protected, generated, unrelated, and uncertain omissions without opening excluded/private content.
+- Identifies evidence-backed opportunities before drafting edits, distinguishes true duplication from intentional local safety or approval reminders, and builds a qualitative preservation ledger for unique safety, privacy, permission, approval, command, behavior, verification, handoff, and domain constraints.
+- Offers independently selectable proposals, makes no semantic-equivalence or guaranteed token-savings claim, and does not manufacture a proposal when the current docs are already clear.
+- Never proposes source/build/runtime, `.picm/`, generated-artifact, per-run output, or unrelated-workspace edits.
+- Treats proposal selection as design intent only. Every selected write uses the complete concise summary, optional `View all` / `Select files` / `Return to summary` review, mandatory exact review for deletions and safety/permission/approval-boundary/required-command changes, and separate explicit approval for the current proposal. Revisions invalidate prior acceptance.
+- If no useful change is justified, reports exactly `No worthwhile optimizations found`.
 
 ## Coding Repository smoke checks
 
@@ -164,7 +178,7 @@ Expected behavior:
 
 - Before an explicit PiCM command, the extension leaves ordinary Pi reads, user-level skills, screenshots/outside paths, Git inspection, and agent tools untouched; use only the synthetic fixture when demonstrating that pass-through.
 - User-typed `!bash` is never intercepted, including during an active PiCM scan or automatic maintenance cycle.
-- `/picm-new`, `/picm-adopt`, and `/picm-maintain` authorize a privacy-pending workflow; `/picm-help` and natural-language requests do not. Before privacy review, every agent tool except `picm_scan_control` is blocked.
+- `/picm-new`, `/picm-adopt`, `/picm-maintain`, and `/picm-optimize` authorize a privacy-pending workflow; `/picm-help` and natural-language requests do not. Before privacy review, every agent tool except `picm_scan_control` is blocked.
 - `picm_scan_control preflight` reports Git status plus root `.gitignore` and `.git/info/exclude` presence without candidate inventory or temporary Git metadata. Immediately afterward, both `/picm-adopt` classified as coding and `/picm-adopt coding` reassure the user that Git ignore rules, Git internals, symlinks, repository/submodule boundaries, and outside-project paths are already protected, then ask only for additional sensitive project-relative paths or `none`.
 - The additional-path question does not claim every secret is inferred or treat ignore rules as sufficient for sensitive eligible files. The workflow records `config-excluded.txt`, previews `privacy.excludedPaths`, and persists it only after exact confirmation.
 - After privacy review but before `begin`, only canonical packaged PiCM skill, reference, and template reads succeed; project-local lookalikes and other project resource reads remain blocked.

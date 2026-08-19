@@ -4,7 +4,7 @@ import { createMaintenanceConfigStore } from "./maintenance-config-store.mjs";
 import { createMaintenanceController } from "./maintenance-controller.mjs";
 import { mergePrivacyExcludedPaths } from "./privacy-policy.mjs";
 
-const EXPLICIT_SCAN_COMMANDS = new Set(["picm-new", "picm-adopt", "picm-maintain"]);
+const EXPLICIT_SCAN_COMMANDS = new Set(["picm-new", "picm-adopt", "picm-maintain", "picm-optimize"]);
 const GUARDED_PATH_TOOLS = new Set(["read", "edit", "write", "grep", "find", "ls"]);
 const WORKFLOW_CONTROL_TOOLS = new Set(["picm_scan_control", "picm_maintenance_policy"]);
 
@@ -163,7 +163,7 @@ export function createRuntimeCoordinator({
     }
     if (action === "preflight") {
       if (!workflow) {
-        throw new Error("PICM_SCAN_NOT_AUTHORIZED: invoke /picm-new, /picm-adopt, or /picm-maintain before preflight");
+        throw new Error("PICM_SCAN_NOT_AUTHORIZED: invoke /picm-new, /picm-adopt, /picm-maintain, or /picm-optimize before preflight");
       }
       const details = await runtime(ctx.cwd).gate.preflight();
       requireCurrentWorkflow(sessionId, workflow);
@@ -180,7 +180,7 @@ export function createRuntimeCoordinator({
     }
     if (action === "privacy") {
       if (!workflow) {
-        throw new Error("PICM_SCAN_NOT_AUTHORIZED: invoke /picm-new, /picm-adopt, or /picm-maintain before privacy review");
+        throw new Error("PICM_SCAN_NOT_AUTHORIZED: invoke /picm-new, /picm-adopt, /picm-maintain, or /picm-optimize before privacy review");
       }
       if (!workflow.preflightComplete) {
         throw new Error("PICM_PREFLIGHT_INCOMPLETE: complete picm_scan_control preflight before privacy review");
@@ -233,8 +233,10 @@ export function createRuntimeCoordinator({
       workflow.privacyReviewed = true;
       let maintenanceReset;
       if (!workflow.maintenanceResetAttempted) {
-        maintenanceReset = await runtime(ctx.cwd).controller.resetExistingCycle();
-        requireCurrentWorkflow(sessionId, workflow);
+        if (workflow.command !== "picm-optimize") {
+          maintenanceReset = await runtime(ctx.cwd).controller.resetExistingCycle();
+          requireCurrentWorkflow(sessionId, workflow);
+        }
         workflow.maintenanceResetAttempted = true;
       }
       workflow.expiresAt = Date.now() + scanWorkflowTtlMs;
@@ -273,7 +275,7 @@ export function createRuntimeCoordinator({
     }
     if (action === "begin") {
       if (!workflow) {
-        throw new Error("PICM_SCAN_NOT_AUTHORIZED: invoke /picm-new, /picm-adopt, or /picm-maintain before scanning");
+        throw new Error("PICM_SCAN_NOT_AUTHORIZED: invoke /picm-new, /picm-adopt, /picm-maintain, or /picm-optimize before scanning");
       }
       if (!workflow.preflightComplete) {
         throw new Error("PICM_PREFLIGHT_INCOMPLETE: complete picm_scan_control preflight before scanning");
