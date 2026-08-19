@@ -15,6 +15,7 @@ import test from "node:test";
 
 import picmFactoryExtension from "../extensions/picm-factory.ts";
 import { createGitReadGate } from "../extensions/runtime/git-read-gate.mjs";
+import { createPolicy } from "../extensions/runtime/maintenance-policy.mjs";
 
 function git(root, ...args) {
   return execFileSync("git", args, { cwd: root, encoding: "utf8" }).trim();
@@ -88,9 +89,9 @@ function extensionHarness({ entries = [], sendError, confirm = true } = {}) {
     },
   };
   picmFactoryExtension(pi);
-  const context = (cwd, sessionId = "session-1") => ({
+  const context = (cwd, sessionId = "session-1", mode = "tui") => ({
     cwd,
-    mode: "tui",
+    mode,
     hasUI: false,
     waitForIdle: async () => {},
     sessionManager: {
@@ -1018,4 +1019,437 @@ test("non-Git workspaces without ignore rules remain scannable without creating 
     await gate.dispose();
     rmSync(root, { recursive: true, force: true });
   }
+});
+
+test("concurrent preflight and complete cannot restore stale authorization", async () => {
+  await withFixture(async ({ root }) => {
+    const entries = [];
+    const h = extensionHarness({ entries });
+    const ctx = h.context(root, "preflight-complete-race");
+    const control = h.tools.get("picm_scan_control");
+    await h.commands.get("picm-adopt").handler("coding", ctx);
+
+    await Promise.all([
+      control.execute("preflight", { action: "preflight" }, undefined, undefined, ctx),
+      control.execute("complete", { action: "complete" }, undefined, undefined, ctx),
+    ]);
+    assert.equal(entries.at(-1).data.status, "completed");
+
+    const restored = extensionHarness({ entries });
+    const restoredCtx = restored.context(root, "preflight-complete-race");
+    await restored.handlers.get("session_start")({ reason: "resume" }, restoredCtx);
+    const blocked = await restored.handlers.get("tool_call")(
+      { toolName: "read", input: { path: "safe.txt" } },
+      restoredCtx,
+    );
+    assert.equal(blocked.block, true);
+    assert.match(blocked.reason, /completed PiCM workflow/);
+    await restored.handlers.get("agent_settled")({}, restoredCtx);
+    assert.equal(await restored.handlers.get("tool_call")(
+      { toolName: "read", input: { path: "safe.txt" } },
+      restoredCtx,
+    ), undefined);
+  });
+});
+
+test("concurrent privacy and complete cannot restore stale authorization", async () => {
+  await withFixture(async ({ root }) => {
+    const entries = [];
+    const h = extensionHarness({ entries });
+    const ctx = h.context(root, "privacy-complete-race");
+    const control = h.tools.get("picm_scan_control");
+    await h.commands.get("picm-adopt").handler("coding", ctx);
+    await control.execute("preflight", { action: "preflight" }, undefined, undefined, ctx);
+
+    await Promise.all([
+      control.execute(
+        "privacy",
+        { action: "privacy", excludedPaths: ["safe-dir"], persist: false },
+        undefined,
+        undefined,
+        ctx,
+      ),
+      control.execute("complete", { action: "complete" }, undefined, undefined, ctx),
+    ]);
+    assert.equal(entries.at(-1).data.status, "completed");
+
+    const restored = extensionHarness({ entries });
+    const restoredCtx = restored.context(root, "privacy-complete-race");
+    await restored.handlers.get("session_tree")({}, restoredCtx);
+    const blocked = await restored.handlers.get("tool_call")(
+      { toolName: "read", input: { path: "safe.txt" } },
+      restoredCtx,
+    );
+    assert.equal(blocked.block, true);
+    assert.match(blocked.reason, /completed PiCM workflow/);
+    await restored.handlers.get("agent_settled")({}, restoredCtx);
+    assert.equal(await restored.handlers.get("tool_call")(
+      { toolName: "read", input: { path: "safe.txt" } },
+      restoredCtx,
+    ), undefined);
+  });
+});
+
+test("guarded tool decisions fail closed when complete or settlement changes scan state", async () => {
+  await withFixture(async ({ root }) => {
+    const active = extensionHarness();
+    const activeCtx = active.context(root, "active-tool-complete-race");
+    const activeControl = active.tools.get("picm_scan_control");
+    await active.commands.get("picm-adopt").handler("coding", activeCtx);
+    await activeControl.execute("preflight", { action: "preflight" }, undefined, undefined, activeCtx);
+    await activeControl.execute(
+      "privacy",
+      { action: "privacy", excludedPaths: ["safe-dir"], persist: false },
+      undefined,
+      undefined,
+      activeCtx,
+    );
+    await activeControl.execute("begin", { action: "begin" }, undefined, undefined, activeCtx);
+    const [activeDecision] = await Promise.all([
+      active.handlers.get("tool_call")(
+        { toolName: "read", input: { path: "safe.txt" } },
+        activeCtx,
+      ),
+      activeControl.execute("complete", { action: "complete" }, undefined, undefined, activeCtx),
+    ]);
+    assert.equal(activeDecision.block, true);
+    assert.match(activeDecision.reason, /scan state changed/);
+    await active.handlers.get("agent_settled")({}, activeCtx);
+    assert.equal(await active.handlers.get("tool_call")(
+      { toolName: "read", input: { path: "safe.txt" } },
+      activeCtx,
+    ), undefined);
+
+    const settled = extensionHarness();
+    const settledCtx = settled.context(root, "active-tool-settle-race");
+    const settledControl = settled.tools.get("picm_scan_control");
+    await settled.commands.get("picm-maintain").handler("routing", settledCtx);
+    await settledControl.execute("preflight", { action: "preflight" }, undefined, undefined, settledCtx);
+    await settledControl.execute(
+      "privacy",
+      { action: "privacy", excludedPaths: [], persist: false },
+      undefined,
+      undefined,
+      settledCtx,
+    );
+    await settledControl.execute("begin", { action: "begin" }, undefined, undefined, settledCtx);
+    const [settledDecision] = await Promise.all([
+      settled.handlers.get("tool_call")(
+        { toolName: "read", input: { path: "safe.txt" } },
+        settledCtx,
+      ),
+      settled.handlers.get("agent_settled")({}, settledCtx),
+    ]);
+    assert.equal(settledDecision.block, true);
+    assert.match(settledDecision.reason, /scan state changed/);
+  });
+});
+
+test("malformed completed state restores fail closed until settlement", async () => {
+  await withFixture(async ({ root }) => {
+    for (const malformed of [
+      { expiresAt: "not-a-date", excludedPaths: [] },
+      { expiresAt: new Date(Date.now() + 60_000).toISOString(), excludedPaths: "private" },
+      { expiresAt: new Date(Date.now() + 60_000).toISOString(), excludedPaths: ["../outside"] },
+    ]) {
+      const entries = [{
+        type: "custom",
+        customType: "picm-scan-workflow",
+        data: {
+          status: "completed",
+          cwd: root,
+          command: "picm-adopt",
+          preflightComplete: true,
+          privacyReviewed: true,
+          scanStarted: true,
+          maintenanceResetAttempted: true,
+          completed: true,
+          ...malformed,
+        },
+      }];
+      const h = extensionHarness({ entries });
+      const ctx = h.context(root, `malformed-completed-${String(malformed.excludedPaths)}`);
+      await h.handlers.get("session_start")({ reason: "resume" }, ctx);
+      const status = await h.tools.get("picm_scan_control").execute(
+        "status",
+        { action: "status" },
+        undefined,
+        undefined,
+        ctx,
+      );
+      assert.equal(status.details.completed, true);
+      assert.equal(status.details.authorized, false);
+      assert.equal((await h.handlers.get("tool_call")(
+        { toolName: "read", input: { path: "safe.txt" } },
+        ctx,
+      )).block, true);
+      await h.handlers.get("agent_settled")({}, ctx);
+      assert.equal(await h.handlers.get("tool_call")(
+        { toolName: "read", input: { path: "safe.txt" } },
+        ctx,
+      ), undefined);
+    }
+
+    for (const identity of [
+      { cwd: join(root, "other"), command: "picm-adopt" },
+      { cwd: root, command: "unknown-command" },
+    ]) {
+      const entries = [{
+        type: "custom",
+        customType: "picm-scan-workflow",
+        data: {
+          status: "completed",
+          expiresAt: "not-a-date",
+          excludedPaths: ["../outside"],
+          ...identity,
+        },
+      }];
+      const h = extensionHarness({ entries });
+      const ctx = h.context(root, `completed-identity-${identity.command}`);
+      await h.handlers.get("session_start")({ reason: "resume" }, ctx);
+      const status = await h.tools.get("picm_scan_control").execute(
+        "status",
+        { action: "status" },
+        undefined,
+        undefined,
+        ctx,
+      );
+      assert.equal(status.details.completed, undefined);
+      await assert.rejects(
+        h.tools.get("picm_scan_control").execute(
+          "begin",
+          { action: "begin" },
+          undefined,
+          undefined,
+          ctx,
+        ),
+        /PICM_SCAN_NOT_AUTHORIZED/,
+      );
+    }
+
+    for (const malformed of [
+      { expiresAt: "not-a-date", excludedPaths: [] },
+      { expiresAt: new Date(Date.now() + 60_000).toISOString(), excludedPaths: ["../outside"] },
+    ]) {
+      const entries = [{
+        type: "custom",
+        customType: "picm-scan-workflow",
+        data: {
+          status: "authorized",
+          cwd: root,
+          command: "picm-adopt",
+          preflightComplete: true,
+          privacyReviewed: true,
+          scanStarted: true,
+          maintenanceResetAttempted: true,
+          ...malformed,
+        },
+      }];
+      const h = extensionHarness({ entries });
+      const ctx = h.context(root, `malformed-authorized-${String(malformed.excludedPaths)}`);
+      await h.handlers.get("session_start")({ reason: "resume" }, ctx);
+      await assert.rejects(
+        h.tools.get("picm_scan_control").execute(
+          "begin",
+          { action: "begin" },
+          undefined,
+          undefined,
+          ctx,
+        ),
+        /PICM_SCAN_NOT_AUTHORIZED/,
+      );
+    }
+  });
+});
+
+test("interactive commands bootstrap privacy before trusted skill loading", async () => {
+  await withFixture(async ({ root }) => {
+    const packageRoot = resolve(".");
+    for (const command of ["picm-new", "picm-adopt", "picm-maintain"]) {
+      const h = extensionHarness();
+      const ctx = h.context(root, `bootstrap-${command}`);
+      await h.commands.get(command).handler(command === "picm-adopt" ? "coding" : "routing", ctx);
+      const prompt = h.sent.at(-1);
+      const preflightIndex = prompt.indexOf('action: "preflight"');
+      const privacyIndex = prompt.indexOf('action: "privacy"');
+      const skillIndex = prompt.indexOf("load the `picm-factory` skill");
+      assert.ok(preflightIndex >= 0 && preflightIndex < privacyIndex && privacyIndex < skillIndex);
+      assert.match(prompt, /Only name additional sensitive project-relative paths/);
+
+      const control = h.tools.get("picm_scan_control");
+      const skill = join(packageRoot, "skills", "picm-factory", "SKILL.md");
+      assert.equal((await h.handlers.get("tool_call")(
+        { toolName: "read", input: { path: skill } },
+        ctx,
+      )).block, true);
+      await control.execute("preflight", { action: "preflight" }, undefined, undefined, ctx);
+      await control.execute(
+        "privacy",
+        { action: "privacy", excludedPaths: ["safe-dir"], persist: false },
+        undefined,
+        undefined,
+        ctx,
+      );
+      for (const path of [
+        skill,
+        join(packageRoot, "skills", "picm-factory", "references", "adoption-guide.md"),
+        join(packageRoot, "skills", "picm-factory", "templates", "context-map.md"),
+      ]) {
+        assert.equal(await h.handlers.get("tool_call")(
+          { toolName: "read", input: { path } },
+          ctx,
+        ), undefined);
+      }
+      for (const event of [
+        { toolName: "read", input: { path: "safe.txt" } },
+        { toolName: "read", input: { path: ".env" } },
+        { toolName: "read", input: { path: "safe-dir/file.txt" } },
+        { toolName: "bash", input: { command: "cat safe.txt" } },
+        { toolName: "unknown", input: { path: skill } },
+      ]) {
+        assert.equal((await h.handlers.get("tool_call")(event, ctx)).block, true);
+      }
+
+      await control.execute("begin", { action: "begin" }, undefined, undefined, ctx);
+      const inventory = await control.execute(
+        "inventory",
+        { action: "inventory" },
+        undefined,
+        undefined,
+        ctx,
+      );
+      assert.equal(inventory.details.candidates.includes("safe.txt"), true);
+      assert.equal(inventory.details.candidates.includes(".env"), false);
+      assert.equal(inventory.details.candidates.includes("safe-dir/file.txt"), false);
+      assert.equal(await h.handlers.get("tool_call")(
+        { toolName: "read", input: { path: "safe.txt" } },
+        ctx,
+      ), undefined);
+      for (const path of [".env", "safe-dir/file.txt"]) {
+        assert.equal((await h.handlers.get("tool_call")(
+          { toolName: "read", input: { path } },
+          ctx,
+        )).block, true);
+      }
+      await control.execute("end", { action: "end" }, undefined, undefined, ctx);
+      const completed = await control.execute(
+        "complete",
+        { action: "complete" },
+        undefined,
+        undefined,
+        ctx,
+      );
+      assert.equal(completed.details.completed, true);
+      assert.equal((await h.handlers.get("tool_call")(
+        { toolName: "read", input: { path: "safe.txt" } },
+        ctx,
+      )).block, true);
+      await h.handlers.get("agent_settled")({}, ctx);
+    }
+  });
+});
+
+test("noninteractive commands preserve generic skill and argument dispatch", async () => {
+  await withFixture(async ({ root }) => {
+    for (const command of ["picm-new", "picm-maintain"]) {
+      const h = extensionHarness();
+      await h.commands.get(command).handler("synthetic focus", h.context(root, `print-${command}`, "print"));
+      assert.match(h.sent.at(-1), /Use the picm-factory skill/);
+      assert.match(h.sent.at(-1), /User arguments:\nsynthetic focus/);
+      assert.doesNotMatch(h.sent.at(-1), /Privacy-first startup/);
+    }
+  });
+});
+
+test("legacy opaque privacy survives session-only and persistent reviews", async () => {
+  await withFixture(async ({ root }) => {
+    const configPath = join(root, ".picm", "config.json");
+    const legacy = {
+      version: 1,
+      custom: "keep",
+      privacy: { owner: "security-team", legacyMode: "private" },
+    };
+    write(configPath, `${JSON.stringify(legacy, null, 2)}\n`);
+
+    const sessionOnly = extensionHarness();
+    const sessionCtx = sessionOnly.context(root, "legacy-session-only");
+    await sessionOnly.commands.get("picm-adopt").handler("coding", sessionCtx);
+    await sessionOnly.tools.get("picm_scan_control").execute(
+      "preflight",
+      { action: "preflight" },
+      undefined,
+      undefined,
+      sessionCtx,
+    );
+    await sessionOnly.tools.get("picm_scan_control").execute(
+      "privacy",
+      { action: "privacy", excludedPaths: ["safe-dir"], persist: false },
+      undefined,
+      undefined,
+      sessionCtx,
+    );
+    assert.deepEqual(JSON.parse(readFileSync(configPath, "utf8")), legacy);
+
+    const persistent = extensionHarness({ confirm: true });
+    const persistentCtx = persistent.context(root, "legacy-persistent");
+    await persistent.commands.get("picm-adopt").handler("coding", persistentCtx);
+    await persistent.tools.get("picm_scan_control").execute(
+      "preflight",
+      { action: "preflight" },
+      undefined,
+      undefined,
+      persistentCtx,
+    );
+    await persistent.tools.get("picm_scan_control").execute(
+      "privacy",
+      { action: "privacy", excludedPaths: ["safe-dir"], persist: true },
+      undefined,
+      undefined,
+      persistentCtx,
+    );
+    assert.deepEqual(JSON.parse(readFileSync(configPath, "utf8")).privacy, {
+      owner: "security-team",
+      legacyMode: "private",
+      excludedPaths: ["safe-dir"],
+    });
+  });
+});
+
+test("public privacy review preserves non-object legacy config and skips maintenance reset", async () => {
+  await withFixture(async ({ root }) => {
+    const configPath = join(root, ".picm", "config.json");
+    const maintenance = createPolicy({
+      mode: "nudge",
+      intervalValue: 1,
+      intervalUnit: "days",
+      now: "2020-01-01T00:00:00.000Z",
+    });
+    const original = `${JSON.stringify({
+      version: 1,
+      custom: "keep",
+      maintenance,
+      privacy: "security-owned",
+    }, null, 2)}\n`;
+    write(configPath, original);
+    const h = extensionHarness();
+    const ctx = h.context(root, "legacy-non-object-public");
+    const control = h.tools.get("picm_scan_control");
+    await h.commands.get("picm-maintain").handler("routing", ctx);
+    await control.execute("preflight", { action: "preflight" }, undefined, undefined, ctx);
+    await assert.rejects(
+      control.execute(
+        "privacy",
+        { action: "privacy", excludedPaths: ["safe-dir"], persist: false },
+        undefined,
+        undefined,
+        ctx,
+      ),
+      /PRIVACY_LEGACY_MIGRATION_REQUIRED.*migrate it explicitly/,
+    );
+    assert.equal(readFileSync(configPath, "utf8"), original);
+    assert.equal(
+      JSON.parse(readFileSync(configPath, "utf8")).maintenance.lastCycleAt,
+      "2020-01-01T00:00:00.000Z",
+    );
+  });
 });

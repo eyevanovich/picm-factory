@@ -2,7 +2,10 @@ import * as nodeFs from "node:fs/promises";
 import { randomUUID } from "node:crypto";
 import { relative, resolve, join } from "node:path";
 import { validatePolicy } from "./maintenance-policy.mjs";
-import { validatePrivacyPolicy } from "./privacy-policy.mjs";
+import {
+  validatePrivacyPolicy,
+  validateStoredPrivacyPolicy,
+} from "./privacy-policy.mjs";
 
 function errorDecision(code, message) {
   return { ok: false, code, message };
@@ -114,7 +117,7 @@ export function createMaintenanceConfigStore({
       let privacy;
       try {
         if (Object.hasOwn(config, "maintenance")) maintenance = validatePolicy(config.maintenance);
-        if (Object.hasOwn(config, "privacy")) privacy = validatePrivacyPolicy(config.privacy, cwd);
+        if (Object.hasOwn(config, "privacy")) privacy = validateStoredPrivacyPolicy(config.privacy, cwd);
       } catch (error) {
         return errorDecision(error.code ?? "INVALID_CONFIG", messageOf(error));
       }
@@ -354,7 +357,7 @@ export function createMaintenanceConfigStore({
     let validExpected;
     let validPrivacy;
     try {
-      validExpected = expectedPrivacy === undefined ? undefined : validatePrivacyPolicy(expectedPrivacy, cwd);
+      validExpected = expectedPrivacy === undefined ? undefined : validateStoredPrivacyPolicy(expectedPrivacy, cwd);
       validPrivacy = privacy === undefined ? undefined : validatePrivacyPolicy(privacy, cwd);
     } catch (error) {
       return errorDecision(error.code ?? "INVALID_PRIVACY_POLICY", messageOf(error));
@@ -375,7 +378,7 @@ export function createMaintenanceConfigStore({
     let validExpected;
     let validPrivacy;
     try {
-      validExpected = expectedPrivacy === undefined ? undefined : validatePrivacyPolicy(expectedPrivacy, cwd);
+      validExpected = expectedPrivacy === undefined ? undefined : validateStoredPrivacyPolicy(expectedPrivacy, cwd);
       validPrivacy = privacy === undefined ? undefined : validatePrivacyPolicy(privacy, cwd);
     } catch (error) {
       return errorDecision(error.code ?? "INVALID_PRIVACY_POLICY", messageOf(error));

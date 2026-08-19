@@ -18,6 +18,7 @@ export function createRuntimeCoordinator({
   const automaticReadOnlySessions = new Map();
   const scanWorkflows = new Map();
   const activeScans = new Map();
+  const scanControlQueues = new Map();
   const policyPreviews = new Map();
 
   const sessionIdFor = (ctx) =>
@@ -106,13 +107,15 @@ export function createRuntimeCoordinator({
       return false;
     }
     const completed = state.status === "completed";
-    const expiresAt = Date.parse(state.expiresAt);
-    if (!Number.isFinite(expiresAt) || (!completed && expiresAt <= Date.now())) return false;
+    const parsedExpiresAt = Date.parse(state.expiresAt);
+    const expiresAt = Number.isFinite(parsedExpiresAt) ? parsedExpiresAt : Date.now();
+    if (!completed && (!Number.isFinite(parsedExpiresAt) || expiresAt <= Date.now())) return false;
     let excludedPaths;
     try {
       excludedPaths = mergePrivacyExcludedPaths(ctx.cwd, state.excludedPaths ?? []);
     } catch {
-      return false;
+      if (!completed) return false;
+      excludedPaths = [];
     }
     const completeState =
       typeof state.preflightComplete === "boolean" &&
@@ -137,7 +140,13 @@ export function createRuntimeCoordinator({
     return true;
   }
 
-  async function scanControl(ctx, params) {
+  function requireCurrentWorkflow(sessionId, workflow) {
+    if (scanWorkflows.get(sessionId) !== workflow || workflow.completed) {
+      throw new Error("PICM_SCAN_STALE: workflow changed or completed while the scan action was running");
+    }
+  }
+
+  async function runScanControl(ctx, params) {
     const { action, path, excludedPaths = [], persist = false } = params;
     const sessionId = sessionIdFor(ctx);
     const workflow = workflowFor(ctx);
@@ -157,6 +166,7 @@ export function createRuntimeCoordinator({
         throw new Error("PICM_SCAN_NOT_AUTHORIZED: invoke /picm-new, /picm-adopt, or /picm-maintain before preflight");
       }
       const details = await runtime(ctx.cwd).gate.preflight();
+      requireCurrentWorkflow(sessionId, workflow);
       workflow.preflightComplete = true;
       workflow.expiresAt = Date.now() + scanWorkflowTtlMs;
       return {
@@ -177,6 +187,7 @@ export function createRuntimeCoordinator({
       }
       const store = runtime(ctx.cwd).store;
       const current = await store.readPrivacyForReview();
+      requireCurrentWorkflow(sessionId, workflow);
       if (!current.ok) throw new Error(`${current.code}: ${current.message}`);
       const additions = mergePrivacyExcludedPaths(ctx.cwd, excludedPaths);
       let persistedPrivacy = current.privacy;
@@ -186,6 +197,7 @@ export function createRuntimeCoordinator({
           throw new Error("PRIVACY_APPLY_TUI_ONLY: persistent privacy exclusions require interactive TUI confirmation");
         }
         const nextPrivacy = {
+          ...(current.privacy ?? {}),
           excludedPaths: mergePrivacyExcludedPaths(
             ctx.cwd,
             current.privacy?.excludedPaths ?? [],
@@ -196,6 +208,7 @@ export function createRuntimeCoordinator({
           "Persist PiCM privacy exclusions?",
           `Exact .picm/config.json patch:\n${JSON.stringify({ privacy: nextPrivacy }, null, 2)}`,
         );
+        requireCurrentWorkflow(sessionId, workflow);
         if (!confirmed) {
           return {
             ok: false,
@@ -205,6 +218,7 @@ export function createRuntimeCoordinator({
           };
         }
         const update = await store.compareAndUpdatePrivacyForReview(current.privacy, nextPrivacy);
+        requireCurrentWorkflow(sessionId, workflow);
         if (!update.ok) throw new Error(`${update.code}: ${update.message}`);
         if (update.conflict) throw new Error(`${update.code}: ${update.message}`);
         persistedPrivacy = nextPrivacy;
@@ -220,6 +234,7 @@ export function createRuntimeCoordinator({
       let maintenanceReset;
       if (!workflow.maintenanceResetAttempted) {
         maintenanceReset = await runtime(ctx.cwd).controller.resetExistingCycle();
+        requireCurrentWorkflow(sessionId, workflow);
         workflow.maintenanceResetAttempted = true;
       }
       workflow.expiresAt = Date.now() + scanWorkflowTtlMs;
@@ -241,6 +256,7 @@ export function createRuntimeCoordinator({
         throw new Error("PICM_SCAN_NOT_ACTIVE: begin an explicitly authorized scan before requesting inventory");
       }
       const inventory = await runtime(ctx.cwd).gate.refreshInventory(path, scan.excludedPaths);
+      if (workflow) requireCurrentWorkflow(sessionId, workflow);
       return {
         ok: true,
         action,
@@ -266,6 +282,7 @@ export function createRuntimeCoordinator({
         throw new Error("PICM_PRIVACY_NOT_REVIEWED: complete picm_scan_control privacy before scanning");
       }
       const config = await runtime(ctx.cwd).store.read();
+      requireCurrentWorkflow(sessionId, workflow);
       if (!config.ok) throw new Error(`${config.code}: ${config.message}`);
       workflow.excludedPaths = mergePrivacyExcludedPaths(
         ctx.cwd,
@@ -302,6 +319,22 @@ export function createRuntimeCoordinator({
       active: active?.cwd === ctx.cwd,
       ...(current ? workflowState(current) : {}),
     };
+  }
+
+  async function scanControl(ctx, params) {
+    const sessionId = sessionIdFor(ctx);
+    const prior = scanControlQueues.get(sessionId) ?? Promise.resolve();
+    let release;
+    const turn = new Promise((resolveTurn) => { release = resolveTurn; });
+    const queued = prior.then(() => turn);
+    scanControlQueues.set(sessionId, queued);
+    await prior;
+    try {
+      return await runScanControl(ctx, params);
+    } finally {
+      release();
+      if (scanControlQueues.get(sessionId) === queued) scanControlQueues.delete(sessionId);
+    }
   }
 
   function runtime(cwd) {
@@ -364,6 +397,15 @@ export function createRuntimeCoordinator({
     return false;
   }
 
+  function gateStateIsCurrent(ctx, workflow, scan) {
+    const currentWorkflow = workflowFor(ctx);
+    return (
+      currentWorkflow === workflow &&
+      currentWorkflow?.completed !== true &&
+      activeScans.get(sessionIdFor(ctx)) === scan
+    );
+  }
+
   async function checkToolCall(event, ctx) {
     const automaticState = automaticFor(ctx);
     if (automaticState) {
@@ -400,6 +442,16 @@ export function createRuntimeCoordinator({
     if (workflow && WORKFLOW_CONTROL_TOOLS.has(event.toolName)) return { allowed: true };
     if (workflow && scan?.cwd !== ctx.cwd) {
       if (event.toolName === "picm_scan_control") return { allowed: true };
+      if (event.toolName === "read") {
+        const trusted = await runtime(ctx.cwd).gate.checkTrustedPackageRead(
+          event.toolName,
+          event.input?.path,
+        );
+        if (trusted.allowed) {
+          const currentWorkflow = workflowFor(ctx);
+          if (currentWorkflow === workflow && !workflow.completed) return trusted;
+        }
+      }
       return {
         allowed: false,
         reason: "Begin the privacy-reviewed PiCM scan before using agent tools",
@@ -412,11 +464,15 @@ export function createRuntimeCoordinator({
         if (!GUARDED_PATH_TOOLS.has(event.toolName)) {
           return { allowed: false, reason: "Unrecognized agent tools are blocked during active PiCM scans" };
         }
-        return runtime(ctx.cwd).gate.checkPath(
+        const decision = await runtime(ctx.cwd).gate.checkPath(
           event.toolName,
           event.input?.path,
           scan.excludedPaths,
         );
+        if (!gateStateIsCurrent(ctx, workflow, scan)) {
+          return { allowed: false, reason: "PiCM scan state changed while the guarded tool call was being checked" };
+        }
+        return decision;
       }
 
       if (workflow?.excludedPaths.length > 0) {
@@ -427,11 +483,15 @@ export function createRuntimeCoordinator({
         if (!GUARDED_PATH_TOOLS.has(event.toolName)) {
           return { allowed: false, reason: "Unrecognized agent tools are blocked while PiCM privacy exclusions are active" };
         }
-        return runtime(ctx.cwd).gate.checkPrivacyPath(
+        const decision = await runtime(ctx.cwd).gate.checkPrivacyPath(
           event.toolName,
           event.input?.path,
           workflow.excludedPaths,
         );
+        if (!gateStateIsCurrent(ctx, workflow, scan)) {
+          return { allowed: false, reason: "PiCM scan state changed while the privacy path was being checked" };
+        }
+        return decision;
       }
       return { allowed: true };
     } catch (error) {

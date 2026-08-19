@@ -319,3 +319,48 @@ test("reclaims orphaned unique recovery links", async (t) => {
   assert.equal(result.ok, true);
   assert.equal((await fs.readdir(join(cwd, ".picm"))).some((entry) => entry.includes(".lock.recovery-")), false);
 });
+
+test("legacy opaque privacy objects remain readable and merge exclusions without data loss", async (t) => {
+  const { cwd, gate } = await repository(t);
+  await fs.mkdir(join(cwd, ".picm"));
+  const path = join(cwd, ".picm/config.json");
+  const legacyPrivacy = { owner: "security-team", legacyMode: "private" };
+  await fs.writeFile(path, `${JSON.stringify({ version: 1, custom: "keep", privacy: legacyPrivacy }, null, 2)}\n`);
+  const store = createMaintenanceConfigStore({ cwd, gate });
+
+  const review = await store.readPrivacyForReview();
+  assert.equal(review.ok, true);
+  assert.deepEqual(review.privacy, legacyPrivacy);
+  assert.deepEqual(JSON.parse(await fs.readFile(path, "utf8")).privacy, legacyPrivacy);
+
+  const updated = await store.compareAndUpdatePrivacyForReview(
+    review.privacy,
+    { ...review.privacy, excludedPaths: ["private", "private/nested"] },
+  );
+  assert.equal(updated.ok, true);
+  assert.equal(updated.changed, true);
+  assert.deepEqual(JSON.parse(await fs.readFile(path, "utf8")), {
+    version: 1,
+    custom: "keep",
+    privacy: {
+      owner: "security-team",
+      legacyMode: "private",
+      excludedPaths: ["private"],
+    },
+  });
+});
+
+test("legacy non-object privacy requires non-destructive migration", async (t) => {
+  const { cwd, gate } = await repository(t);
+  await fs.mkdir(join(cwd, ".picm"));
+  const path = join(cwd, ".picm/config.json");
+  const original = `${JSON.stringify({ version: 1, privacy: "security-owned" }, null, 2)}\n`;
+  await fs.writeFile(path, original);
+  const store = createMaintenanceConfigStore({ cwd, gate });
+
+  const result = await store.readPrivacyForReview();
+  assert.equal(result.ok, false);
+  assert.equal(result.code, "PRIVACY_LEGACY_MIGRATION_REQUIRED");
+  assert.match(result.message, /migrate it explicitly/);
+  assert.equal(await fs.readFile(path, "utf8"), original);
+});

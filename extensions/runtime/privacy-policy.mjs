@@ -62,6 +62,18 @@ export function validatePrivacyPolicy(value, cwd) {
     throw privacyError("PRIVACY_EXCLUDED_PATHS_MISSING", "privacy.excludedPaths is required");
   }
   return {
+    ...value,
     excludedPaths: normalizePrivacyExcludedPaths(cwd, value.excludedPaths),
   };
+}
+
+export function validateStoredPrivacyPolicy(value, cwd) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw privacyError(
+      "PRIVACY_LEGACY_MIGRATION_REQUIRED",
+      "legacy privacy data is not an object; migrate it explicitly before adding PiCM exclusions",
+    );
+  }
+  if (!Object.hasOwn(value, "excludedPaths")) return { ...value };
+  return validatePrivacyPolicy(value, cwd);
 }

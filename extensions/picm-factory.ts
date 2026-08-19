@@ -53,18 +53,22 @@ const maintainArgumentCompletions = [
 
 const adoptionPrivacyQuestion = "PiCM already honors `.gitignore`, nested Git ignore rules, and repository-local `.git/info/exclude`. It also protects Git internals, symlinks, nested repository/submodule boundaries, and paths outside this project. Only name additional sensitive project-relative paths not already covered by those protections. Reply with exact paths, or `none`.";
 
-function buildPrompt(command: CommandName, args: string): string {
+function buildPrompt(
+  command: CommandName,
+  args: string,
+  privacyBootstrap = command === "picm-adopt",
+): string {
   const mode = command.replace("picm-", "");
   const argText = args.trim() ? `\n\nUser arguments:\n${args.trim()}` : "";
   const commandContext = `Mode: ${mode}\nCommand: /${command}${argText}`;
-  if (command === "picm-adopt") {
-    return `Privacy-first startup — follow this order exactly:\n1. Call \`picm_scan_control\` with \`action: "preflight"\`. Do not load the skill or use any other tool yet.\n2. After preflight, ask this exact question and wait for the user's reply:\n\n${adoptionPrivacyQuestion}\n\n3. Call \`picm_scan_control\` with \`action: "privacy"\` and every additional exact path from the reply (an empty list for \`none\`). Use \`persist: true\` only if the user requests durable exclusions.\n4. Only after privacy review completes, load the \`picm-factory\` skill and its \`SKILL.md\`, then continue normal adoption.\n\n${commandContext}`;
+  if (privacyBootstrap) {
+    return `Privacy-first startup — follow this order exactly:\n1. Call \`picm_scan_control\` with \`action: "preflight"\`. Do not load the skill or use any other tool yet.\n2. After preflight, ask this exact question and wait for the user's reply:\n\n${adoptionPrivacyQuestion}\n\n3. Call \`picm_scan_control\` with \`action: "privacy"\` and every additional exact path from the reply (an empty list for \`none\`). Use \`persist: true\` only if the user requests durable exclusions.\n4. Only after privacy review completes, load the \`picm-factory\` skill and its \`SKILL.md\`, then continue the ${mode} workflow.\n\n${commandContext}`;
   }
   return `Use the picm-factory skill. Load its SKILL.md before proceeding.\n\n${commandContext}`;
 }
 
 function scheduledMaintenancePrompt(): string {
-  return `${buildPrompt("picm-maintain", "scheduled read-only advisory cycle")}\n\nThis is an automatic due-cycle advisory. Do not edit or write files, run Bash, create a report, repair anything, commit, send data, or cause external side effects. Report findings in chat only.`;
+  return `${buildPrompt("picm-maintain", "scheduled read-only advisory cycle", false)}\n\nThis is an automatic due-cycle advisory. Do not edit or write files, run Bash, create a report, repair anything, commit, send data, or cause external side effects. Report findings in chat only.`;
 }
 
 export default function picmFactoryExtension(pi: ExtensionAPI) {
@@ -109,7 +113,9 @@ export default function picmFactoryExtension(pi: ExtensionAPI) {
       if (
         result.ok &&
         (params.action === "preflight" || params.action === "privacy" || params.action === "begin") &&
-        result.authorized
+        result.authorized &&
+        !result.completed &&
+        !coordinator.isWorkflowCompleted(ctx)
       ) {
         pi.appendEntry(scanWorkflowEntryType, {
           status: "authorized",
@@ -256,7 +262,12 @@ export default function picmFactoryExtension(pi: ExtensionAPI) {
           recordClearedWorkflow(ctx);
         }
         try {
-          pi.sendUserMessage(buildPrompt(command, args));
+          pi.sendUserMessage(buildPrompt(
+            command,
+            args,
+            command === "picm-adopt" ||
+              ((command === "picm-new" || command === "picm-maintain") && ctx.mode === "tui"),
+          ));
         } catch (error) {
           if (command !== "picm-help") {
             coordinator.clearWorkflow(ctx);

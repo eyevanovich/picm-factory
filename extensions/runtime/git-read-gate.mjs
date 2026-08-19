@@ -547,6 +547,25 @@ export function createGitReadGate({
     }
   }
 
+  async function checkTrustedPackageRead(toolName, inputPath) {
+    if (toolName !== "read" || typeof inputPath !== "string" || inputPath.trim() === "") {
+      return { allowed: false, protected: true, reason: "only canonical packaged PiCM reads are allowed before scan begin" };
+    }
+    try {
+      const resolvedPath = await resolveExistingPath(inputPath, true);
+      if (!resolvedPath.blocked && await isTrustedPackageRead(resolvedPath.canonicalPath, toolName)) {
+        return { allowed: true, protected: true, reason: "trusted packaged PiCM resource" };
+      }
+      return { allowed: false, protected: true, reason: "only canonical packaged PiCM reads are allowed before scan begin" };
+    } catch (error) {
+      return {
+        allowed: false,
+        protected: true,
+        reason: `trusted package read validation failed: ${error instanceof Error ? error.message : error}`,
+      };
+    }
+  }
+
   async function checkBash() {
     return {
       allowed: false,
@@ -608,6 +627,7 @@ export function createGitReadGate({
   return {
     checkBash,
     checkPath,
+    checkTrustedPackageRead,
     checkPrivacyPath,
     dispose,
     preflight,
