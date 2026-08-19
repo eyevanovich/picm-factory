@@ -288,6 +288,8 @@ When the user approves durable PiCM-only scan exclusions, preserve their normali
 
 These paths are scan policy, not normal agent context. The extension loads them before protected inventory, filters them from candidates, and blocks direct access throughout the authorized workflow. Keep file contents and explanatory sensitive details out of config.
 
+When adding exclusions to an older `privacy` object that has no `excludedPaths`, preserve its existing members and add the normalized array. Reject an explicitly present malformed `excludedPaths` value instead of replacing or discarding it.
+
 ## Report additions
 
 Add these sections to the normal adoption report when coding adoption is selected:
