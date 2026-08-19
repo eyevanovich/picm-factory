@@ -1,4 +1,10 @@
 import {
+  createEditTool,
+  createFindTool,
+  createGrepTool,
+  createLsTool,
+  createReadTool,
+  createWriteTool,
   withFileMutationQueue,
   type ExtensionAPI,
   type ExtensionContext,
@@ -14,6 +20,7 @@ import {
   parseMaintenanceDepthArgument,
 } from "./runtime/coding-maintenance-depth.mjs";
 import { packageRootFromImportMeta } from "./runtime/git-read-gate.mjs";
+import { executeBoundGrep } from "./runtime/path-execution-binding.mjs";
 import { createRuntimeCoordinator } from "./runtime/runtime-coordinator.mjs";
 
 type CommandName = "picm-new" | "picm-adopt" | "picm-maintain" | "picm-optimize" | "picm-help";
@@ -86,10 +93,45 @@ function scheduledMaintenancePrompt(): string {
   return `${buildPrompt("picm-maintain", "scheduled read-only advisory cycle", false)}\n\nThis is an automatic due-cycle advisory. Do not edit or write files, run Bash, create a report, repair anything, commit, send data, or cause external side effects. Report findings in chat only.`;
 }
 
-export default function picmFactoryExtension(pi: ExtensionAPI) {
+type PicmFactoryExtensionOptions = {
+  createCoordinator?: typeof createRuntimeCoordinator;
+};
+
+export default function picmFactoryExtension(
+  pi: ExtensionAPI,
+  options: PicmFactoryExtensionOptions = {},
+) {
   const packageRoot = packageRootFromImportMeta(import.meta.url);
   const canonicalPackageRoot = realpathSync(packageRoot);
-  const coordinator = createRuntimeCoordinator({ packageRoot, canonicalPackageRoot });
+  const coordinator = (options.createCoordinator ?? createRuntimeCoordinator)({
+    packageRoot,
+    canonicalPackageRoot,
+  });
+
+  const registerBoundBuiltin = (
+    toolName: "read" | "edit" | "write" | "grep" | "find" | "ls",
+    createTool: any,
+  ) => {
+    const definition = createTool(process.cwd());
+    pi.registerTool({
+      ...definition,
+      async execute(toolCallId: string, params: any, signal: AbortSignal | undefined, onUpdate: any, ctx: ExtensionContext) {
+        const binding = coordinator.beginBoundPathExecution(toolCallId, ctx, toolName);
+        if (binding && toolName === "grep") {
+          return executeBoundGrep(binding, params, signal);
+        }
+        const tool = createTool(ctx.cwd, binding ? { operations: binding.operations } : undefined);
+        return tool.execute(toolCallId, params, signal, onUpdate, ctx);
+      },
+    });
+  };
+
+  registerBoundBuiltin("read", createReadTool);
+  registerBoundBuiltin("edit", createEditTool);
+  registerBoundBuiltin("write", createWriteTool);
+  registerBoundBuiltin("grep", createGrepTool);
+  registerBoundBuiltin("find", createFindTool);
+  registerBoundBuiltin("ls", createLsTool);
 
   const restoreScanWorkflow = (ctx: ExtensionContext) => {
     let state;

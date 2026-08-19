@@ -2,9 +2,11 @@ import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import {
   existsSync,
+  fstatSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
+  renameSync,
   rmSync,
   symlinkSync,
   writeFileSync,
@@ -28,6 +30,7 @@ import {
 import picmFactoryExtension from "../extensions/picm-factory.ts";
 import { createGitReadGate } from "../extensions/runtime/git-read-gate.mjs";
 import { createPolicy } from "../extensions/runtime/maintenance-policy.mjs";
+import { createRuntimeCoordinator } from "../extensions/runtime/runtime-coordinator.mjs";
 
 function git(root, ...args) {
   return execFileSync("git", args, { cwd: root, encoding: "utf8" }).trim();
@@ -85,7 +88,13 @@ async function withFixture(run) {
   }
 }
 
-function extensionHarness({ entries = [], sendError, confirm = true } = {}) {
+function extensionHarness({
+  entries = [],
+  sendError,
+  appendError,
+  confirm = true,
+  createCoordinator,
+} = {}) {
   const handlers = new Map();
   const commands = new Map();
   const tools = new Map();
@@ -94,13 +103,17 @@ function extensionHarness({ entries = [], sendError, confirm = true } = {}) {
     on(name, handler) { handlers.set(name, handler); },
     registerCommand(name, definition) { commands.set(name, definition); },
     registerTool(definition) { tools.set(definition.name, definition); },
-    appendEntry(customType, data) { entries.push({ type: "custom", customType, data }); },
+    appendEntry(customType, data) {
+      const error = appendError?.(customType, data);
+      if (error) throw error;
+      entries.push({ type: "custom", customType, data });
+    },
     sendUserMessage(message) {
       if (sendError) throw sendError;
       sent.push(message);
     },
   };
-  picmFactoryExtension(pi);
+  picmFactoryExtension(pi, createCoordinator ? { createCoordinator } : undefined);
   const context = (cwd, sessionId = "session-1", mode = "tui") => ({
     cwd,
     mode,
@@ -315,6 +328,61 @@ test("allows safe prospective writes and blocks ignored prospective writes and t
     assert.match((await gate.checkPath("write", "secrets/new.md")).reason, /ignored by Git/);
     assert.match((await gate.checkPath("grep", ".")).reason, /directory traversal is blocked/);
     assert.match((await gate.checkPath("find", undefined)).reason, /guarded file path/);
+  });
+});
+
+test("execution bindings close their stable file descriptors", async () => {
+  await withFixture(async ({ root, packageRoot }) => {
+    const gate = createGitReadGate({ cwd: root, packageRoot });
+    const decision = await gate.checkPath("read", "safe.txt");
+    assert.equal(decision.allowed, true);
+    assert.ok(decision.executionBinding);
+
+    const binding = gate.bindPath(decision.executionBinding);
+    assert.equal(fstatSync(binding.fd).isFile(), true);
+    binding.release();
+    assert.throws(() => fstatSync(binding.fd), { code: "EBADF" });
+    await gate.dispose();
+  });
+});
+
+test("bound built-in wrappers preserve ordinary read and write behavior on the host platform", async () => {
+  await withFixture(async ({ root }) => {
+    const h = extensionHarness();
+    const ctx = h.context(root, "ordinary-binding-host-platform");
+    const control = h.tools.get("picm_scan_control");
+    await h.commands.get("picm-adopt").handler("coding", ctx);
+    await control.execute("preflight", { action: "preflight" }, undefined, undefined, ctx);
+    await control.execute(
+      "privacy",
+      { action: "privacy", excludedPaths: [], persist: false },
+      undefined,
+      undefined,
+      ctx,
+    );
+    await control.execute("begin", { action: "begin" }, undefined, undefined, ctx);
+
+    const calls = await preflightParallelToolCalls(h, ctx, [
+      {
+        id: "bound-host-read",
+        toolName: "read",
+        input: { path: "safe.txt", offset: 1, limit: 1 },
+        tool: h.tools.get("read"),
+      },
+      {
+        id: "bound-host-write",
+        toolName: "write",
+        input: { path: "output/host.txt", content: "host write\n" },
+        tool: h.tools.get("write"),
+      },
+    ]);
+    const [readResult, writeResult] = await Promise.all(
+      executePreflightedToolCalls(h, ctx, calls),
+    );
+    assert.equal(readResult.isError, false);
+    assert.match(readResult.result.content[0].text, /^safe/);
+    assert.equal(writeResult.isError, false);
+    assert.equal(readFileSync(join(root, "output", "host.txt"), "utf8"), "host write\n");
   });
 });
 
@@ -1867,6 +1935,50 @@ test("restore and settlement discard orphaned execution leases", async () => {
   }
 });
 
+test("session shutdown preserves cleanup and persistence errors", async () => {
+  await withFixture(async ({ root }) => {
+    const cleanupError = new Error("synthetic shutdown cleanup failure");
+    const persistenceError = new Error("synthetic terminal persistence failure");
+    const h = extensionHarness({
+      createCoordinator(options) {
+        const coordinator = createRuntimeCoordinator(options);
+        return {
+          ...coordinator,
+          async dispose(ctx) {
+            await coordinator.dispose(ctx);
+            throw cleanupError;
+          },
+        };
+      },
+      appendError(_customType, data) {
+        return data?.status === "cleared" ? persistenceError : undefined;
+      },
+    });
+    const ctx = h.context(root, "shutdown-dual-failure");
+    const control = h.tools.get("picm_scan_control");
+    await h.commands.get("picm-adopt").handler("coding", ctx);
+    await control.execute("preflight", { action: "preflight" }, undefined, undefined, ctx);
+    await control.execute(
+      "privacy",
+      { action: "privacy", excludedPaths: [], persist: false },
+      undefined,
+      undefined,
+      ctx,
+    );
+    await control.execute("begin", { action: "begin" }, undefined, undefined, ctx);
+    await control.execute("complete", { action: "complete" }, undefined, undefined, ctx);
+
+    await assert.rejects(
+      h.handlers.get("session_shutdown")({ reason: "quit" }, ctx),
+      (error) => {
+        assert.ok(error instanceof AggregateError);
+        assert.deepEqual(error.errors, [cleanupError, persistenceError]);
+        return true;
+      },
+    );
+  });
+});
+
 test("session shutdown clears orphaned execution leases", async () => {
   await withFixture(async ({ root }) => {
     const h = extensionHarness();
@@ -2304,52 +2416,305 @@ test("interactive commands bootstrap privacy before trusted skill loading", asyn
   });
 });
 
-test("trusted package parent alias cannot redirect to an excluded project file after admission", async (t) => {
+test("trusted package parent alias stays canonical after successful pre-begin and active admission", async (t) => {
+  if (process.platform === "win32") {
+    t.skip("symlink behavior is platform-specific");
+    return;
+  }
+
+  const parent = mkdtempSync(join(tmpdir(), "picm-trusted-parent-lifecycle-"));
+  const root = join(parent, "project");
+  const packageRoot = join(parent, "package-real");
+  const declaredPackageRoot = join(parent, "package-link");
+  const excludedRoot = join(root, "private");
+  const canonicalSkill = join(packageRoot, "skills", "picm-factory", "SKILL.md");
+  mkdirSync(root, { recursive: true });
+  git(root, "init", "-q");
+  write(join(root, ".gitignore"), "private/\n");
+  write(join(root, "safe.txt"), "safe\n");
+  git(root, "add", ".gitignore", "safe.txt");
+  write(canonicalSkill, "---\nname: picm-factory\n---\nSAFE_CANONICAL_PACKAGE\n");
+  write(join(excludedRoot, "skills", "picm-factory", "SKILL.md"), "SYNTHETIC_EXCLUDED_ALIAS\n");
+  symlinkSync(packageRoot, declaredPackageRoot, "dir");
+
+  const coordinator = createRuntimeCoordinator({
+    packageRoot: declaredPackageRoot,
+    canonicalPackageRoot: await realpathFile(packageRoot),
+  });
+  const ctx = extensionHarness().context(root, "trusted-parent-alias-lifecycle");
+  const read = createReadTool(root);
+  t.after(async () => {
+    await coordinator.dispose(ctx);
+    rmSync(parent, { recursive: true, force: true });
+  });
+
+  coordinator.authorizeWorkflow(ctx, "picm-adopt");
+  await coordinator.scanControl(ctx, { action: "preflight" });
+  await coordinator.scanControl(ctx, {
+    action: "privacy",
+    excludedPaths: ["private"],
+    persist: false,
+  });
+
+  for (const phase of ["pre-begin", "active"]) {
+    if (phase === "active") await coordinator.scanControl(ctx, { action: "begin" });
+    rmSync(declaredPackageRoot, { force: true });
+    symlinkSync(packageRoot, declaredPackageRoot, "dir");
+    const input = {
+      path: join(declaredPackageRoot, "skills", "picm-factory", "SKILL.md"),
+    };
+    const event = {
+      toolCallId: `trusted-${phase}`,
+      toolName: "read",
+      input,
+    };
+    coordinator.startToolExecution({ ...event, args: input }, ctx);
+    const decision = await coordinator.checkToolCall(event, ctx);
+    assert.equal(decision.allowed, true);
+    assert.equal(input.path, await realpathFile(canonicalSkill));
+    coordinator.admitToolExecution(event, ctx);
+
+    rmSync(declaredPackageRoot);
+    symlinkSync(excludedRoot, declaredPackageRoot, "dir");
+    const result = await read.execute(event.toolCallId, input, undefined, undefined, ctx);
+    const text = result.content.map((part) => part.text ?? "").join("\n");
+    assert.match(text, /SAFE_CANONICAL_PACKAGE/);
+    assert.doesNotMatch(text, /SYNTHETIC_EXCLUDED_ALIAS/);
+    coordinator.endToolExecution(event, ctx);
+  }
+});
+
+test("ordinary built-in reads and writes stay bound after admitted parent swaps", async (t) => {
   if (process.platform === "win32") {
     t.skip("symlink behavior is platform-specific");
     return;
   }
 
   await withFixture(async ({ root }) => {
-    const packageRoot = resolve(".");
-    const canonicalSkill = join(packageRoot, "skills", "picm-factory", "SKILL.md");
-    const aliasRoot = join(root, "package-alias");
-    const excludedRoot = join(root, "private");
-    const excludedMarker = "SYNTHETIC_EXCLUDED_ALIAS\n";
-    write(join(excludedRoot, "SKILL.md"), excludedMarker);
-    symlinkSync(join(packageRoot, "skills", "picm-factory"), aliasRoot, "dir");
+    write(join(root, ".gitignore"), `${readFileSync(join(root, ".gitignore"), "utf8")}private/\nprivate-write/\n`);
+    write(join(root, "private", "secret.txt"), "SYNTHETIC_PRIVACY_SECRET\n");
+    write(join(root, "private-write", "file.txt"), "PRIVATE_WRITE_UNCHANGED\n");
+    write(join(root, "output", "file.txt"), "approved original content\n");
 
     const h = extensionHarness();
-    const ctx = h.context(root, "trusted-parent-alias-pre-begin");
+    const ctx = h.context(root, "ordinary-binding-parent-swap");
     const control = h.tools.get("picm_scan_control");
     await h.commands.get("picm-adopt").handler("coding", ctx);
     await control.execute("preflight", { action: "preflight" }, undefined, undefined, ctx);
     await control.execute(
       "privacy",
-      { action: "privacy", excludedPaths: ["private"], persist: false },
+      { action: "privacy", excludedPaths: ["private", "private-write"], persist: false },
       undefined,
       undefined,
       ctx,
     );
+    await control.execute("begin", { action: "begin" }, undefined, undefined, ctx);
 
-    const input = { path: join(aliasRoot, "SKILL.md") };
-    const [prepared] = await preflightParallelToolCalls(h, ctx, [{
-      id: "trusted-parent-alias",
+    const [readCall] = await preflightParallelToolCalls(h, ctx, [{
+      id: "ordinary-bound-read",
       toolName: "read",
-      input,
-      tool: createReadTool(root),
+      input: { path: "safe.txt" },
+      tool: h.tools.get("read") ?? createReadTool(root),
     }]);
+    assert.equal(readCall.blocked, undefined);
+    renameSync(join(root, "safe.txt"), join(root, "safe-approved.txt"));
+    symlinkSync("private/secret.txt", join(root, "safe.txt"));
+    const [readResult] = await Promise.all(executePreflightedToolCalls(h, ctx, [readCall]));
+    const readText = readResult.result.content.map((part) => part.text ?? "").join("\n");
+    assert.match(readText, /safe/);
+    assert.doesNotMatch(readText, /SYNTHETIC_PRIVACY_SECRET/);
 
-    rmSync(aliasRoot);
-    symlinkSync("private", aliasRoot, "dir");
-    const [executed] = await Promise.all(executePreflightedToolCalls(h, ctx, [prepared]));
-    const text = executed.result.content.map((part) => part.text ?? "").join("\n");
+    const [writeCall] = await preflightParallelToolCalls(h, ctx, [{
+      id: "ordinary-bound-write",
+      toolName: "write",
+      input: { path: "output/file.txt", content: "short\n" },
+      tool: h.tools.get("write") ?? createWriteTool(root),
+    }]);
+    assert.equal(writeCall.blocked, undefined);
+    renameSync(join(root, "output"), join(root, "approved-output"));
+    symlinkSync("private-write", join(root, "output"), "dir");
+    const [writeResult] = await Promise.all(executePreflightedToolCalls(h, ctx, [writeCall]));
+    assert.equal(writeResult.isError, false);
+    assert.equal(readFileSync(join(root, "approved-output", "file.txt"), "utf8"), "short\n");
+    assert.equal(readFileSync(join(root, "private-write", "file.txt"), "utf8"), "PRIVATE_WRITE_UNCHANGED\n");
+  });
+});
 
-    assert.doesNotMatch(text, /SYNTHETIC_EXCLUDED_ALIAS/);
-    if (!executed.blocked) {
-      assert.equal(input.path, canonicalSkill);
-      assert.match(text, /name: picm-factory/);
+test("ordinary edits stay bound after an admitted parent swap", async (t) => {
+  if (process.platform === "win32") {
+    t.skip("symlink behavior is platform-specific");
+    return;
+  }
+
+  await withFixture(async ({ root }) => {
+    write(join(root, ".gitignore"), `${readFileSync(join(root, ".gitignore"), "utf8")}private-edit/\n`);
+    write(join(root, "edit-dir", "file.txt"), "approved before\n");
+    write(join(root, "private-edit", "file.txt"), "PRIVATE_EDIT_UNCHANGED\n");
+    git(root, "add", "edit-dir/file.txt");
+    const h = extensionHarness();
+    const ctx = h.context(root, "ordinary-binding-edit");
+    const control = h.tools.get("picm_scan_control");
+    await h.commands.get("picm-adopt").handler("coding", ctx);
+    await control.execute("preflight", { action: "preflight" }, undefined, undefined, ctx);
+    await control.execute(
+      "privacy",
+      { action: "privacy", excludedPaths: ["private-edit"], persist: false },
+      undefined,
+      undefined,
+      ctx,
+    );
+    await control.execute("begin", { action: "begin" }, undefined, undefined, ctx);
+
+    const [editCall] = await preflightParallelToolCalls(h, ctx, [{
+      id: "ordinary-bound-edit",
+      toolName: "edit",
+      input: {
+        path: "edit-dir/file.txt",
+        edits: [{ oldText: "approved before", newText: "approved after" }],
+      },
+      tool: h.tools.get("edit") ?? createEditTool(root),
+    }]);
+    assert.equal(editCall.blocked, undefined);
+    renameSync(join(root, "edit-dir"), join(root, "approved-edit-dir"));
+    symlinkSync("private-edit", join(root, "edit-dir"), "dir");
+    const [edited] = await Promise.all(executePreflightedToolCalls(h, ctx, [editCall]));
+    assert.equal(edited.isError, false);
+    assert.equal(readFileSync(join(root, "approved-edit-dir", "file.txt"), "utf8"), "approved after\n");
+    assert.equal(readFileSync(join(root, "private-edit", "file.txt"), "utf8"), "PRIVATE_EDIT_UNCHANGED\n");
+  });
+});
+
+test("ordinary grep, find, and ls cannot traverse a swapped parent", async (t) => {
+  if (process.platform === "win32") {
+    t.skip("symlink behavior is platform-specific");
+    return;
+  }
+
+  await withFixture(async ({ root }) => {
+    write(join(root, ".gitignore"), `${readFileSync(join(root, ".gitignore"), "utf8")}private-search/\n`);
+    write(join(root, "private-search", "guide.md"), "SYNTHETIC_PRIVATE_SEARCH\n");
+    write(join(root, "private-search", "nested-secret.txt"), "private\n");
+    const h = extensionHarness();
+    const ctx = h.context(root, "ordinary-binding-read-like-tools");
+    const control = h.tools.get("picm_scan_control");
+    await h.commands.get("picm-adopt").handler("coding", ctx);
+    await control.execute("preflight", { action: "preflight" }, undefined, undefined, ctx);
+    await control.execute(
+      "privacy",
+      { action: "privacy", excludedPaths: ["private-search"], persist: false },
+      undefined,
+      undefined,
+      ctx,
+    );
+    await control.execute("begin", { action: "begin" }, undefined, undefined, ctx);
+
+    const calls = await preflightParallelToolCalls(h, ctx, [
+      {
+        id: "ordinary-bound-grep",
+        toolName: "grep",
+        input: { path: "docs/guide.md", pattern: "guide" },
+        tool: h.tools.get("grep"),
+      },
+      {
+        id: "ordinary-bound-find",
+        toolName: "find",
+        input: { path: "docs/guide.md", pattern: "*" },
+        tool: h.tools.get("find"),
+      },
+      {
+        id: "ordinary-bound-ls",
+        toolName: "ls",
+        input: { path: "docs/guide.md" },
+        tool: h.tools.get("ls"),
+      },
+    ]);
+    assert.equal(calls.every((call) => call.blocked === undefined), true);
+    renameSync(join(root, "docs"), join(root, "approved-docs"));
+    symlinkSync("private-search", join(root, "docs"), "dir");
+
+    const [grepResult, findResult, lsResult] = await Promise.all(
+      executePreflightedToolCalls(h, ctx, calls),
+    );
+    const grepText = grepResult.result.content.map((part) => part.text ?? "").join("\n");
+    assert.match(grepText, /guide\.md:1: guide/);
+    assert.doesNotMatch(grepText, /SYNTHETIC_PRIVATE_SEARCH/);
+    for (const result of [findResult, lsResult]) {
+      assert.equal(result.isError, true);
+      const text = result.result.content.map((part) => part.text ?? "").join("\n");
+      assert.doesNotMatch(text, /nested-secret|SYNTHETIC_PRIVATE_SEARCH/);
     }
+  });
+});
+
+test("bound writes preserve create semantics and clean up pre-execution cancellation", async (t) => {
+  if (process.platform === "win32") {
+    t.skip("symlink behavior is platform-specific");
+    return;
+  }
+
+  await withFixture(async ({ root }) => {
+    write(join(root, ".gitignore"), `${readFileSync(join(root, ".gitignore"), "utf8")}private-write/\n`);
+    write(join(root, "output", ".keep"), "keep\n");
+    write(join(root, "private-write", ".keep"), "private\n");
+    const h = extensionHarness();
+    const ctx = h.context(root, "ordinary-binding-create");
+    const control = h.tools.get("picm_scan_control");
+    await h.commands.get("picm-adopt").handler("coding", ctx);
+    await control.execute("preflight", { action: "preflight" }, undefined, undefined, ctx);
+    await control.execute(
+      "privacy",
+      { action: "privacy", excludedPaths: ["private-write"], persist: false },
+      undefined,
+      undefined,
+      ctx,
+    );
+    await control.execute("begin", { action: "begin" }, undefined, undefined, ctx);
+
+    const [createCall] = await preflightParallelToolCalls(h, ctx, [{
+      id: "ordinary-bound-create",
+      toolName: "write",
+      input: { path: "output/new.txt", content: "created safely\n" },
+      tool: h.tools.get("write") ?? createWriteTool(root),
+    }]);
+    assert.equal(createCall.blocked, undefined);
+    assert.equal(existsSync(join(root, "output", "new.txt")), true);
+    renameSync(join(root, "output"), join(root, "approved-output"));
+    symlinkSync("private-write", join(root, "output"), "dir");
+    const [created] = await Promise.all(executePreflightedToolCalls(h, ctx, [createCall]));
+    assert.equal(created.isError, false);
+    assert.equal(readFileSync(join(root, "approved-output", "new.txt"), "utf8"), "created safely\n");
+    assert.equal(existsSync(join(root, "private-write", "new.txt")), false);
+  });
+
+  await withFixture(async ({ root }) => {
+    const h = extensionHarness();
+    const ctx = h.context(root, "ordinary-binding-cancel");
+    const control = h.tools.get("picm_scan_control");
+    await h.commands.get("picm-adopt").handler("coding", ctx);
+    await control.execute("preflight", { action: "preflight" }, undefined, undefined, ctx);
+    await control.execute(
+      "privacy",
+      { action: "privacy", excludedPaths: [], persist: false },
+      undefined,
+      undefined,
+      ctx,
+    );
+    await control.execute("begin", { action: "begin" }, undefined, undefined, ctx);
+    const abort = new AbortController();
+    const [cancelCall] = await preflightParallelToolCalls(h, ctx, [{
+      id: "ordinary-bound-cancel",
+      toolName: "write",
+      input: { path: "new-parent/nested/cancelled.txt", content: "must not persist\n" },
+      tool: h.tools.get("write") ?? createWriteTool(root),
+      signal: abort.signal,
+    }]);
+    assert.equal(cancelCall.blocked, undefined);
+    assert.equal(existsSync(join(root, "new-parent", "nested", "cancelled.txt")), true);
+    abort.abort();
+    const [cancelled] = await Promise.all(executePreflightedToolCalls(h, ctx, [cancelCall]));
+    assert.equal(cancelled.isError, true);
+    assert.match(cancelled.result.content[0].text, /Operation aborted/);
+    assert.equal(existsSync(join(root, "new-parent")), false);
   });
 });
 

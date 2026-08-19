@@ -9,6 +9,10 @@ import {
   normalizePrivacyExcludedPaths,
   privacyPathMatches,
 } from "./privacy-policy.mjs";
+import {
+  createPathExecutionBinding,
+  fileIdentity,
+} from "./path-execution-binding.mjs";
 
 const execFileAsync = promisify(execFile);
 const PATH_TOOLS = new Set(["read", "edit", "write", "grep", "find", "ls"]);
@@ -84,6 +88,8 @@ export function createGitReadGate({
   let resolveOperationIdle;
   let candidates = new Set();
   let ignored = new Set();
+  const bindingPlans = new WeakSet();
+  const activeBindings = new Set();
 
   async function withOperation(operation) {
     if (disposed) throw new Error("Git read gate is disposed");
@@ -324,7 +330,14 @@ export function createGitReadGate({
       return { blocked: true, reason: "symlinks are not readable during guarded scans" };
     }
     const canonicalPath = await fs.realpath(absolutePath);
-    return { absolutePath, canonicalPath, stat };
+    return {
+      absolutePath,
+      canonicalPath,
+      stat,
+      existingPath: absolutePath,
+      canonicalExistingPath: canonicalPath,
+      existingStat: stat,
+    };
   }
 
   async function resolveProspectivePath(inputPath, stripToolPrefix) {
@@ -337,12 +350,15 @@ export function createGitReadGate({
         if (stat.isSymbolicLink()) {
           return { blocked: true, reason: "symlink targets are not writable during guarded scans" };
         }
-        const canonicalExisting = await fs.realpath(existing);
+        const canonicalExistingPath = await fs.realpath(existing);
         const suffix = relative(existing, absolutePath);
         return {
           absolutePath,
-          canonicalPath: resolve(canonicalExisting, suffix),
+          canonicalPath: resolve(canonicalExistingPath, suffix),
           stat: existing === absolutePath ? stat : undefined,
+          existingPath: existing,
+          canonicalExistingPath,
+          existingStat: stat,
         };
       } catch (error) {
         if (error?.code !== "ENOENT") throw error;
@@ -351,6 +367,26 @@ export function createGitReadGate({
         existing = parent;
       }
     }
+  }
+
+  function executionBindingPlan(toolName, resolvedPath) {
+    if (!["read", "edit", "write", "grep", "find", "ls"].includes(toolName)) return undefined;
+    const plan = {
+      toolName,
+      absolutePath: resolvedPath.absolutePath,
+      canonicalPath: resolvedPath.canonicalPath,
+      targetIdentity: resolvedPath.stat ? fileIdentity(resolvedPath.stat) : undefined,
+      existingPath: resolvedPath.existingPath,
+      canonicalExistingPath: resolvedPath.canonicalExistingPath,
+      existingIdentity: fileIdentity(resolvedPath.existingStat),
+    };
+    bindingPlans.add(plan);
+    return plan;
+  }
+
+  function allowedPathDecision(decision, toolName, resolvedPath) {
+    const executionBinding = executionBindingPlan(toolName, resolvedPath);
+    return executionBinding ? { ...decision, executionBinding } : decision;
   }
 
   async function privacyPathFor(canonicalPath) {
@@ -404,11 +440,14 @@ export function createGitReadGate({
       if (resolvedPath.blocked) {
         return { allowed: false, protected: true, reason: resolvedPath.reason };
       }
-      return await privacyDecision(resolvedPath.canonicalPath, exclusions) ?? {
+      const decision = await privacyDecision(resolvedPath.canonicalPath, exclusions) ?? {
         allowed: true,
         protected: true,
         reason: "path is outside configured PiCM privacy exclusions",
       };
+      return decision.allowed
+        ? allowedPathDecision(decision, toolName, resolvedPath)
+        : decision;
     } catch (error) {
       return {
         allowed: false,
@@ -540,12 +579,26 @@ export function createGitReadGate({
       return { allowed: false, protected: true, reason: "path is not in the Git-derived candidate inventory" };
     }
 
-    return {
+    return allowedPathDecision({
       allowed: true,
       protected: true,
       reason: prospectiveWrite ? "prospective non-ignored write" : "Git candidate",
       inventory,
+    }, toolName, resolvedPath);
+  }
+
+  function bindPath(plan) {
+    if (disposed) throw new Error("Git read gate is disposed");
+    if (!bindingPlans.has(plan)) throw new Error("PICM_PATH_BINDING_INVALID: plan was not issued by this gate");
+    bindingPlans.delete(plan);
+    const binding = createPathExecutionBinding(plan);
+    activeBindings.add(binding);
+    const release = binding.release.bind(binding);
+    binding.release = () => {
+      if (!activeBindings.delete(binding)) return;
+      release();
     };
+    return binding;
   }
 
   async function checkPath(toolName, inputPath, privacyExcludedPaths = []) {
@@ -638,14 +691,31 @@ export function createGitReadGate({
       });
       await operationIdle;
     }
+    const errors = [];
+    for (const binding of [...activeBindings]) {
+      try {
+        binding.release();
+      } catch (error) {
+        errors.push(error);
+      }
+    }
     const root = isolatedGitRoot;
     isolatedGitRoot = undefined;
     isolatedGitDir = undefined;
     isolatedGitInit = undefined;
-    if (root) await fs.rm(root, { recursive: true, force: true });
+    if (root) {
+      try {
+        await fs.rm(root, { recursive: true, force: true });
+      } catch (error) {
+        errors.push(error);
+      }
+    }
+    if (errors.length > 1) throw new AggregateError(errors, "Git read gate cleanup failed");
+    if (errors.length === 1) throw errors[0];
   }
 
   return {
+    bindPath,
     checkBash,
     checkPath,
     checkTrustedPackageRead,
