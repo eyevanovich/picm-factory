@@ -179,14 +179,18 @@ function removeCreatedFile(path, identity) {
 }
 
 function descriptorPath(fd, child = "") {
-  const root = process.platform === "linux" ? "/proc/self/fd" : "/dev/fd";
-  return child ? join(root, String(fd), child) : join(root, String(fd));
+  const path = join("/proc/self/fd", String(fd));
+  return child ? join(path, child) : path;
+}
+
+function retainedChildPath(parentFd, parentPath, child) {
+  return process.platform === "linux" ? descriptorPath(parentFd, child) : join(parentPath, child);
 }
 
 function removeCreatedDirectories(createdDirectories) {
   for (const directory of [...createdDirectories].reverse()) {
     try {
-      const path = descriptorPath(directory.parentFd, directory.name);
+      const path = retainedChildPath(directory.parentFd, directory.parentPath, directory.name);
       const stat = lstatSync(path);
       if (stat.isSymbolicLink() || !sameIdentity(fileIdentity(stat), directory.identity)) continue;
       rmdirSync(path);
@@ -207,6 +211,7 @@ function prepareParent(plan) {
   const suffix = relative(plan.existingPath, targetParent);
   const directoryFds = [];
   let parentFd;
+  let parentPath = plan.existingPath;
   const createdDirectories = [];
   try {
     parentFd = openSync(
@@ -215,13 +220,13 @@ function prepareParent(plan) {
     );
     directoryFds.push(parentFd);
     assertIdentity(fstatSync(parentFd), plan.existingIdentity, "validated write ancestor");
-    if (suffix === "") return { createdDirectories, directoryFds, parentFd };
+    if (suffix === "") return { createdDirectories, directoryFds, parentFd, parentPath };
     if (suffix === ".." || suffix.startsWith(`..${sep}`)) {
       fail("write parent escaped its validated ancestor");
     }
 
     for (const component of suffix.split(sep).filter(Boolean)) {
-      const current = descriptorPath(parentFd, component);
+      const current = retainedChildPath(parentFd, parentPath, component);
       let created = false;
       try {
         mkdirSync(current);
@@ -231,7 +236,9 @@ function prepareParent(plan) {
       }
       const stat = lstatSync(current);
       if (stat.isSymbolicLink() || !stat.isDirectory()) fail("write parent is not a real directory");
-      if (created) createdDirectories.push({ parentFd, name: component, identity: fileIdentity(stat) });
+      if (created) {
+        createdDirectories.push({ parentFd, parentPath, name: component, identity: fileIdentity(stat) });
+      }
       const nextFd = openSync(
         current,
         constants.O_RDONLY | (constants.O_DIRECTORY ?? 0) | (constants.O_NOFOLLOW ?? 0),
@@ -239,8 +246,9 @@ function prepareParent(plan) {
       directoryFds.push(nextFd);
       assertIdentity(fstatSync(nextFd), fileIdentity(stat), "write parent");
       parentFd = nextFd;
+      parentPath = current;
     }
-    return { createdDirectories, directoryFds, parentFd };
+    return { createdDirectories, directoryFds, parentFd, parentPath };
   } catch (error) {
     try { removeCreatedDirectories(createdDirectories); } catch {}
     for (const fd of [...directoryFds].reverse()) {
@@ -350,7 +358,11 @@ export function createPathExecutionBinding(plan) {
       const prepared = prepareParent(plan);
       createdDirectories = prepared.createdDirectories;
       directoryFds = prepared.directoryFds;
-      boundPath = descriptorPath(prepared.parentFd, basename(plan.absolutePath));
+      boundPath = retainedChildPath(
+        prepared.parentFd,
+        prepared.parentPath,
+        basename(plan.absolutePath),
+      );
       try {
         fd = openSync(
           boundPath,
