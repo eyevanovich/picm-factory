@@ -4,6 +4,7 @@ import {
   type ExtensionContext,
 } from "@earendil-works/pi-coding-agent";
 import { StringEnum } from "@earendil-works/pi-ai";
+import { realpathSync } from "node:fs";
 import { join } from "node:path";
 import { Type } from "typebox";
 import {
@@ -87,7 +88,8 @@ function scheduledMaintenancePrompt(): string {
 
 export default function picmFactoryExtension(pi: ExtensionAPI) {
   const packageRoot = packageRootFromImportMeta(import.meta.url);
-  const coordinator = createRuntimeCoordinator({ packageRoot });
+  const canonicalPackageRoot = realpathSync(packageRoot);
+  const coordinator = createRuntimeCoordinator({ packageRoot, canonicalPackageRoot });
 
   const restoreScanWorkflow = (ctx: ExtensionContext) => {
     let state;

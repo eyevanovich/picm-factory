@@ -1,4 +1,5 @@
 import { execFile } from "node:child_process";
+import { realpathSync } from "node:fs";
 import { lstat, mkdtemp, realpath, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, relative, resolve, sep } from "node:path";
@@ -57,16 +58,22 @@ export function packageRootFromImportMeta(importMetaUrl) {
 export function createGitReadGate({
   cwd,
   packageRoot,
+  canonicalPackageRoot: configuredCanonicalPackageRoot,
   runGit = defaultRunGit,
-  fs = { lstat, realpath, mkdtemp, rm },
+  fs = { lstat, realpath, realpathSync, mkdtemp, rm },
 } = {}) {
   if (!cwd) throw new Error("Git read gate requires cwd");
   if (!packageRoot) throw new Error("Git read gate requires packageRoot");
 
+  const declaredPackageRoot = resolve(packageRoot);
   let worktree;
   let canonicalWorktree;
   let canonicalCwd;
-  let canonicalPackageRoot;
+  let canonicalPackageRoot = typeof configuredCanonicalPackageRoot === "string"
+    ? resolve(configuredCanonicalPackageRoot)
+    : typeof fs.realpathSync === "function"
+      ? fs.realpathSync(declaredPackageRoot)
+      : undefined;
   let isolatedGitRoot;
   let isolatedGitDir;
   let isolatedGitInit;
@@ -278,24 +285,35 @@ export function createGitReadGate({
     return nestedRoot;
   }
 
-  async function isTrustedPackageRead(path, toolName) {
-    if (toolName !== "read") return false;
-    canonicalPackageRoot ??= await fs.realpath(packageRoot);
+  async function trustedPackageReadDecision(resolvedPath, toolName) {
+    if (toolName !== "read") return undefined;
+    canonicalPackageRoot ??= await fs.realpath(declaredPackageRoot);
 
-    let canonicalPath;
-    try {
-      canonicalPath = await fs.realpath(path);
-    } catch {
-      return false;
+    let packageRelativePath;
+    if (isInside(declaredPackageRoot, resolvedPath.absolutePath)) {
+      packageRelativePath = relative(declaredPackageRoot, resolvedPath.absolutePath);
+    } else if (isInside(canonicalPackageRoot, resolvedPath.absolutePath)) {
+      packageRelativePath = relative(canonicalPackageRoot, resolvedPath.absolutePath);
+    } else {
+      return undefined;
     }
-    if (!isInside(canonicalPackageRoot, canonicalPath)) return false;
 
-    const packagePath = toGitPath(canonicalPackageRoot, canonicalPath);
-    return (
+    const expectedCanonicalPath = resolve(canonicalPackageRoot, packageRelativePath);
+    if (resolvedPath.canonicalPath !== expectedCanonicalPath) return undefined;
+
+    const packagePath = packageRelativePath.split(sep).join("/") || ".";
+    const trusted = (
       packagePath === "skills/picm-factory/SKILL.md" ||
       packagePath.startsWith("skills/picm-factory/references/") ||
       packagePath.startsWith("skills/picm-factory/templates/")
     );
+    if (!trusted) return undefined;
+    return {
+      allowed: true,
+      protected: true,
+      reason: "trusted packaged PiCM resource",
+      canonicalPath: resolvedPath.canonicalPath,
+    };
   }
 
   async function resolveExistingPath(inputPath, stripToolPrefix) {
@@ -432,9 +450,8 @@ export function createGitReadGate({
       return { allowed: false, protected: true, reason: resolvedPath.reason };
     }
 
-    if (await isTrustedPackageRead(resolvedPath.canonicalPath, toolName)) {
-      return { allowed: true, protected: true, reason: "trusted packaged PiCM resource" };
-    }
+    const trustedPackageRead = await trustedPackageReadDecision(resolvedPath, toolName);
+    if (trustedPackageRead) return trustedPackageRead;
 
     if (!isInside(canonicalWorktree, resolvedPath.canonicalPath)) {
       return { allowed: false, protected: true, reason: "path is outside the canonical Git worktree" };
@@ -553,10 +570,14 @@ export function createGitReadGate({
     }
     try {
       const resolvedPath = await resolveExistingPath(inputPath, true);
-      if (!resolvedPath.blocked && await isTrustedPackageRead(resolvedPath.canonicalPath, toolName)) {
-        return { allowed: true, protected: true, reason: "trusted packaged PiCM resource" };
-      }
-      return { allowed: false, protected: true, reason: "only canonical packaged PiCM reads are allowed before scan begin" };
+      const trustedPackageRead = !resolvedPath.blocked
+        ? await trustedPackageReadDecision(resolvedPath, toolName)
+        : undefined;
+      return trustedPackageRead ?? {
+        allowed: false,
+        protected: true,
+        reason: "only canonical packaged PiCM reads are allowed before scan begin",
+      };
     } catch (error) {
       return {
         allowed: false,

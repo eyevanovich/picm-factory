@@ -9,6 +9,7 @@ const GUARDED_PATH_TOOLS = new Set(["read", "edit", "write", "grep", "find", "ls
 
 export function createRuntimeCoordinator({
   packageRoot,
+  canonicalPackageRoot,
   scanWorkflowTtlMs = 2 * 60 * 60 * 1000,
   policyPreviewTtlMs = 10 * 60 * 1000,
   maxPolicyPreviews = 32,
@@ -396,7 +397,7 @@ export function createRuntimeCoordinator({
   function runtime(cwd) {
     let value = runtimes.get(cwd);
     if (!value) {
-      const gate = createGitReadGate({ cwd, packageRoot });
+      const gate = createGitReadGate({ cwd, packageRoot, canonicalPackageRoot });
       const store = createMaintenanceConfigStore({ cwd, gate });
       value = { gate, store, controller: createMaintenanceController({ store }) };
       runtimes.set(cwd, value);
@@ -637,7 +638,10 @@ export function createRuntimeCoordinator({
         );
         if (trusted.allowed) {
           const currentWorkflow = workflowFor(ctx);
-          if (currentWorkflow === workflow && !workflow.completed) return trusted;
+          if (currentWorkflow === workflow && !workflow.completed) {
+            if (typeof trusted.canonicalPath === "string") event.input.path = trusted.canonicalPath;
+            return trusted;
+          }
         }
       }
       return {
@@ -659,6 +663,13 @@ export function createRuntimeCoordinator({
         );
         if (!gateStateIsCurrent(ctx, workflow, scan)) {
           return { allowed: false, reason: "PiCM scan state changed while the guarded tool call was being checked" };
+        }
+        if (
+          decision.allowed &&
+          event.toolName === "read" &&
+          typeof decision.canonicalPath === "string"
+        ) {
+          event.input.path = decision.canonicalPath;
         }
         return decision;
       }

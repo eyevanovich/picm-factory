@@ -13,6 +13,7 @@ import {
   access as accessFile,
   mkdir as mkdirDirectory,
   readFile as readFileAsync,
+  realpath as realpathFile,
   writeFile as writeFileAsync,
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -335,6 +336,92 @@ test("allows only canonical shipped PiCM skill resources from the package root",
     assert.match((await gate.checkPath("read", neighbor)).reason, /ignored by Git/);
     assert.match((await gate.checkPath("edit", skill)).reason, /ignored by Git|outside/);
   });
+});
+
+test("supports a declared symlinked package root without trusting nested aliases", async (t) => {
+  if (process.platform === "win32") {
+    t.skip("symlink behavior is platform-specific");
+    return;
+  }
+
+  const parent = mkdtempSync(join(tmpdir(), "picm-symlinked-package-root-"));
+  const projectRoot = join(parent, "project");
+  const packageRoot = join(parent, "package-real");
+  const declaredPackageRoot = join(parent, "package-link");
+  mkdirSync(projectRoot, { recursive: true });
+  write(join(packageRoot, "skills", "picm-factory", "SKILL.md"), "---\nname: picm-factory\n---\n");
+  write(join(packageRoot, "skills", "picm-factory", "references", "guide.md"), "guide\n");
+  write(join(packageRoot, "skills", "picm-factory", "templates", "context.md"), "template\n");
+  symlinkSync(packageRoot, declaredPackageRoot, "dir");
+
+  const gate = createGitReadGate({ cwd: projectRoot, packageRoot: declaredPackageRoot });
+  t.after(async () => {
+    await gate.dispose();
+    rmSync(parent, { recursive: true, force: true });
+  });
+
+  const declaredSkill = join(declaredPackageRoot, "skills", "picm-factory", "SKILL.md");
+  const skillDecision = await gate.checkTrustedPackageRead("read", declaredSkill);
+  assert.equal(skillDecision.allowed, true);
+  assert.equal(skillDecision.canonicalPath, await realpathFile(declaredSkill));
+
+  const canonicalPackageRoot = await realpathFile(packageRoot);
+  for (const path of [
+    join(canonicalPackageRoot, "skills", "picm-factory", "references", "guide.md"),
+    join(declaredPackageRoot, "skills", "picm-factory", "templates", "context.md"),
+  ]) {
+    assert.equal((await gate.checkTrustedPackageRead("read", path)).allowed, true);
+  }
+
+  const references = join(packageRoot, "skills", "picm-factory", "references");
+  symlinkSync("guide.md", join(references, "leaf.md"));
+  symlinkSync(".", join(references, "nested"), "dir");
+  for (const path of [
+    join(declaredPackageRoot, "skills", "picm-factory", "references", "leaf.md"),
+    join(declaredPackageRoot, "skills", "picm-factory", "references", "nested", "guide.md"),
+  ]) {
+    assert.equal((await gate.checkTrustedPackageRead("read", path)).allowed, false);
+  }
+});
+
+test("pins a declared symlinked package root before its first trusted read", async (t) => {
+  if (process.platform === "win32") {
+    t.skip("symlink behavior is platform-specific");
+    return;
+  }
+
+  const parent = mkdtempSync(join(tmpdir(), "picm-pinned-package-root-"));
+  const projectRoot = join(parent, "project");
+  const packageRoot = join(parent, "package-real");
+  const replacementRoot = join(parent, "replacement");
+  const declaredPackageRoot = join(parent, "package-link");
+  mkdirSync(projectRoot, { recursive: true });
+  write(join(packageRoot, "skills", "picm-factory", "SKILL.md"), "---\nname: picm-factory\n---\n");
+  write(
+    join(replacementRoot, "skills", "picm-factory", "SKILL.md"),
+    "SYNTHETIC_REPLACEMENT_PACKAGE\n",
+  );
+  symlinkSync(packageRoot, declaredPackageRoot, "dir");
+  const canonicalPackageRoot = await realpathFile(declaredPackageRoot);
+  rmSync(declaredPackageRoot);
+  symlinkSync(replacementRoot, declaredPackageRoot, "dir");
+
+  const gate = createGitReadGate({
+    cwd: projectRoot,
+    packageRoot: declaredPackageRoot,
+    canonicalPackageRoot,
+  });
+  t.after(async () => {
+    await gate.dispose();
+    rmSync(parent, { recursive: true, force: true });
+  });
+
+  const redirectedSkill = join(declaredPackageRoot, "skills", "picm-factory", "SKILL.md");
+  assert.equal((await gate.checkTrustedPackageRead("read", redirectedSkill)).allowed, false);
+  assert.equal((await gate.checkTrustedPackageRead(
+    "read",
+    join(await realpathFile(packageRoot), "skills", "picm-factory", "SKILL.md"),
+  )).allowed, true);
 });
 
 test("blocks every agent Bash command presented to an active gate", async () => {
@@ -1297,6 +1384,95 @@ test("complete waits for sequentially preflighted real project operations to fin
   });
 });
 
+test("rewritten trusted reads settle execution leases on success and failure", async () => {
+  await withFixture(async ({ root }) => {
+    const h = extensionHarness();
+    const ctx = h.context(root, "execution-barrier-trusted-reads");
+    const control = h.tools.get("picm_scan_control");
+    await h.commands.get("picm-adopt").handler("coding", ctx);
+    await control.execute("preflight", { action: "preflight" }, undefined, undefined, ctx);
+    await control.execute(
+      "privacy",
+      { action: "privacy", excludedPaths: [], persist: false },
+      undefined,
+      undefined,
+      ctx,
+    );
+    await control.execute("begin", { action: "begin" }, undefined, undefined, ctx);
+
+    const packageRoot = resolve(".");
+    const canonicalSkill = await realpathFile(join(packageRoot, "skills", "picm-factory", "SKILL.md"));
+    const successStarted = deferred();
+    const failureStarted = deferred();
+    const releaseSuccess = deferred();
+    const releaseFailure = deferred();
+    const successTool = createReadTool(root, {
+      operations: {
+        access: accessFile,
+        readFile: async (path) => {
+          successStarted.resolve();
+          await releaseSuccess.promise;
+          return readFileAsync(path);
+        },
+      },
+    });
+    const failureTool = createReadTool(root, {
+      operations: {
+        access: accessFile,
+        readFile: async () => {
+          failureStarted.resolve();
+          await releaseFailure.promise;
+          throw new Error("synthetic trusted read failure");
+        },
+      },
+    });
+    const successInput = { path: `@${canonicalSkill}` };
+    const failureInput = {
+      path: join(packageRoot, "skills", "picm-factory", "references", "..", "SKILL.md"),
+    };
+    const calls = await preflightParallelToolCalls(h, ctx, [
+      {
+        id: "trusted-read-success",
+        toolName: "read",
+        input: successInput,
+        tool: successTool,
+      },
+      {
+        id: "trusted-read-failure",
+        toolName: "read",
+        input: failureInput,
+        tool: failureTool,
+      },
+      {
+        id: "complete-after-trusted-reads",
+        toolName: "picm_scan_control",
+        input: { action: "complete" },
+        tool: control,
+      },
+    ]);
+    assert.equal(calls.every((call) => call.blocked === undefined), true);
+    assert.equal(successInput.path, canonicalSkill);
+    assert.equal(failureInput.path, canonicalSkill);
+
+    const timeline = [];
+    const executions = executePreflightedToolCalls(h, ctx, calls, timeline);
+    await Promise.all([successStarted.promise, failureStarted.promise]);
+    assert.equal(await promiseSettled(executions[2]), false);
+
+    releaseSuccess.resolve();
+    const success = await executions[0];
+    assert.equal(await promiseSettled(executions[2]), false);
+    releaseFailure.resolve();
+    const [, failure, completion] = await Promise.all(executions);
+
+    assert.match(success.result.content[0].text, /name: picm-factory/);
+    assert.equal(failure.isError, true);
+    assert.match(failure.result.content[0].text, /synthetic trusted read failure/);
+    assert.equal(completion.result.details.completed, true);
+    assert.equal(timeline.at(-1), "result:complete-after-trusted-reads");
+  });
+});
+
 test("complete waits for a confirmed maintenance apply to commit", async () => {
   await withFixture(async ({ root }) => {
     const confirmationStarted = deferred();
@@ -2128,6 +2304,116 @@ test("interactive commands bootstrap privacy before trusted skill loading", asyn
   });
 });
 
+test("trusted package parent alias cannot redirect to an excluded project file after admission", async (t) => {
+  if (process.platform === "win32") {
+    t.skip("symlink behavior is platform-specific");
+    return;
+  }
+
+  await withFixture(async ({ root }) => {
+    const packageRoot = resolve(".");
+    const canonicalSkill = join(packageRoot, "skills", "picm-factory", "SKILL.md");
+    const aliasRoot = join(root, "package-alias");
+    const excludedRoot = join(root, "private");
+    const excludedMarker = "SYNTHETIC_EXCLUDED_ALIAS\n";
+    write(join(excludedRoot, "SKILL.md"), excludedMarker);
+    symlinkSync(join(packageRoot, "skills", "picm-factory"), aliasRoot, "dir");
+
+    const h = extensionHarness();
+    const ctx = h.context(root, "trusted-parent-alias-pre-begin");
+    const control = h.tools.get("picm_scan_control");
+    await h.commands.get("picm-adopt").handler("coding", ctx);
+    await control.execute("preflight", { action: "preflight" }, undefined, undefined, ctx);
+    await control.execute(
+      "privacy",
+      { action: "privacy", excludedPaths: ["private"], persist: false },
+      undefined,
+      undefined,
+      ctx,
+    );
+
+    const input = { path: join(aliasRoot, "SKILL.md") };
+    const [prepared] = await preflightParallelToolCalls(h, ctx, [{
+      id: "trusted-parent-alias",
+      toolName: "read",
+      input,
+      tool: createReadTool(root),
+    }]);
+
+    rmSync(aliasRoot);
+    symlinkSync("private", aliasRoot, "dir");
+    const [executed] = await Promise.all(executePreflightedToolCalls(h, ctx, [prepared]));
+    const text = executed.result.content.map((part) => part.text ?? "").join("\n");
+
+    assert.doesNotMatch(text, /SYNTHETIC_EXCLUDED_ALIAS/);
+    if (!executed.blocked) {
+      assert.equal(input.path, canonicalSkill);
+      assert.match(text, /name: picm-factory/);
+    }
+  });
+});
+
+test("active scans reject trusted parent aliases before they can cross project boundaries", async (t) => {
+  if (process.platform === "win32") {
+    t.skip("symlink behavior is platform-specific");
+    return;
+  }
+
+  await withFixture(async ({ root }) => {
+    const packageRoot = resolve(".");
+    const trustedRoot = join(packageRoot, "skills", "picm-factory");
+    const targets = [
+      { name: "excluded", root: join(root, "private"), marker: "SYNTHETIC_ACTIVE_EXCLUDED" },
+      { name: "ignored", root: join(root, "secrets"), marker: "SYNTHETIC_ACTIVE_IGNORED" },
+      { name: "project", root: join(root, "project-lookalike"), marker: "SYNTHETIC_ACTIVE_PROJECT" },
+    ];
+    for (const target of targets) write(join(target.root, "SKILL.md"), `${target.marker}\n`);
+
+    const h = extensionHarness();
+    const ctx = h.context(root, "trusted-parent-alias-active");
+    const control = h.tools.get("picm_scan_control");
+    await h.commands.get("picm-adopt").handler("coding", ctx);
+    await control.execute("preflight", { action: "preflight" }, undefined, undefined, ctx);
+    await control.execute(
+      "privacy",
+      { action: "privacy", excludedPaths: ["private"], persist: false },
+      undefined,
+      undefined,
+      ctx,
+    );
+    await control.execute("begin", { action: "begin" }, undefined, undefined, ctx);
+
+    for (const target of targets) {
+      const aliasRoot = join(root, `package-alias-${target.name}`);
+      symlinkSync(trustedRoot, aliasRoot, "dir");
+      const input = { path: join(aliasRoot, "SKILL.md") };
+      const [prepared] = await preflightParallelToolCalls(h, ctx, [{
+        id: `active-parent-alias-${target.name}`,
+        toolName: "read",
+        input,
+        tool: createReadTool(root),
+      }]);
+      rmSync(aliasRoot);
+      symlinkSync(target.root, aliasRoot, "dir");
+      const [executed] = await Promise.all(executePreflightedToolCalls(h, ctx, [prepared]));
+      const text = executed.result.content.map((part) => part.text ?? "").join("\n");
+      assert.equal(executed.blocked?.block, true);
+      assert.doesNotMatch(text, new RegExp(target.marker));
+    }
+
+    const safeInput = { path: "safe.txt" };
+    const [safePrepared] = await preflightParallelToolCalls(h, ctx, [{
+      id: "active-normal-project-read",
+      toolName: "read",
+      input: safeInput,
+      tool: createReadTool(root),
+    }]);
+    const [safeRead] = await Promise.all(executePreflightedToolCalls(h, ctx, [safePrepared]));
+    assert.equal(safeRead.blocked, undefined);
+    assert.match(safeRead.result.content[0].text, /safe/);
+  });
+});
+
 test("pre-begin admission allows only policy preview and canonical packaged reads", async () => {
   await withFixture(async ({ root }) => {
     const h = extensionHarness();
@@ -2162,22 +2448,38 @@ test("pre-begin admission allows only policy preview and canonical packaged read
       join(packageRoot, "skills", "picm-factory", "references", "adoption-guide.md"),
       join(packageRoot, "skills", "picm-factory", "templates", "context-map.md"),
     ]) {
+      const input = { path: `@${path}` };
       assert.equal(await h.handlers.get("tool_call")(
-        { toolName: "read", input: { path } },
+        { toolName: "read", input },
         ctx,
       ), undefined);
+      assert.equal(input.path, await realpathFile(path));
     }
 
     const lookalike = join(root, "skills", "picm-factory", "SKILL.md");
     write(lookalike, "---\nname: lookalike\n---\n");
-    for (const event of [
+    const blockedEvents = [
       { toolName: "read", input: { path: "safe.txt" } },
       { toolName: "read", input: { path: ".env" } },
       { toolName: "read", input: { path: "safe-dir/file.txt" } },
       { toolName: "read", input: { path: lookalike } },
       { toolName: "bash", input: { command: "cat safe.txt" } },
       { toolName: "unknown", input: { path: packageRoot } },
-    ]) {
+    ];
+    if (process.platform !== "win32") {
+      const skill = join(packageRoot, "skills", "picm-factory", "SKILL.md");
+      const leafAlias = join(root, "package-skill-leaf");
+      const projectLookalikeRoot = join(root, "project-package-lookalike");
+      const projectLookalikeAlias = join(root, "project-package-parent-alias");
+      symlinkSync(skill, leafAlias);
+      write(join(projectLookalikeRoot, "SKILL.md"), "---\nname: project-lookalike\n---\n");
+      symlinkSync(projectLookalikeRoot, projectLookalikeAlias, "dir");
+      blockedEvents.push(
+        { toolName: "read", input: { path: leafAlias } },
+        { toolName: "read", input: { path: join(projectLookalikeAlias, "SKILL.md") } },
+      );
+    }
+    for (const event of blockedEvents) {
       assert.equal((await h.handlers.get("tool_call")(event, ctx)).block, true);
     }
 
