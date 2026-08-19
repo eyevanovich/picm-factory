@@ -2,7 +2,7 @@
 
 Use these fixtures for manual smoke testing of PiCM layout guidance, `/picm-maintain`, `/picm-adopt`, and `/picm-optimize`.
 
-Interactive command tests should run in a visible Zellij pane. Do not rely on a headless `bash` run for `/picm-maintain` or `/picm-adopt` because the flows may ask clarifying or approval questions.
+Interactive command tests should run in a visible Zellij pane. Do not rely on a headless `bash` run for `/picm-maintain`, `/picm-adopt`, or `/picm-optimize` because the flows may ask clarifying or approval questions.
 
 ## Setup pattern
 
@@ -49,7 +49,7 @@ Expected behavior:
 - Recommends `/picm-adopt` when the user is unsure whether an existing folder should use new or adopt.
 - Explains project-local install, preview-before-write, non-destructive adoption, git/security safety, and `.pi/` versus `.picm/`.
 
-Observed smoke: 2026-07-19 in a visible Zellij/Pi pane against an empty disposable project at `/tmp/picm-mcp-help-smoke`.
+Baseline observed smoke before `/picm-optimize` was added: 2026-07-19 in a visible Zellij/Pi pane against an empty disposable project at `/tmp/picm-mcp-help-smoke`.
 
 - Produced all four command choices and the safe new-vs-adopt fallback in plain language.
 - Identified `.pi/settings.json` as project-local Pi configuration and `.picm/` as maintainer metadata/reports outside normal workflow context.
