@@ -119,8 +119,8 @@ export default function picmFactoryExtension(pi: ExtensionAPI) {
       excludedPaths: Type.Optional(Type.Array(Type.String({ minLength: 1 }))),
       persist: Type.Optional(Type.Boolean()),
     }),
-    async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
-      const run = () => coordinator.scanControl(ctx, params);
+    async execute(toolCallId, params, signal, _onUpdate, ctx) {
+      const run = () => coordinator.scanControl(ctx, params, { toolCallId, signal });
       const result = params.action === "privacy" && params.persist
         ? await withFileMutationQueue(join(ctx.cwd, ".picm", "config.json"), run)
         : await run();
@@ -186,8 +186,8 @@ export default function picmFactoryExtension(pi: ExtensionAPI) {
       intervalValue: Type.Optional(Type.Integer({ minimum: 1 })),
       intervalUnit: Type.Optional(StringEnum(["days", "weeks", "months"] as const)),
     }),
-    async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
-      const result = await coordinator.maintenancePolicy(params, ctx);
+    async execute(_toolCallId, params, signal, _onUpdate, ctx) {
+      const result = await coordinator.maintenancePolicy(params, ctx, signal);
       if (params.action === "preview") {
         const response = {
           previewId: result.previewId,
@@ -200,13 +200,28 @@ export default function picmFactoryExtension(pi: ExtensionAPI) {
     },
   });
 
+  pi.on("tool_execution_start", (event, ctx) => {
+    coordinator.startToolExecution(event, ctx);
+  });
+
   pi.on("tool_call", async (event, ctx) => {
-    const decision = await coordinator.checkToolCall(event, ctx);
-    if (!decision.allowed) {
-      const reason = `[picm-factory] Blocked by PiCM scan gate: ${decision.reason}`;
-      if (ctx.hasUI) ctx.ui.notify(reason, "warning");
-      return { block: true, reason };
+    let admitted = false;
+    try {
+      const decision = await coordinator.checkToolCall(event, ctx);
+      if (!decision.allowed) {
+        const reason = `[picm-factory] Blocked by PiCM scan gate: ${decision.reason}`;
+        if (ctx.hasUI) ctx.ui.notify(reason, "warning");
+        return { block: true, reason };
+      }
+      coordinator.admitToolExecution(event, ctx);
+      admitted = true;
+    } finally {
+      if (!admitted) coordinator.rejectToolExecution(event, ctx);
     }
+  });
+
+  pi.on("tool_execution_end", (event, ctx) => {
+    coordinator.endToolExecution(event, ctx);
   });
 
   pi.on("session_start", async (_event, ctx) => {

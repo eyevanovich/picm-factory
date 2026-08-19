@@ -9,10 +9,21 @@ import {
   symlinkSync,
   writeFileSync,
 } from "node:fs";
+import {
+  access as accessFile,
+  mkdir as mkdirDirectory,
+  readFile as readFileAsync,
+  writeFile as writeFileAsync,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import test from "node:test";
 
+import {
+  createEditTool,
+  createReadTool,
+  createWriteTool,
+} from "@earendil-works/pi-coding-agent";
 import picmFactoryExtension from "../extensions/picm-factory.ts";
 import { createGitReadGate } from "../extensions/runtime/git-read-gate.mjs";
 import { createPolicy } from "../extensions/runtime/maintenance-policy.mjs";
@@ -102,10 +113,93 @@ function extensionHarness({ entries = [], sendError, confirm = true } = {}) {
     ui: {
       notify() {},
       select: async (_title, items) => items[0],
-      confirm: async () => confirm,
+      confirm: async (...args) => typeof confirm === "function" ? confirm(...args) : confirm,
     },
   });
   return { handlers, commands, tools, sent, context };
+}
+
+function deferred() {
+  let resolvePromise;
+  const promise = new Promise((resolve) => {
+    resolvePromise = resolve;
+  });
+  return { promise, resolve: resolvePromise };
+}
+
+async function preflightParallelToolCalls(h, ctx, calls) {
+  const prepared = [];
+  for (const call of calls) {
+    const lifecycle = {
+      toolCallId: call.id,
+      toolName: call.toolName,
+      args: call.input,
+    };
+    await h.handlers.get("tool_execution_start")?.(lifecycle, ctx);
+    const blocked = await h.handlers.get("tool_call")(
+      {
+        toolCallId: call.id,
+        toolName: call.toolName,
+        input: call.input,
+      },
+      ctx,
+    );
+    if (blocked?.block) {
+      const result = {
+        content: [{ type: "text", text: blocked.reason ?? "Tool execution was blocked" }],
+        details: {},
+      };
+      await h.handlers.get("tool_execution_end")?.(
+        { ...lifecycle, result, isError: true },
+        ctx,
+      );
+      prepared.push({ ...call, blocked, result, isError: true });
+    } else {
+      prepared.push({ ...call, blocked: undefined });
+    }
+  }
+  return prepared;
+}
+
+function executePreflightedToolCalls(h, ctx, calls, timeline = []) {
+  return calls.map(async (call) => {
+    if (call.blocked) return call;
+    let result;
+    let isError = false;
+    try {
+      result = await call.tool.execute(
+        call.id,
+        call.input,
+        call.signal,
+        undefined,
+        ctx,
+      );
+    } catch (error) {
+      isError = true;
+      result = {
+        content: [{ type: "text", text: error instanceof Error ? error.message : String(error) }],
+        details: {},
+      };
+    }
+    timeline.push(`result:${call.id}`);
+    await h.handlers.get("tool_execution_end")?.(
+      {
+        toolCallId: call.id,
+        toolName: call.toolName,
+        result,
+        isError,
+      },
+      ctx,
+    );
+    return { ...call, result, isError };
+  });
+}
+
+async function promiseSettled(promise) {
+  return Promise.race([
+    promise.then(() => true, () => true),
+    new Promise((resolvePromise) => setImmediate(() => resolvePromise(false))),
+  ]);
 }
 
 test("allows Git candidates and blocks ignored, tracked-ignored, internal, and outside reads", async () => {
@@ -641,6 +735,82 @@ test("declining persistent privacy keeps review incomplete", async () => {
   });
 });
 
+test("aborted config confirmations do not mutate project policy", async () => {
+  await withFixture(async ({ root }) => {
+    const confirmationStarted = deferred();
+    const releaseConfirmation = deferred();
+    const abort = new AbortController();
+    const h = extensionHarness({
+      confirm: async (_title, _message, options) => {
+        assert.equal(options.signal, abort.signal);
+        confirmationStarted.resolve();
+        await releaseConfirmation.promise;
+        return true;
+      },
+    });
+    const ctx = h.context(root, "aborted-maintenance-confirmation");
+    const control = h.tools.get("picm_scan_control");
+    await h.commands.get("picm-maintain").handler("routing", ctx);
+    await control.execute("preflight", { action: "preflight" }, undefined, undefined, ctx);
+    await control.execute(
+      "privacy",
+      { action: "privacy", excludedPaths: [], persist: false },
+      undefined,
+      undefined,
+      ctx,
+    );
+    await control.execute("begin", { action: "begin" }, undefined, undefined, ctx);
+
+    const apply = h.tools.get("picm_maintenance_policy").execute(
+      "aborted-apply",
+      { action: "apply", mode: "manual" },
+      abort.signal,
+      undefined,
+      ctx,
+    );
+    await confirmationStarted.promise;
+    abort.abort();
+    releaseConfirmation.resolve();
+    await assert.rejects(apply, /MAINTENANCE_APPLY_ABORTED/);
+    assert.equal(existsSync(join(root, ".picm", "config.json")), false);
+  });
+
+  await withFixture(async ({ root }) => {
+    const confirmationStarted = deferred();
+    const releaseConfirmation = deferred();
+    const abort = new AbortController();
+    const h = extensionHarness({
+      confirm: async (_title, _message, options) => {
+        assert.equal(options.signal, abort.signal);
+        confirmationStarted.resolve();
+        await releaseConfirmation.promise;
+        return true;
+      },
+    });
+    const ctx = h.context(root, "aborted-privacy-confirmation");
+    const control = h.tools.get("picm_scan_control");
+    await h.commands.get("picm-adopt").handler("coding", ctx);
+    await control.execute("preflight", { action: "preflight" }, undefined, undefined, ctx);
+
+    const privacy = control.execute(
+      "aborted-privacy",
+      { action: "privacy", excludedPaths: ["safe-dir"], persist: true },
+      abort.signal,
+      undefined,
+      ctx,
+    );
+    await confirmationStarted.promise;
+    abort.abort();
+    releaseConfirmation.resolve();
+    await assert.rejects(privacy, /PICM_SCAN_ABORTED/);
+    assert.equal(existsSync(join(root, ".picm", "config.json")), false);
+    await assert.rejects(
+      control.execute("begin", { action: "begin" }, undefined, undefined, ctx),
+      /PICM_PRIVACY_NOT_REVIEWED/,
+    );
+  });
+});
+
 test("explicit PiCM commands enforce privacy review, session scope, and durable exclusions", async () => {
   await withFixture(async ({ root }) => {
     const h = extensionHarness();
@@ -1022,6 +1192,614 @@ test("non-Git workspaces without ignore rules remain scannable without creating 
   }
 });
 
+test("complete waits for sequentially preflighted real project operations to finish", async () => {
+  await withFixture(async ({ root }) => {
+    const entries = [];
+    const h = extensionHarness({ entries });
+    const ctx = h.context(root, "execution-barrier-builtins");
+    const control = h.tools.get("picm_scan_control");
+    await h.commands.get("picm-adopt").handler("coding", ctx);
+    await control.execute("preflight", { action: "preflight" }, undefined, undefined, ctx);
+    await control.execute(
+      "privacy",
+      { action: "privacy", excludedPaths: [], persist: false },
+      undefined,
+      undefined,
+      ctx,
+    );
+    await control.execute("begin", { action: "begin" }, undefined, undefined, ctx);
+
+    const readStarted = deferred();
+    const writeStarted = deferred();
+    const editStarted = deferred();
+    const releaseRead = deferred();
+    const releaseWrite = deferred();
+    const releaseEdit = deferred();
+    const readTool = createReadTool(root, {
+      operations: {
+        access: accessFile,
+        readFile: async (path) => {
+          readStarted.resolve();
+          await releaseRead.promise;
+          return readFileAsync(path);
+        },
+      },
+    });
+    const writeTool = createWriteTool(root, {
+      operations: {
+        mkdir: (path) => mkdirDirectory(path, { recursive: true }),
+        writeFile: async (path, content) => {
+          writeStarted.resolve();
+          await releaseWrite.promise;
+          return writeFileAsync(path, content, "utf8");
+        },
+      },
+    });
+    const editTool = createEditTool(root, {
+      operations: {
+        access: accessFile,
+        readFile: readFileAsync,
+        writeFile: async (path, content) => {
+          editStarted.resolve();
+          await releaseEdit.promise;
+          return writeFileAsync(path, content, "utf8");
+        },
+      },
+    });
+    const calls = await preflightParallelToolCalls(h, ctx, [
+      { id: "delayed-read", toolName: "read", input: { path: "safe.txt" }, tool: readTool },
+      {
+        id: "delayed-write",
+        toolName: "write",
+        input: { path: "output/barrier.txt", content: "after barrier\n" },
+        tool: writeTool,
+      },
+      {
+        id: "delayed-edit",
+        toolName: "edit",
+        input: {
+          path: "docs/guide.md",
+          edits: [{ oldText: "guide\n", newText: "guide after\n" }],
+        },
+        tool: editTool,
+      },
+      {
+        id: "complete",
+        toolName: "picm_scan_control",
+        input: { action: "complete" },
+        tool: control,
+      },
+    ]);
+    assert.equal(calls.every((call) => call.blocked === undefined), true);
+
+    const timeline = [];
+    const executions = executePreflightedToolCalls(h, ctx, calls, timeline);
+    await Promise.all([readStarted.promise, writeStarted.promise, editStarted.promise]);
+    const completedBeforeRelease = await promiseSettled(executions[3]);
+
+    releaseRead.resolve();
+    await executions[0];
+    const completedAfterRead = await promiseSettled(executions[3]);
+    releaseWrite.resolve();
+    await executions[1];
+    const completedAfterWrite = await promiseSettled(executions[3]);
+    releaseEdit.resolve();
+    const results = await Promise.all(executions);
+
+    assert.equal(completedBeforeRelease, false);
+    assert.equal(completedAfterRead, false);
+    assert.equal(completedAfterWrite, false);
+    assert.equal(results[3].result.details.completed, true);
+    assert.equal(readFileSync(join(root, "output", "barrier.txt"), "utf8"), "after barrier\n");
+    assert.equal(readFileSync(join(root, "docs", "guide.md"), "utf8"), "guide after\n");
+    assert.equal(timeline.at(-1), "result:complete");
+    assert.equal(entries.at(-1).data.status, "completed");
+  });
+});
+
+test("complete waits for a confirmed maintenance apply to commit", async () => {
+  await withFixture(async ({ root }) => {
+    const confirmationStarted = deferred();
+    const releaseConfirmation = deferred();
+    const entries = [];
+    const h = extensionHarness({
+      entries,
+      confirm: async () => {
+        confirmationStarted.resolve();
+        return releaseConfirmation.promise;
+      },
+    });
+    const ctx = h.context(root, "execution-barrier-maintenance");
+    const control = h.tools.get("picm_scan_control");
+    const policy = h.tools.get("picm_maintenance_policy");
+    await h.commands.get("picm-maintain").handler("routing", ctx);
+    await control.execute("preflight", { action: "preflight" }, undefined, undefined, ctx);
+    await control.execute(
+      "privacy",
+      { action: "privacy", excludedPaths: [], persist: false },
+      undefined,
+      undefined,
+      ctx,
+    );
+    await control.execute("begin", { action: "begin" }, undefined, undefined, ctx);
+
+    const calls = await preflightParallelToolCalls(h, ctx, [
+      {
+        id: "apply",
+        toolName: "picm_maintenance_policy",
+        input: { action: "apply", mode: "manual" },
+        tool: policy,
+      },
+      {
+        id: "complete",
+        toolName: "picm_scan_control",
+        input: { action: "complete" },
+        tool: control,
+      },
+    ]);
+    assert.equal(calls.every((call) => call.blocked === undefined), true);
+
+    const timeline = [];
+    const executions = executePreflightedToolCalls(h, ctx, calls, timeline);
+    await confirmationStarted.promise;
+    const completedBeforeConfirmation = await promiseSettled(executions[1]);
+    releaseConfirmation.resolve(true);
+    const results = await Promise.all(executions);
+
+    assert.equal(completedBeforeConfirmation, false);
+    assert.equal(results[0].result.details.changed, true);
+    assert.equal(results[1].result.details.completed, true);
+    assert.equal(timeline.at(-1), "result:complete");
+    const config = JSON.parse(readFileSync(join(root, ".picm", "config.json"), "utf8"));
+    assert.equal(config.maintenance.mode, "manual");
+    assert.equal(entries.at(-1).data.status, "completed");
+  });
+});
+
+test("completion fence rejects later siblings without waiting on itself or rejected calls", async () => {
+  await withFixture(async ({ root }) => {
+    const h = extensionHarness();
+    const ctx = h.context(root, "execution-barrier-fence");
+    const control = h.tools.get("picm_scan_control");
+    await h.commands.get("picm-adopt").handler("coding", ctx);
+    await control.execute("preflight", { action: "preflight" }, undefined, undefined, ctx);
+    await control.execute(
+      "privacy",
+      { action: "privacy", excludedPaths: [], persist: false },
+      undefined,
+      undefined,
+      ctx,
+    );
+    await control.execute("begin", { action: "begin" }, undefined, undefined, ctx);
+
+    const calls = await preflightParallelToolCalls(h, ctx, [
+      {
+        id: "complete-first",
+        toolName: "picm_scan_control",
+        input: { action: "complete" },
+        tool: control,
+      },
+      {
+        id: "later-write",
+        toolName: "write",
+        input: { path: "output/too-late.txt", content: "must not commit\n" },
+        tool: createWriteTool(root),
+      },
+    ]);
+    assert.equal(calls[0].blocked, undefined);
+    assert.equal(calls[1].blocked.block, true);
+    assert.match(calls[1].blocked.reason, /completion was already admitted/);
+
+    const [completion, rejected] = await Promise.all(
+      executePreflightedToolCalls(h, ctx, calls),
+    );
+    assert.equal(completion.result.details.completed, true);
+    assert.equal(rejected.isError, true);
+    assert.equal(existsSync(join(root, "output", "too-late.txt")), false);
+    const repeated = await control.execute(
+      "repeat-complete",
+      { action: "complete" },
+      undefined,
+      undefined,
+      ctx,
+    );
+    assert.equal(repeated.details.completed, true);
+  });
+
+  await withFixture(async ({ root }) => {
+    const h = extensionHarness();
+    const ctx = h.context(root, "execution-barrier-rejected");
+    const control = h.tools.get("picm_scan_control");
+    await h.commands.get("picm-adopt").handler("coding", ctx);
+    await control.execute("preflight", { action: "preflight" }, undefined, undefined, ctx);
+    await control.execute(
+      "privacy",
+      { action: "privacy", excludedPaths: [], persist: false },
+      undefined,
+      undefined,
+      ctx,
+    );
+    await control.execute("begin", { action: "begin" }, undefined, undefined, ctx);
+
+    const calls = await preflightParallelToolCalls(h, ctx, [
+      {
+        id: "rejected-write",
+        toolName: "write",
+        input: { path: ".env", content: "blocked\n" },
+        tool: createWriteTool(root),
+      },
+      {
+        id: "complete-after-rejection",
+        toolName: "picm_scan_control",
+        input: { action: "complete" },
+        tool: control,
+      },
+    ]);
+    assert.equal(calls[0].blocked.block, true);
+    assert.equal(calls[1].blocked, undefined);
+    const executions = executePreflightedToolCalls(h, ctx, calls);
+    assert.equal(await promiseSettled(executions[1]), true);
+    const results = await Promise.all(executions);
+    assert.equal(results[1].result.details.completed, true);
+    assert.equal(readFileSync(join(root, ".env"), "utf8"), "SYNTHETIC_ONLY=ignored\n");
+  });
+});
+
+test("completion waits through failed and cancelled mutations and releases their leases", async () => {
+  await withFixture(async ({ root }) => {
+    const h = extensionHarness();
+    const ctx = h.context(root, "execution-barrier-failure");
+    const control = h.tools.get("picm_scan_control");
+    await h.commands.get("picm-maintain").handler("routing", ctx);
+    await control.execute("preflight", { action: "preflight" }, undefined, undefined, ctx);
+    await control.execute(
+      "privacy",
+      { action: "privacy", excludedPaths: [], persist: false },
+      undefined,
+      undefined,
+      ctx,
+    );
+    await control.execute("begin", { action: "begin" }, undefined, undefined, ctx);
+
+    const failedWrite = createWriteTool(root, {
+      operations: {
+        mkdir: (path) => mkdirDirectory(path, { recursive: true }),
+        writeFile: async () => {
+          throw new Error("synthetic write failure");
+        },
+      },
+    });
+    const calls = await preflightParallelToolCalls(h, ctx, [
+      {
+        id: "failed-write",
+        toolName: "write",
+        input: { path: "output/failure.txt", content: "never written\n" },
+        tool: failedWrite,
+      },
+      {
+        id: "complete-after-failure",
+        toolName: "picm_scan_control",
+        input: { action: "complete" },
+        tool: control,
+      },
+    ]);
+    const timeline = [];
+    const results = await Promise.all(executePreflightedToolCalls(h, ctx, calls, timeline));
+    assert.equal(results[0].isError, true);
+    assert.match(results[0].result.content[0].text, /synthetic write failure/);
+    assert.equal(results[1].result.details.completed, true);
+    assert.equal(timeline.at(-1), "result:complete-after-failure");
+  });
+
+  await withFixture(async ({ root }) => {
+    const h = extensionHarness();
+    const ctx = h.context(root, "execution-barrier-cancellation");
+    const control = h.tools.get("picm_scan_control");
+    await h.commands.get("picm-maintain").handler("routing", ctx);
+    await control.execute("preflight", { action: "preflight" }, undefined, undefined, ctx);
+    await control.execute(
+      "privacy",
+      { action: "privacy", excludedPaths: [], persist: false },
+      undefined,
+      undefined,
+      ctx,
+    );
+    await control.execute("begin", { action: "begin" }, undefined, undefined, ctx);
+
+    const mutationStarted = deferred();
+    const releaseMutation = deferred();
+    const abort = new AbortController();
+    const cancelledWrite = createWriteTool(root, {
+      operations: {
+        mkdir: (path) => mkdirDirectory(path, { recursive: true }),
+        writeFile: async (path, content) => {
+          mutationStarted.resolve();
+          await releaseMutation.promise;
+          await writeFileAsync(path, content, "utf8");
+        },
+      },
+    });
+    const calls = await preflightParallelToolCalls(h, ctx, [
+      {
+        id: "cancelled-write",
+        toolName: "write",
+        input: { path: "output/cancelled.txt", content: "settled mutation\n" },
+        tool: cancelledWrite,
+        signal: abort.signal,
+      },
+      {
+        id: "complete-after-cancellation",
+        toolName: "picm_scan_control",
+        input: { action: "complete" },
+        tool: control,
+      },
+    ]);
+    const timeline = [];
+    const executions = executePreflightedToolCalls(h, ctx, calls, timeline);
+    await mutationStarted.promise;
+    abort.abort();
+    const completedWhileMutationPending = await promiseSettled(executions[1]);
+    releaseMutation.resolve();
+    const results = await Promise.all(executions);
+
+    assert.equal(completedWhileMutationPending, false);
+    assert.equal(results[0].isError, true);
+    assert.match(results[0].result.content[0].text, /Operation aborted/);
+    assert.equal(results[1].result.details.completed, true);
+    assert.equal(readFileSync(join(root, "output", "cancelled.txt"), "utf8"), "settled mutation\n");
+    assert.equal(timeline.at(-1), "result:complete-after-cancellation");
+  });
+});
+
+test("cancelled completion stays nonterminal and releases its own lease", async () => {
+  await withFixture(async ({ root }) => {
+    const h = extensionHarness();
+    const ctx = h.context(root, "execution-barrier-cancelled-complete");
+    const control = h.tools.get("picm_scan_control");
+    await h.commands.get("picm-maintain").handler("routing", ctx);
+    await control.execute("preflight", { action: "preflight" }, undefined, undefined, ctx);
+    await control.execute(
+      "privacy",
+      { action: "privacy", excludedPaths: [], persist: false },
+      undefined,
+      undefined,
+      ctx,
+    );
+    await control.execute("begin", { action: "begin" }, undefined, undefined, ctx);
+
+    const mutationStarted = deferred();
+    const releaseMutation = deferred();
+    const completionAbort = new AbortController();
+    const delayedWrite = createWriteTool(root, {
+      operations: {
+        mkdir: (path) => mkdirDirectory(path, { recursive: true }),
+        writeFile: async (path, content) => {
+          mutationStarted.resolve();
+          await releaseMutation.promise;
+          await writeFileAsync(path, content, "utf8");
+        },
+      },
+    });
+    const calls = await preflightParallelToolCalls(h, ctx, [
+      {
+        id: "write-before-cancelled-complete",
+        toolName: "write",
+        input: { path: "output/before-retry.txt", content: "settled\n" },
+        tool: delayedWrite,
+      },
+      {
+        id: "cancelled-complete",
+        toolName: "picm_scan_control",
+        input: { action: "complete" },
+        tool: control,
+        signal: completionAbort.signal,
+      },
+    ]);
+    const executions = executePreflightedToolCalls(h, ctx, calls);
+    await mutationStarted.promise;
+    completionAbort.abort();
+    const cancelledCompletion = await executions[1];
+    assert.equal(cancelledCompletion.isError, true);
+    assert.match(cancelledCompletion.result.content[0].text, /PICM_SCAN_ABORTED/);
+
+    const stillActive = await control.execute(
+      "status-after-cancel",
+      { action: "status" },
+      undefined,
+      undefined,
+      ctx,
+    );
+    assert.equal(stillActive.details.completed, false);
+    releaseMutation.resolve();
+    await executions[0];
+
+    const [retry] = await preflightParallelToolCalls(h, ctx, [{
+      id: "retry-complete",
+      toolName: "picm_scan_control",
+      input: { action: "complete" },
+      tool: control,
+    }]);
+    const [completed] = await Promise.all(executePreflightedToolCalls(h, ctx, [retry]));
+    assert.equal(completed.result.details.completed, true);
+  });
+
+  await withFixture(async ({ root }) => {
+    const h = extensionHarness();
+    const ctx = h.context(root, "execution-barrier-pre-aborted-complete");
+    const control = h.tools.get("picm_scan_control");
+    await h.commands.get("picm-adopt").handler("coding", ctx);
+    const completionAbort = new AbortController();
+    completionAbort.abort();
+    const [call] = await preflightParallelToolCalls(h, ctx, [{
+      id: "pre-aborted-complete",
+      toolName: "picm_scan_control",
+      input: { action: "complete" },
+      tool: control,
+      signal: completionAbort.signal,
+    }]);
+    const [completion] = await Promise.all(executePreflightedToolCalls(h, ctx, [call]));
+    assert.equal(completion.isError, true);
+    assert.match(completion.result.content[0].text, /PICM_SCAN_ABORTED/);
+    const status = await control.execute(
+      "status-after-pre-abort",
+      { action: "status" },
+      undefined,
+      undefined,
+      ctx,
+    );
+    assert.equal(status.details.completed, false);
+  });
+});
+
+test("restore and settlement discard orphaned execution leases", async () => {
+  for (const resetEvent of ["session_tree", "agent_settled"]) {
+    await withFixture(async ({ root }) => {
+      const entries = [];
+      const h = extensionHarness({ entries });
+      const ctx = h.context(root, `execution-barrier-${resetEvent}`);
+      const control = h.tools.get("picm_scan_control");
+      await h.commands.get("picm-adopt").handler("coding", ctx);
+      await control.execute("preflight", { action: "preflight" }, undefined, undefined, ctx);
+      await control.execute(
+        "privacy",
+        { action: "privacy", excludedPaths: [], persist: false },
+        undefined,
+        undefined,
+        ctx,
+      );
+      await control.execute("begin", { action: "begin" }, undefined, undefined, ctx);
+
+      await h.handlers.get("tool_execution_start")(
+        { toolCallId: "orphaned-read", toolName: "read", args: { path: "safe.txt" } },
+        ctx,
+      );
+      assert.equal(await h.handlers.get("tool_call")(
+        { toolCallId: "orphaned-read", toolName: "read", input: { path: "safe.txt" } },
+        ctx,
+      ), undefined);
+      await h.handlers.get(resetEvent)({}, ctx);
+
+      const calls = await preflightParallelToolCalls(h, ctx, [{
+        id: `complete-after-${resetEvent}`,
+        toolName: "picm_scan_control",
+        input: { action: "complete" },
+        tool: control,
+      }]);
+      const [completion] = await Promise.all(executePreflightedToolCalls(h, ctx, calls));
+      assert.equal(completion.result.details.completed, true);
+    });
+  }
+});
+
+test("session shutdown clears orphaned execution leases", async () => {
+  await withFixture(async ({ root }) => {
+    const h = extensionHarness();
+    const ctx = h.context(root, "execution-barrier-shutdown");
+    const control = h.tools.get("picm_scan_control");
+    await h.commands.get("picm-adopt").handler("coding", ctx);
+    await control.execute("preflight", { action: "preflight" }, undefined, undefined, ctx);
+    await control.execute(
+      "privacy",
+      { action: "privacy", excludedPaths: [], persist: false },
+      undefined,
+      undefined,
+      ctx,
+    );
+    await control.execute("begin", { action: "begin" }, undefined, undefined, ctx);
+    await h.handlers.get("tool_execution_start")(
+      { toolCallId: "shutdown-orphan", toolName: "write", args: { path: "output/orphan.txt" } },
+      ctx,
+    );
+    assert.equal(await h.handlers.get("tool_call")(
+      {
+        toolCallId: "shutdown-orphan",
+        toolName: "write",
+        input: { path: "output/orphan.txt", content: "orphan\n" },
+      },
+      ctx,
+    ), undefined);
+
+    await h.handlers.get("session_shutdown")({ reason: "quit" }, ctx);
+    await h.commands.get("picm-adopt").handler("coding", ctx);
+    await control.execute("new-preflight", { action: "preflight" }, undefined, undefined, ctx);
+    await control.execute(
+      "new-privacy",
+      { action: "privacy", excludedPaths: [], persist: false },
+      undefined,
+      undefined,
+      ctx,
+    );
+    const [completion] = await preflightParallelToolCalls(h, ctx, [{
+      id: "complete-after-shutdown",
+      toolName: "picm_scan_control",
+      input: { action: "complete" },
+      tool: control,
+    }]);
+    const [result] = await Promise.all(executePreflightedToolCalls(h, ctx, [completion]));
+    assert.equal(result.result.details.completed, true);
+  });
+});
+
+test("execution leases stay isolated by session", async () => {
+  await withFixture(async ({ root }) => {
+    const h = extensionHarness();
+    const control = h.tools.get("picm_scan_control");
+    const firstCtx = h.context(root, "execution-barrier-session-a");
+    const secondCtx = h.context(root, "execution-barrier-session-b");
+    for (const [ctx, command] of [[firstCtx, "picm-adopt"], [secondCtx, "picm-maintain"]]) {
+      await h.commands.get(command).handler("routing", ctx);
+      await control.execute("preflight", { action: "preflight" }, undefined, undefined, ctx);
+      await control.execute(
+        "privacy",
+        { action: "privacy", excludedPaths: [], persist: false },
+        undefined,
+        undefined,
+        ctx,
+      );
+      await control.execute("begin", { action: "begin" }, undefined, undefined, ctx);
+    }
+
+    await h.handlers.get("tool_execution_start")(
+      { toolCallId: "shared-call-id", toolName: "read", args: { path: "safe.txt" } },
+      firstCtx,
+    );
+    assert.equal(await h.handlers.get("tool_call")(
+      { toolCallId: "shared-call-id", toolName: "read", input: { path: "safe.txt" } },
+      firstCtx,
+    ), undefined);
+
+    const [secondCompletion] = await preflightParallelToolCalls(h, secondCtx, [{
+      id: "shared-complete-id",
+      toolName: "picm_scan_control",
+      input: { action: "complete" },
+      tool: control,
+    }]);
+    const secondExecutions = executePreflightedToolCalls(h, secondCtx, [secondCompletion]);
+    assert.equal(await promiseSettled(secondExecutions[0]), true);
+    assert.equal((await secondExecutions[0]).result.details.completed, true);
+
+    await h.handlers.get("tool_execution_end")(
+      {
+        toolCallId: "shared-call-id",
+        toolName: "read",
+        result: { content: [{ type: "text", text: "safe" }] },
+        isError: false,
+      },
+      firstCtx,
+    );
+    const [firstCompletion] = await preflightParallelToolCalls(h, firstCtx, [{
+      id: "shared-complete-id",
+      toolName: "picm_scan_control",
+      input: { action: "complete" },
+      tool: control,
+    }]);
+    const [firstResult] = await Promise.all(
+      executePreflightedToolCalls(h, firstCtx, [firstCompletion]),
+    );
+    assert.equal(firstResult.result.details.completed, true);
+  });
+});
+
 test("concurrent preflight and complete cannot restore stale authorization", async () => {
   await withFixture(async ({ root }) => {
     const entries = [];
@@ -1346,6 +2124,69 @@ test("interactive commands bootstrap privacy before trusted skill loading", asyn
         ctx,
       )).block, true);
       await h.handlers.get("agent_settled")({}, ctx);
+    }
+  });
+});
+
+test("pre-begin admission allows only policy preview and canonical packaged reads", async () => {
+  await withFixture(async ({ root }) => {
+    const h = extensionHarness();
+    const ctx = h.context(root, "pre-begin-action-boundary");
+    const control = h.tools.get("picm_scan_control");
+    await h.commands.get("picm-adopt").handler("coding", ctx);
+    await control.execute("preflight", { action: "preflight" }, undefined, undefined, ctx);
+    await control.execute(
+      "privacy",
+      { action: "privacy", excludedPaths: ["safe-dir"], persist: false },
+      undefined,
+      undefined,
+      ctx,
+    );
+
+    assert.equal(await h.handlers.get("tool_call")(
+      { toolName: "picm_maintenance_policy", input: { action: "preview", mode: "manual" } },
+      ctx,
+    ), undefined);
+    for (const action of ["status", "apply"]) {
+      const blocked = await h.handlers.get("tool_call")(
+        { toolName: "picm_maintenance_policy", input: { action } },
+        ctx,
+      );
+      assert.equal(blocked.block, true);
+      assert.match(blocked.reason, /begin/i);
+    }
+
+    const packageRoot = resolve(".");
+    for (const path of [
+      join(packageRoot, "skills", "picm-factory", "SKILL.md"),
+      join(packageRoot, "skills", "picm-factory", "references", "adoption-guide.md"),
+      join(packageRoot, "skills", "picm-factory", "templates", "context-map.md"),
+    ]) {
+      assert.equal(await h.handlers.get("tool_call")(
+        { toolName: "read", input: { path } },
+        ctx,
+      ), undefined);
+    }
+
+    const lookalike = join(root, "skills", "picm-factory", "SKILL.md");
+    write(lookalike, "---\nname: lookalike\n---\n");
+    for (const event of [
+      { toolName: "read", input: { path: "safe.txt" } },
+      { toolName: "read", input: { path: ".env" } },
+      { toolName: "read", input: { path: "safe-dir/file.txt" } },
+      { toolName: "read", input: { path: lookalike } },
+      { toolName: "bash", input: { command: "cat safe.txt" } },
+      { toolName: "unknown", input: { path: packageRoot } },
+    ]) {
+      assert.equal((await h.handlers.get("tool_call")(event, ctx)).block, true);
+    }
+
+    await control.execute("begin", { action: "begin" }, undefined, undefined, ctx);
+    for (const action of ["preview", "status", "apply"]) {
+      assert.equal(await h.handlers.get("tool_call")(
+        { toolName: "picm_maintenance_policy", input: { action } },
+        ctx,
+      ), undefined);
     }
   });
 });

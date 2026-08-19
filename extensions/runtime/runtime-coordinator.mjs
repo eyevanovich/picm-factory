@@ -6,7 +6,6 @@ import { mergePrivacyExcludedPaths } from "./privacy-policy.mjs";
 
 const EXPLICIT_SCAN_COMMANDS = new Set(["picm-new", "picm-adopt", "picm-maintain", "picm-optimize"]);
 const GUARDED_PATH_TOOLS = new Set(["read", "edit", "write", "grep", "find", "ls"]);
-const WORKFLOW_CONTROL_TOOLS = new Set(["picm_scan_control", "picm_maintenance_policy"]);
 
 export function createRuntimeCoordinator({
   packageRoot,
@@ -20,6 +19,7 @@ export function createRuntimeCoordinator({
   const activeScans = new Map();
   const scanControlQueues = new Map();
   const policyPreviews = new Map();
+  const toolExecutionSessions = new Map();
 
   const sessionIdFor = (ctx) =>
     ctx.sessionManager?.getSessionId?.() ??
@@ -27,11 +27,51 @@ export function createRuntimeCoordinator({
     ctx.sessionManager ??
     ctx;
 
+  function settleToolExecution(sessionId, state, lease) {
+    if (state.calls.get(lease.toolCallId) !== lease) return;
+    state.calls.delete(lease.toolCallId);
+    if (state.completionFence === lease) state.completionFence = undefined;
+    lease.resolve();
+    if (state.calls.size === 0 && toolExecutionSessions.get(sessionId) === state) {
+      toolExecutionSessions.delete(sessionId);
+    }
+  }
+
+  function clearToolExecutions(sessionId) {
+    const state = toolExecutionSessions.get(sessionId);
+    if (!state) return false;
+    toolExecutionSessions.delete(sessionId);
+    for (const lease of state.calls.values()) lease.resolve();
+    state.calls.clear();
+    state.completionFence = undefined;
+    return true;
+  }
+
+  function toolExecutionStateFor(ctx, create = false) {
+    const sessionId = sessionIdFor(ctx);
+    let state = toolExecutionSessions.get(sessionId);
+    if (state?.cwd !== ctx.cwd) {
+      clearToolExecutions(sessionId);
+      state = undefined;
+    }
+    if (!state && create) {
+      state = {
+        cwd: ctx.cwd,
+        nextSequence: 0,
+        calls: new Map(),
+        completionFence: undefined,
+      };
+      toolExecutionSessions.set(sessionId, state);
+    }
+    return state;
+  }
+
   function pruneScans(now = Date.now()) {
     for (const [sessionId, workflow] of scanWorkflows) {
       if (!workflow.completed && workflow.expiresAt <= now) {
         scanWorkflows.delete(sessionId);
         activeScans.delete(sessionId);
+        clearToolExecutions(sessionId);
       }
     }
     for (const [sessionId, scan] of activeScans) {
@@ -47,6 +87,7 @@ export function createRuntimeCoordinator({
     if ((workflow && workflow.cwd !== ctx.cwd) || (scan && scan.cwd !== ctx.cwd)) {
       scanWorkflows.delete(sessionId);
       activeScans.delete(sessionId);
+      clearToolExecutions(sessionId);
       return undefined;
     }
     return workflow;
@@ -61,7 +102,8 @@ export function createRuntimeCoordinator({
     const sessionId = sessionIdFor(ctx);
     const hadWorkflow = scanWorkflows.delete(sessionId);
     const hadActiveScan = activeScans.delete(sessionId);
-    return hadWorkflow || hadActiveScan;
+    const hadToolExecutions = clearToolExecutions(sessionId);
+    return hadWorkflow || hadActiveScan || hadToolExecutions;
   }
 
   function workflowState(workflow) {
@@ -80,6 +122,7 @@ export function createRuntimeCoordinator({
 
   function authorizeWorkflow(ctx, command) {
     const sessionId = sessionIdFor(ctx);
+    clearToolExecutions(sessionId);
     const expiresAt = Date.now() + scanWorkflowTtlMs;
     const workflow = {
       cwd: ctx.cwd,
@@ -146,7 +189,11 @@ export function createRuntimeCoordinator({
     }
   }
 
-  async function runScanControl(ctx, params) {
+  function throwIfAborted(signal, code) {
+    if (signal?.aborted) throw new Error(`${code}: operation was cancelled before mutation`);
+  }
+
+  async function runScanControl(ctx, params, execution = {}) {
     const { action, path, excludedPaths = [], persist = false } = params;
     const sessionId = sessionIdFor(ctx);
     const workflow = workflowFor(ctx);
@@ -204,11 +251,14 @@ export function createRuntimeCoordinator({
             additions,
           ),
         };
+        throwIfAborted(execution.signal, "PICM_SCAN_ABORTED");
         const confirmed = await ctx.ui.confirm(
           "Persist PiCM privacy exclusions?",
           `Exact .picm/config.json patch:\n${JSON.stringify({ privacy: nextPrivacy }, null, 2)}`,
+          { signal: execution.signal },
         );
         requireCurrentWorkflow(sessionId, workflow);
+        throwIfAborted(execution.signal, "PICM_SCAN_ABORTED");
         if (!confirmed) {
           return {
             ok: false,
@@ -301,7 +351,11 @@ export function createRuntimeCoordinator({
     } else if (action === "end") {
       clearActiveScan(ctx);
     } else if (action === "complete") {
-      if (workflow) workflow.completed = true;
+      await waitForCompletionBarrier(ctx, execution.toolCallId, execution.signal);
+      if (workflow && !workflow.completed) {
+        requireCurrentWorkflow(sessionId, workflow);
+        workflow.completed = true;
+      }
       clearActiveScan(ctx);
       return {
         ok: true,
@@ -323,7 +377,7 @@ export function createRuntimeCoordinator({
     };
   }
 
-  async function scanControl(ctx, params) {
+  async function scanControl(ctx, params, execution) {
     const sessionId = sessionIdFor(ctx);
     const prior = scanControlQueues.get(sessionId) ?? Promise.resolve();
     let release;
@@ -332,7 +386,7 @@ export function createRuntimeCoordinator({
     scanControlQueues.set(sessionId, queued);
     await prior;
     try {
-      return await runScanControl(ctx, params);
+      return await runScanControl(ctx, params, execution);
     } finally {
       release();
       if (scanControlQueues.get(sessionId) === queued) scanControlQueues.delete(sessionId);
@@ -396,7 +450,126 @@ export function createRuntimeCoordinator({
       return true;
     }
     clearActiveScan(ctx);
+    clearToolExecutions(sessionIdFor(ctx));
     return false;
+  }
+
+  function startToolExecution(event, ctx) {
+    if (typeof event.toolCallId !== "string") return;
+    const workflow = workflowFor(ctx);
+    if (!workflow || workflow.completed) return;
+    const sessionId = sessionIdFor(ctx);
+    const state = toolExecutionStateFor(ctx, true);
+    const prior = state.calls.get(event.toolCallId);
+    if (prior) {
+      state.calls.delete(event.toolCallId);
+      if (state.completionFence === prior) state.completionFence = undefined;
+      prior.resolve();
+    }
+    let resolveLease;
+    const done = new Promise((resolveDone) => {
+      resolveLease = resolveDone;
+    });
+    state.calls.set(event.toolCallId, {
+      toolCallId: event.toolCallId,
+      sequence: state.nextSequence++,
+      workflow,
+      admitted: false,
+      barrierOperation: false,
+      completion: false,
+      done,
+      resolve: resolveLease,
+    });
+    if (toolExecutionSessions.get(sessionId) !== state) {
+      toolExecutionSessions.set(sessionId, state);
+    }
+  }
+
+  function requiresCompletionBarrier(event) {
+    return !(
+      event.toolName === "picm_scan_control" && event.input?.action === "complete"
+    );
+  }
+
+  function admitToolExecution(event, ctx) {
+    const state = toolExecutionStateFor(ctx);
+    const lease = state?.calls.get(event.toolCallId);
+    const workflow = workflowFor(ctx);
+    if (!lease || lease.workflow !== workflow || workflow?.completed) return;
+    lease.admitted = true;
+    lease.barrierOperation = requiresCompletionBarrier(event);
+    lease.completion =
+      event.toolName === "picm_scan_control" && event.input?.action === "complete";
+    if (lease.completion && !state.completionFence) state.completionFence = lease;
+  }
+
+  function rejectToolExecution(event, ctx) {
+    const sessionId = sessionIdFor(ctx);
+    const state = toolExecutionStateFor(ctx);
+    const lease = state?.calls.get(event.toolCallId);
+    if (lease) settleToolExecution(sessionId, state, lease);
+  }
+
+  function endToolExecution(event, ctx) {
+    const sessionId = sessionIdFor(ctx);
+    const state = toolExecutionStateFor(ctx);
+    const lease = state?.calls.get(event.toolCallId);
+    if (lease) settleToolExecution(sessionId, state, lease);
+  }
+
+  function pendingCompletionBlocks(event, ctx) {
+    const state = toolExecutionStateFor(ctx);
+    const lease = state?.calls.get(event.toolCallId);
+    const fence = state?.completionFence;
+    return Boolean(lease && fence && lease !== fence && lease.sequence > fence.sequence);
+  }
+
+  async function waitForSettlements(settlements, signal) {
+    if (signal?.aborted) {
+      throw new Error("PICM_SCAN_ABORTED: completion was cancelled before the execution barrier settled");
+    }
+    if (settlements.length === 0) return;
+    const all = Promise.all(settlements);
+    if (!signal) {
+      await all;
+      return;
+    }
+    await new Promise((resolveWait, rejectWait) => {
+      const onAbort = () => {
+        rejectWait(new Error("PICM_SCAN_ABORTED: completion was cancelled before the execution barrier settled"));
+      };
+      signal.addEventListener("abort", onAbort, { once: true });
+      all.then(resolveWait, rejectWait).finally(() => {
+        signal.removeEventListener("abort", onAbort);
+      });
+    });
+  }
+
+  async function waitForCompletionBarrier(ctx, toolCallId, signal) {
+    if (typeof toolCallId !== "string") return;
+    const sessionId = sessionIdFor(ctx);
+    const state = toolExecutionStateFor(ctx);
+    const completion = state?.calls.get(toolCallId);
+    if (!completion) return;
+    if (!completion.admitted || !completion.completion || state.completionFence !== completion) {
+      throw new Error("PICM_COMPLETION_LEASE_INVALID: completion did not retain its admitted execution lease");
+    }
+    const settlements = [...state.calls.values()]
+      .filter((lease) =>
+        lease !== completion &&
+        lease.sequence < completion.sequence &&
+        lease.workflow === completion.workflow &&
+        lease.admitted &&
+        lease.barrierOperation)
+      .map((lease) => lease.done);
+    await waitForSettlements(settlements, signal);
+    if (
+      toolExecutionSessions.get(sessionId) !== state ||
+      state.calls.get(toolCallId) !== completion ||
+      state.completionFence !== completion
+    ) {
+      throw new Error("PICM_SCAN_STALE: workflow execution leases changed while completion was waiting");
+    }
   }
 
   function gateStateIsCurrent(ctx, workflow, scan) {
@@ -434,6 +607,12 @@ export function createRuntimeCoordinator({
         reason: "The completed PiCM workflow must settle before agent tools can access the project",
       };
     }
+    if (workflow && pendingCompletionBlocks(event, ctx)) {
+      return {
+        allowed: false,
+        reason: "PiCM completion was already admitted; later sibling tools are blocked",
+      };
+    }
     if (workflow && !workflow.privacyReviewed) {
       if (event.toolName === "picm_scan_control") return { allowed: true };
       return {
@@ -441,7 +620,14 @@ export function createRuntimeCoordinator({
         reason: "PiCM privacy review must complete before any agent tool can inspect or change the project",
       };
     }
-    if (workflow && WORKFLOW_CONTROL_TOOLS.has(event.toolName)) return { allowed: true };
+    if (workflow && event.toolName === "picm_scan_control") return { allowed: true };
+    if (workflow && event.toolName === "picm_maintenance_policy") {
+      if (event.input?.action === "preview" || workflow.scanStarted) return { allowed: true };
+      return {
+        allowed: false,
+        reason: "Begin the privacy-reviewed PiCM scan before maintenance status or apply can access project config",
+      };
+    }
     if (workflow && scan?.cwd !== ctx.cwd) {
       if (event.toolName === "picm_scan_control") return { allowed: true };
       if (event.toolName === "read") {
@@ -478,7 +664,7 @@ export function createRuntimeCoordinator({
       }
 
       if (workflow?.excludedPaths.length > 0) {
-        if (WORKFLOW_CONTROL_TOOLS.has(event.toolName)) return { allowed: true };
+        if (event.toolName === "picm_scan_control") return { allowed: true };
         if (event.toolName === "bash") {
           return { allowed: false, reason: "Agent Bash is blocked while PiCM privacy exclusions are active" };
         }
@@ -541,7 +727,7 @@ export function createRuntimeCoordinator({
     else preview.inUse = false;
   }
 
-  async function maintenancePolicy(params, ctx) {
+  async function maintenancePolicy(params, ctx, signal) {
     const controller = runtime(ctx.cwd).controller;
     if (params.action === "status") return controller.status();
     if (params.action === "preview") {
@@ -573,10 +759,13 @@ export function createRuntimeCoordinator({
 
     const patch = { maintenance };
     try {
+      throwIfAborted(signal, "MAINTENANCE_APPLY_ABORTED");
       const confirmed = await ctx.ui.confirm(
         "Apply PiCM maintenance policy?",
         `Exact .picm/config.json patch:\n${JSON.stringify(patch, null, 2)}`,
+        { signal },
       );
+      throwIfAborted(signal, "MAINTENANCE_APPLY_ABORTED");
       if (!confirmed) {
         return {
           ok: false,
@@ -637,16 +826,20 @@ export function createRuntimeCoordinator({
   }
 
   return {
+    admitToolExecution,
     authorizeWorkflow,
     checkToolCall,
     clearWorkflow,
     dispose,
+    endToolExecution,
     isWorkflowCompleted,
     maintenancePolicy,
+    rejectToolExecution,
     resetCycle,
     restoreWorkflow,
     scanControl,
     settle,
+    startToolExecution,
     startup,
   };
 }
