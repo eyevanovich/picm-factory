@@ -163,7 +163,7 @@ When routing is missing, partial, or conflicting, offer alternatives rather than
 
 For coding adoption, present Additive and Curated as proposal-depth choices in addition to readiness options. Curated mode can recommend canonical docs and compatibility pointers, but it does not weaken exact preview/write approval.
 
-Never write routing/context edits until the user is satisfied with the proposal and explicitly approves exact changes. Treat option selection as design intent, not write approval. If the user says “preview,” “show exact files,” or “do not write yet,” stop after the preview and ask for a separate explicit approval such as “approve writing these files.”
+Never write routing/context edits until the user is satisfied with the proposal and explicitly approves exact changes. Apply `preview-review-protocol.md` before every proposed project write. Treat option selection as design intent, not write approval. A preview request, review navigation, cadence choice, or vague assent is also not approval; revisions require a refreshed summary and mandatory reviews before a new separate approval.
 
 ## PiCM config
 
@@ -232,13 +232,7 @@ Keep `scanSummary` brief. Put detailed findings in `.picm/adoption-report.md`.
 
 When coding mapping is enabled, preserve one primary `profile` and add a minimal optional `capabilities.codebaseMap` object with the resulting `shape` (`root` or `distributed`), approved `roots`, map/equivalent path, selected local contexts, and maintenance preset. A Coding Repository profile implies this capability; a hybrid retains its workflow profile and adds the same capability. Roots may overlap workflow folders. Approved durable scan exclusions live separately under `privacy.excludedPaths` and remain effective even when `.gitignore` is absent or later changes.
 
-Even `.picm/` writes require the same two-step gate as visible routing edits:
-
-1. user chooses a path or asks for a preview;
-2. agent shows exact planned files/changes;
-3. user gives separate explicit approval to write.
-
-Do not treat “choose option 3 scanned only” as approval to write if the user also asked to preview first or said not to write yet.
+Even `.picm/` writes use `preview-review-protocol.md`: a complete concise summary, any mandatory exact review, and separate explicit approval for the current proposal. Do not treat “choose option 3 scanned only” as approval to write. The deterministic exact TUI confirmation for persisted privacy exclusions remains intact and does not authorize other writes.
 
 ## Optional ICM improvements
 

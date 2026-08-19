@@ -61,10 +61,15 @@ function buildPrompt(
   const mode = command.replace("picm-", "");
   const argText = args.trim() ? `\n\nUser arguments:\n${args.trim()}` : "";
   const commandContext = `Mode: ${mode}\nCommand: /${command}${argText}`;
+  const previewGuidance = command === "picm-adopt" || command === "picm-maintain"
+    ? "\n\nBefore every proposed project write, follow the skill's shipped summary-preview and exact-review protocol; require a separate explicit approval for the current proposal."
+    : command === "picm-help"
+      ? "\n\nExplain the shipped adoption/maintenance summary-preview, selective exact-review, and separate write-approval behavior."
+      : "";
   if (privacyBootstrap) {
-    return `Privacy-first startup — follow this order exactly:\n1. Call \`picm_scan_control\` with \`action: "preflight"\`. Do not load the skill or use any other tool yet.\n2. After preflight, ask this exact question and wait for the user's reply:\n\n${adoptionPrivacyQuestion}\n\n3. Call \`picm_scan_control\` with \`action: "privacy"\` and every additional exact path from the reply (an empty list for \`none\`). Use \`persist: true\` only if the user requests durable exclusions.\n4. Only after privacy review completes, load the \`picm-factory\` skill and its \`SKILL.md\`, then continue the ${mode} workflow.\n\n${commandContext}`;
+    return `Privacy-first startup — follow this order exactly:\n1. Call \`picm_scan_control\` with \`action: "preflight"\`. Do not load the skill or use any other tool yet.\n2. After preflight, ask this exact question and wait for the user's reply:\n\n${adoptionPrivacyQuestion}\n\n3. Prepare the privacy call with every additional exact path from the reply (an empty list for \`none\`). Use \`persist: true\` only if the user requests durable exclusions. Before a call with \`persist: true\`, present the complete concise \`.picm/config.json\` summary categories: affected files and operations, behavior or configuration changes, linked cross-file moves, preserved behavior, known uncertainty, and mandatory exact review. Use \`None\` for empty categories, mark the safety/configuration change as mandatory exact review, and obtain the user's summary acceptance. Then call \`picm_scan_control\` with \`action: "privacy"\`; its exact TUI patch confirmation is the mandatory exact review and separate write approval.\n4. Only after privacy review completes, load the \`picm-factory\` skill and its \`SKILL.md\`, then continue the ${mode} workflow.\n\n${commandContext}${previewGuidance}`;
   }
-  return `Use the picm-factory skill. Load its SKILL.md before proceeding.\n\n${commandContext}`;
+  return `Use the picm-factory skill. Load its SKILL.md before proceeding.\n\n${commandContext}${previewGuidance}`;
 }
 
 function scheduledMaintenancePrompt(): string {
@@ -95,7 +100,7 @@ export default function picmFactoryExtension(pi: ExtensionAPI) {
     promptGuidelines: [
       "Only an explicit /picm-new, /picm-adopt, or /picm-maintain command authorizes picm_scan_control; natural-language requests do not.",
       "After an explicit command, call picm_scan_control preflight before any scan, ask the privacy question, then call privacy with every exact project-relative excluded path before begin.",
-      "Use picm_scan_control privacy with persist true only when the user requests durable exclusions; the action presents the exact .picm/config.json patch for TUI confirmation.",
+      "Use picm_scan_control privacy with persist true only when the user requests durable exclusions. First present and obtain acceptance of the complete concise .picm/config.json summary, marking the safety/configuration change as mandatory exact review; then use the action's exact TUI patch confirmation as the mandatory exact review and separate write approval.",
       "Use picm_scan_control inventory only after begin, end after each scan phase, and complete when the PiCM workflow finishes.",
       "An active automatic advisory session may use only picm_scan_control inventory; it does not authorize begin, end, complete, status, Bash, or writes.",
     ],
@@ -163,7 +168,7 @@ export default function picmFactoryExtension(pi: ExtensionAPI) {
     promptSnippet: "Preview or configure deterministic PiCM maintenance cadence",
     promptGuidelines: [
       "Use picm_maintenance_policy preview to calculate exact maintenance JSON before including it in a scaffold/adoption preview.",
-      "A preview returns a previewId. When applying that preview as a standalone policy write, pass only action apply and that previewId so the exact timestamps are reused; the tool performs its own TUI confirmation.",
+      "A preview returns a previewId. Before applying it as a standalone policy write, present and obtain acceptance of the complete concise .picm/config.json summary, marking the configuration change as mandatory exact review. Then pass only action apply and that previewId so the exact timestamps are reused; the tool's exact TUI confirmation is the mandatory exact review and separate write approval.",
     ],
     parameters: Type.Object({
       action: StringEnum(["preview", "apply", "status"] as const),

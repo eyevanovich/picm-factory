@@ -9,3 +9,5 @@ Command: /picm-maintain
 
 User arguments:
 $ARGUMENTS
+
+Before every proposed project write, follow the skill's shipped summary-preview and exact-review protocol; require a separate explicit approval for the current proposal. In an interactive TUI privacy bootstrap, before calling `picm_scan_control` privacy with `persist: true`, present and obtain acceptance of the complete concise `.picm/config.json` summary, mark the safety/configuration change as mandatory exact review, and use the tool's exact TUI patch confirmation as the mandatory exact review and separate write approval.

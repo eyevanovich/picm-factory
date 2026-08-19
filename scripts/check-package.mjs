@@ -28,6 +28,7 @@ const required = [
   "test/maintenance-config-store.test.mjs",
   "test/maintenance-controller.test.mjs",
   "test/maintenance-extension.test.mjs",
+  "test/preview-review-contract.test.mjs",
   "test/privacy-policy.test.mjs",
   "extensions/picm-factory.ts",
   "extensions/runtime/git-read-gate.mjs",
@@ -37,6 +38,7 @@ const required = [
   "extensions/runtime/maintenance-controller.mjs",
   "extensions/runtime/runtime-coordinator.mjs",
   "skills/picm-factory/SKILL.md",
+  "skills/picm-factory/references/preview-review-protocol.md",
   "prompts/picm-new.md",
   "prompts/picm-adopt.md",
   "prompts/picm-maintain.md",
@@ -122,6 +124,7 @@ const requiredPackageFiles = [
   "skills/picm-factory/references/interview-guide.md",
   "skills/picm-factory/references/layout-profiles.md",
   "skills/picm-factory/references/maintenance-rubric.md",
+  "skills/picm-factory/references/preview-review-protocol.md",
   "skills/picm-factory/templates/code-boundary-context.md",
   "skills/picm-factory/templates/context-map.md",
   "skills/picm-factory/templates/handoff-card.md",
@@ -343,6 +346,52 @@ for (const [file, signals] of Object.entries(adoptionPrivacyQuestionGuidance)) {
   for (const signal of signals) {
     if (!text.includes(signal)) {
       console.error(`Adoption privacy-question guidance ${file} missing signal: ${signal}`);
+      process.exit(1);
+    }
+  }
+}
+
+const previewReviewGuidance = {
+  "skills/picm-factory/references/preview-review-protocol.md": [
+    "Affected files and operations",
+    "Behavior or configuration changes",
+    "Linked cross-file moves",
+    "Preserved behavior",
+    "Known uncertainty",
+    "Mandatory exact review",
+    "View all",
+    "Select files",
+    "Return to summary",
+    "unified diff",
+    "complete proposed content",
+    "complete removed content",
+    "source and destination together",
+    "not a deterministic plan engine",
+    "custom TUI",
+    "workflow executor",
+  ],
+  "skills/picm-factory/SKILL.md": [
+    "references/preview-review-protocol.md",
+    "Before every proposed project write",
+  ],
+  "skills/picm-factory/references/adoption-guide.md": ["preview-review-protocol.md"],
+  "skills/picm-factory/references/coding-adoption-guide.md": ["preview-review-protocol.md"],
+  "skills/picm-factory/references/maintenance-rubric.md": ["preview-review-protocol.md"],
+  "prompts/picm-adopt.md": ["summary-preview and exact-review protocol"],
+  "prompts/picm-maintain.md": ["summary-preview and exact-review protocol"],
+  "prompts/picm-help.md": ["complete concise summary", "selective exact review"],
+  "extensions/picm-factory.ts": [
+    "summary-preview and exact-review protocol",
+    "adoption/maintenance summary-preview, selective exact-review",
+  ],
+  "README.md": ["complete concise summary", "View all", "Select files", "Return to summary"],
+  "docs/layout-fixture-qa.md": ["both `/picm-adopt` and `/picm-maintain`", "Repeat the no-write check"],
+};
+for (const [file, signals] of Object.entries(previewReviewGuidance)) {
+  const text = readFileSync(join(root, file), "utf8");
+  for (const signal of signals) {
+    if (!text.includes(signal)) {
+      console.error(`Preview/review guidance ${file} missing signal: ${signal}`);
       process.exit(1);
     }
   }
