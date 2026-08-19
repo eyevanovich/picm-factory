@@ -9,6 +9,11 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import {
+  BALANCED_MAINTENANCE_GUIDANCE,
+  STRICT_MAINTENANCE_GUIDANCE,
+  resolveStoredCodingMaintenancePreset,
+} from "../extensions/runtime/coding-maintenance-depth.mjs";
 
 const root = process.cwd();
 const required = [
@@ -32,6 +37,7 @@ const required = [
   "test/optimization-contract.test.mjs",
   "test/privacy-policy.test.mjs",
   "extensions/picm-factory.ts",
+  "extensions/runtime/coding-maintenance-depth.mjs",
   "extensions/runtime/git-read-gate.mjs",
   "extensions/runtime/maintenance-policy.mjs",
   "extensions/runtime/privacy-policy.mjs",
@@ -114,6 +120,7 @@ const requiredPackageFiles = [
   "README.md",
   "LICENSE",
   "extensions/picm-factory.ts",
+  "extensions/runtime/coding-maintenance-depth.mjs",
   "extensions/runtime/git-read-gate.mjs",
   "extensions/runtime/maintenance-policy.mjs",
   "extensions/runtime/privacy-policy.mjs",
@@ -265,7 +272,7 @@ const codingGuidance = {
     "/picm-adopt coding",
     "Coding Repository",
     "codebase-map capability",
-    "Light/Balanced/Strict",
+    "`maintenancePreset: \"strict\"`.",
   ],
   "skills/picm-factory/references/coding-adoption-guide.md": [
     "git check-ignore --no-index",
@@ -285,9 +292,11 @@ const codingGuidance = {
     "`inventory` for candidate discovery",
   ],
   "skills/picm-factory/references/coding-maintenance-rubric.md": [
-    "### Light",
+    "### Light (compatibility only)",
     "### Balanced",
     "### Strict",
+    "Strict (recommended): broader systematic coverage across declared roots and mapped contexts; higher cost.",
+    "Balanced: representative coverage of major boundaries and one coding path; lower cost.",
     "Coding cold-agent walk",
     "Future automation boundary",
     "`.git/info/exclude`",
@@ -316,6 +325,35 @@ for (const [file, signals] of Object.entries(codingGuidance)) {
       console.error(`Coding-repository guidance ${file} missing signal: ${signal}`);
       process.exit(1);
     }
+  }
+}
+
+const maintenanceDepthGuidanceFiles = [
+  "README.md",
+  "prompts/picm-help.md",
+  "prompts/picm-maintain.md",
+  "skills/picm-factory/SKILL.md",
+  "skills/picm-factory/references/coding-maintenance-rubric.md",
+  "docs/layout-fixture-qa.md",
+];
+for (const file of maintenanceDepthGuidanceFiles) {
+  const text = readFileSync(join(root, file), "utf8");
+  for (const signal of [STRICT_MAINTENANCE_GUIDANCE, BALANCED_MAINTENANCE_GUIDANCE]) {
+    if (!text.includes(signal)) {
+      console.error(`Maintenance depth guidance ${file} missing exact copy: ${signal}`);
+      process.exit(1);
+    }
+  }
+}
+for (const [stored, expected] of [
+  ["light", "light"],
+  ["balanced", "balanced"],
+  ["strict", "strict"],
+  [undefined, "balanced"],
+]) {
+  if (resolveStoredCodingMaintenancePreset(stored) !== expected) {
+    console.error(`Stored coding maintenance compatibility failed for: ${stored}`);
+    process.exit(1);
   }
 }
 
@@ -764,7 +802,7 @@ const commandDecisionSignals = [
   "type a space",
   "/picm-new [workflow description]",
   "/picm-adopt [coding | adoption request]",
-  "/picm-maintain [coding | routing",
+  "/picm-maintain [strict | balanced | coding | routing",
   "/picm-optimize",
 ];
 for (const file of commandDecisionGuidanceFiles) {
@@ -1010,8 +1048,8 @@ for (const [fixture, mapSignals] of Object.entries(codingMapSignals)) {
     console.error(`Coding-repository fixture has invalid map shape: ${fixture}`);
     process.exit(1);
   }
-  if (!["light", "balanced", "strict"].includes(codebaseMap.maintenancePreset)) {
-    console.error(`Coding-repository fixture has invalid maintenance preset: ${fixture}`);
+  if (codebaseMap.maintenancePreset !== "strict") {
+    console.error(`Newly adopted coding-repository fixture must use the strict maintenance preset: ${fixture}`);
     process.exit(1);
   }
   for (const path of [codebaseMap.map, ...codebaseMap.roots, ...codebaseMap.localContexts]) {

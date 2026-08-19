@@ -6,6 +6,12 @@ import {
 import { StringEnum } from "@earendil-works/pi-ai";
 import { join } from "node:path";
 import { Type } from "typebox";
+import {
+  BALANCED_MAINTENANCE_GUIDANCE,
+  MAINTENANCE_DEPTH_CHOICES,
+  STRICT_MAINTENANCE_GUIDANCE,
+  parseMaintenanceDepthArgument,
+} from "./runtime/coding-maintenance-depth.mjs";
 import { packageRootFromImportMeta } from "./runtime/git-read-gate.mjs";
 import { createRuntimeCoordinator } from "./runtime/runtime-coordinator.mjs";
 
@@ -16,7 +22,7 @@ const scanWorkflowEntryType = "picm-scan-workflow";
 const commandDescriptions: Record<CommandName, string> = {
   "picm-new": "Create a workspace; optionally add a workflow description after the command",
   "picm-adopt": "Adopt an existing workspace safely; type a space for optional arguments",
-  "picm-maintain": "Check workspace health; type a space for focus and trace arguments",
+  "picm-maintain": "Check workspace health; type a space for one-run depth and focus arguments",
   "picm-optimize": "Optimize agent-facing documentation without changing intended outcomes",
   "picm-help": "Show command syntax, arguments, examples, setup, and safety guidance",
 };
@@ -30,6 +36,8 @@ const adoptArgumentCompletions = [
 ];
 
 const maintainArgumentCompletions = [
+  { value: "strict", label: "strict", description: STRICT_MAINTENANCE_GUIDANCE },
+  { value: "balanced", label: "balanced", description: BALANCED_MAINTENANCE_GUIDANCE },
   { value: "coding", label: "coding", description: "Check repository context-map drift" },
   {
     value: 'trace "final output drifted from approved source"',
@@ -261,6 +269,26 @@ export default function picmFactoryExtension(pi: ExtensionAPI) {
       } : {}),
       handler: async (args, ctx) => {
         await ctx.waitForIdle();
+        let promptArgs = args;
+        let maintenanceDepthContext = "";
+        if (command === "picm-maintain") {
+          const parsed = parseMaintenanceDepthArgument(args);
+          let depth = parsed.depth;
+          promptArgs = parsed.remainingArgs;
+          if (!depth && ctx.mode === "tui") {
+            const selected = await ctx.ui.select(
+              "Choose maintenance depth for this run (stored preset will not change)",
+              MAINTENANCE_DEPTH_CHOICES,
+            );
+            if (!selected) {
+              ctx.ui.notify("PiCM maintenance cancelled before scan authorization.", "info");
+              return;
+            }
+            depth = selected === BALANCED_MAINTENANCE_GUIDANCE ? "balanced" : "strict";
+          }
+          depth ??= "strict";
+          maintenanceDepthContext = `\n\nMaintenance run depth: ${depth}. Apply this depth to this run only. Do not mutate \`capabilities.codebaseMap.maintenancePreset\`.`;
+        }
         if (command !== "picm-help") {
           const authorization = coordinator.authorizeWorkflow(ctx, command);
           pi.appendEntry(scanWorkflowEntryType, { status: "authorized", ...authorization });
@@ -268,12 +296,12 @@ export default function picmFactoryExtension(pi: ExtensionAPI) {
           recordClearedWorkflow(ctx);
         }
         try {
-          pi.sendUserMessage(buildPrompt(
+          pi.sendUserMessage(`${buildPrompt(
             command,
-            args,
+            promptArgs,
             command === "picm-adopt" || command === "picm-optimize" ||
               ((command === "picm-new" || command === "picm-maintain") && ctx.mode === "tui"),
-          ));
+          )}${maintenanceDepthContext}`);
         } catch (error) {
           if (command !== "picm-help") {
             coordinator.clearWorkflow(ctx);

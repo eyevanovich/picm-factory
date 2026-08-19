@@ -25,7 +25,7 @@
         "apps/api/CONTEXT.md",
         "packages/shared/CONTEXT.md"
       ],
-      "maintenancePreset": "balanced"
+      "maintenancePreset": "strict"
     }
   }
 }

@@ -87,15 +87,13 @@ Offer:
 
 Curated mode is permission to analyze and propose—not permission to apply. Apply `preview-review-protocol.md` before every proposed project write. Highlight linked moves and deletions in the summary; deletions require mandatory exact review before separate approval for the complete current change set.
 
-### 3. Maintenance preset
+### 3. Automatic Strict adoption examination
 
-Offer:
+Do not ask the user to choose a maintenance depth during initial coding adoption. Perform the Strict examination automatically and record `capabilities.codebaseMap.maintenancePreset: "strict"` in the exact config preview.
 
-- **Light**
-- **Balanced** (recommended default)
-- **Strict**
+Strict (recommended): broader systematic coverage across declared roots and mapped contexts; higher cost.
 
-Explain the tradeoff using `coding-maintenance-rubric.md`. Keep configuration preset-first; do not present a matrix of per-check toggles.
+Use the Strict checks in `coding-maintenance-rubric.md` to establish the initial map baseline. This remains a bounded, protected scan: it does not authorize exhaustive source comprehension, weaken privacy boundaries, or approve writes.
 
 ### 4. Optional user hints
 
@@ -268,13 +266,15 @@ Record only what maintenance needs. Example coding-primary config:
       "roots": ["apps", "packages"],
       "map": "CONTEXT-MAP.md",
       "localContexts": ["apps/web/CONTEXT.md"],
-      "maintenancePreset": "balanced"
+      "maintenancePreset": "strict"
     }
   }
 }
 ```
 
 For a hybrid, preserve the primary workflow profile and use the same optional `capabilities.codebaseMap` object. Roots may overlap `paths.workflowFolders`. If the map lives in the routing file or an existing architecture document, record that path instead of manufacturing `CONTEXT-MAP.md`.
+
+Existing configs remain compatible: explicit `light`, `balanced`, and `strict` values are readable and honored, while a historically missing value falls back to Balanced. Light is compatibility-only and must not appear in new adoption choices or new adoption output.
 
 When the user approves durable PiCM-only scan exclusions, preserve their normalized project-relative paths in the same config:
 
@@ -300,7 +300,8 @@ Add these sections to the normal adoption report when coding adoption is selecte
 - Mapping approach selected:
 - Resulting map shape:
 - Adoption depth:
-- Maintenance preset:
+- Initial examination: Strict
+- Stored maintenance preset: strict
 
 ## Repository boundaries proposed
 

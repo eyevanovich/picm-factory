@@ -34,7 +34,7 @@ Slash commands accept optional text after the command. Bare commands remain vali
 | --- | --- |
 | `/picm-new [workflow description]` | Supplies optional free-form seed context for the setup interview. |
 | `/picm-adopt [coding | adoption request]` | `coding` skips the initial repository classification; other text describes the adoption focus. |
-| `/picm-maintain [coding | routing | handoffs | stale-context | security | trace "drift symptom"]` | Focuses the advisory check or investigates one concrete symptom. |
+| `/picm-maintain [strict | balanced | coding | routing | handoffs | stale-context | security | trace "drift symptom"]` | Chooses a one-run depth, focuses the advisory check, or investigates one concrete symptom. |
 | `/picm-optimize` | Inspects agent-facing documentation and presents selectable outcome-preserving proposals. |
 | `/picm-help` | Shows this command reference together with setup and safety guidance. |
 
@@ -44,7 +44,8 @@ Arguments are conversational input rather than required flags. For example:
 /picm-new Create a three-stage publishing workflow
 /picm-adopt coding
 /picm-adopt Include the optional file-role inventory; preview only
-/picm-maintain routing
+/picm-maintain strict
+/picm-maintain balanced routing
 /picm-maintain trace "final output drifted from the approved source"
 /picm-optimize
 ```
@@ -116,8 +117,15 @@ For coding repositories, regular `/picm-adopt` can safely detect repository sign
 - root, distributed, or scan-and-recommend mapping;
 - additive adoption or a curated documentation-consolidation proposal;
 - `CONTEXT-MAP.md` for substantial maps and selected local `CONTEXT.md` files for meaningful boundaries;
-- Light, Balanced, or Strict manual maintenance;
+- an automatic Strict initial examination, stored as `capabilities.codebaseMap.maintenancePreset: "strict"` without a depth question;
 - hybrid workspaces where codebase mapping overlaps Stage Pipeline, Specialist Folder, Team / Role OS, or custom layouts.
+
+Every later interactive `/picm-maintain` run selects a one-run depth with Strict preselected. `/picm-maintain strict` and `/picm-maintain balanced` bypass the selector. The run choice never silently changes the stored preset.
+
+- Strict (recommended): broader systematic coverage across declared roots and mapped contexts; higher cost.
+- Balanced: representative coverage of major boundaries and one coding path; lower cost.
+
+Historical stored `light`, `balanced`, and `strict` values remain readable and honored, and a missing value falls back to Balanced. Light is compatibility-only and is not offered in new adoption or interactive selectors.
 
 Every explicit `/picm-new`, `/picm-adopt`, `/picm-maintain`, and `/picm-optimize` workflow starts privacy-pending rather than scan-active. `picm_scan_control preflight` checks Git status plus root `.gitignore` and repository-local `.git/info/exclude` presence without inventorying files or creating temporary Git metadata. PiCM then explains that Git ignore rules and its path protections apply automatically, and asks only for additional sensitive project-relative paths not already covered. This list remains important for sensitive eligible files PiCM cannot infer. Exact exclusions are recorded before `begin` can activate a scan. Approved durable exclusions live in `.picm/config.json` under `privacy.excludedPaths`; session additions are merged, survive same-session resume, and remain enforced until completion or expiry revokes the workflow.
 

@@ -24,7 +24,7 @@
       "localContexts": [
         "packages/core/CONTEXT.md"
       ],
-      "maintenancePreset": "balanced"
+      "maintenancePreset": "strict"
     }
   }
 }

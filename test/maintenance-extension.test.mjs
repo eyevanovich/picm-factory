@@ -29,14 +29,16 @@ function nonGitFixture(t, maintenance) {
   return cwd;
 }
 
-function harness({ entries = [], confirm = true, sendError } = {}) {
+function harness({ entries = [], confirm = true, selectResult, sendError } = {}) {
   const handlers = new Map();
   const commands = new Map();
   const tools = new Map();
   const sent = [];
   const notifications = [];
   const confirmations = [];
+  const selections = [];
   let confirmationResult = confirm;
+  let nextSelection = selectResult;
   const pi = {
     on(name, handler) { handlers.set(name, handler); },
     registerCommand(name, definition) { commands.set(name, definition); },
@@ -60,6 +62,10 @@ function harness({ entries = [], confirm = true, sendError } = {}) {
     },
     ui: {
       notify(message, level) { notifications.push({ message, level }); },
+      select: async (title, items) => {
+        selections.push({ title, items });
+        return nextSelection ?? items[0];
+      },
       confirm: async (title, message) => {
         confirmations.push({ title, message });
         return confirmationResult;
@@ -74,9 +80,11 @@ function harness({ entries = [], confirm = true, sendError } = {}) {
     sent,
     notifications,
     confirmations,
+    selections,
     entries,
     context,
     setConfirm(value) { confirmationResult = value; },
+    setSelection(value) { nextSelection = value; },
   };
 }
 
@@ -88,7 +96,7 @@ test("command descriptions and completions expose optional arguments", () => {
   const h = harness();
   assert.match(h.commands.get("picm-new").description, /optionally add a workflow description/);
   assert.match(h.commands.get("picm-adopt").description, /type a space for optional arguments/);
-  assert.match(h.commands.get("picm-maintain").description, /type a space for focus and trace arguments/);
+  assert.match(h.commands.get("picm-maintain").description, /type a space for one-run depth and focus arguments/);
   assert.match(h.commands.get("picm-optimize").description, /agent-facing documentation/);
   assert.match(h.commands.get("picm-help").description, /command syntax, arguments, examples/);
 
@@ -102,10 +110,66 @@ test("command descriptions and completions expose optional arguments", () => {
   assert.equal(h.commands.get("picm-adopt").getArgumentCompletions("unknown"), null);
 
   const maintain = h.commands.get("picm-maintain").getArgumentCompletions("");
-  assert.equal(maintain.length, 8);
+  assert.equal(maintain.length, 10);
+  assert.deepEqual(maintain.slice(0, 2), [
+    {
+      value: "strict",
+      label: "strict",
+      description: "Strict (recommended): broader systematic coverage across declared roots and mapped contexts; higher cost.",
+    },
+    {
+      value: "balanced",
+      label: "balanced",
+      description: "Balanced: representative coverage of major boundaries and one coding path; lower cost.",
+    },
+  ]);
   assert.equal(maintain.every((item) => typeof item.description === "string" && item.description.length > 0), true);
   assert.equal(h.commands.get("picm-maintain").getArgumentCompletions("tr").length, 3);
   assert.equal(h.commands.get("picm-maintain").getArgumentCompletions("unknown"), null);
+});
+
+test("interactive maintain selects strict-first one-run depth without mutating the stored preset", async (t) => {
+  const cwd = fixture(t);
+  const h = harness();
+
+  await h.commands.get("picm-maintain").handler("coding", h.context(cwd));
+
+  assert.equal(h.selections.length, 1);
+  assert.deepEqual(h.selections[0], {
+    title: "Choose maintenance depth for this run (stored preset will not change)",
+    items: [
+      "Strict (recommended): broader systematic coverage across declared roots and mapped contexts; higher cost.",
+      "Balanced: representative coverage of major boundaries and one coding path; lower cost.",
+    ],
+  });
+  assert.match(h.sent[0], /User arguments:\ncoding/);
+  assert.match(h.sent[0], /Maintenance run depth: strict\. Apply this depth to this run only\./);
+  assert.match(h.sent[0], /Do not mutate `capabilities\.codebaseMap\.maintenancePreset`/);
+});
+
+test("explicit strict and balanced maintenance depths bypass the selector", async (t) => {
+  for (const depth of ["strict", "balanced"]) {
+    const cwd = fixture(t);
+    const h = harness();
+
+    await h.commands.get("picm-maintain").handler(depth, h.context(cwd));
+
+    assert.equal(h.selections.length, 0);
+    assert.doesNotMatch(h.sent[0], /User arguments:/);
+    assert.match(h.sent[0], new RegExp(`Maintenance run depth: ${depth}\\.`));
+    assert.match(h.sent[0], /Apply this depth to this run only/);
+  }
+});
+
+test("cancelled maintenance depth selection does not authorize a scan", async (t) => {
+  const cwd = fixture(t);
+  const h = harness({ selectResult: "" });
+
+  await h.commands.get("picm-maintain").handler("", h.context(cwd));
+
+  assert.equal(h.sent.length, 0);
+  assert.equal(h.entries.length, 0);
+  assert.match(h.notifications.at(-1).message, /cancelled before scan authorization/);
 });
 
 test("adopt coding dispatches preflight and exact privacy copy before skill loading", async (t) => {

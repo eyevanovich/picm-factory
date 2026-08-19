@@ -41,11 +41,13 @@ during a general `/picm-maintain` smoke. Record fixture-specific observations he
 Expected behavior:
 
 - Starts with a compact command-syntax and argument reference, says bare commands remain valid, and explains: type a space after `/picm-adopt` or `/picm-maintain` to show registered argument completions.
-- Shows `/picm-new [workflow description]`, `/picm-adopt [coding | adoption request]`, `/picm-maintain [coding | routing | handoffs | stale-context | security | trace "drift symptom"]`, and `/picm-optimize`.
+- Shows `/picm-new [workflow description]`, `/picm-adopt [coding | adoption request]`, `/picm-maintain [strict | balanced | coding | routing | handoffs | stale-context | security | trace "drift symptom"]`, and `/picm-optimize` as optional conversational arguments rather than required flags.
 - Uses plain situations rather than requiring PiCM/ICM terminology.
 - Routes new or mostly empty folders to `/picm-new` and existing source-code, agent/workflow, or Claude-style folders to the read-only `/picm-adopt` flow.
 - Presents `/picm-adopt coding` as an optional shortcut for a known repository or monorepo while explaining that regular `/picm-adopt` can offer the same Coding Repository profile.
-- Routes general workspace health/drift to `/picm-maintain`, one concrete symptom to `/picm-maintain trace "describe what drifted"`, and repetitive or diffuse agent-facing documentation to `/picm-optimize`.
+- Routes general workspace health/drift to `/picm-maintain` and one concrete symptom to `/picm-maintain trace "describe what drifted"`.
+- Explains the Strict-first one-run selector, `/picm-maintain strict`, `/picm-maintain balanced`, no stored-preset mutation, and the exact Strict/Balanced behavior-and-cost guidance.
+- Routes repetitive or diffuse agent-facing documentation to `/picm-optimize`.
 - Recommends `/picm-adopt` when the user is unsure whether an existing folder should use new or adopt.
 - Explains project-local install, preview-before-write, non-destructive adoption, git/security safety, and `.pi/` versus `.picm/`.
 
@@ -93,7 +95,7 @@ Expected behavior:
 
 - After privacy review, regular `/picm-adopt` uses only shallow protected-inventory path signals before offering the Coding Repository profile; it does not require the shortcut.
 - `/picm-adopt coding` skips the initial classification question but preserves the same security, scan, preview, and approval rules.
-- The flow offers root, distributed, and scan-and-recommend mapping; additive and curated adoption; and Light, Balanced, or Strict maintenance.
+- The flow offers root, distributed, and scan-and-recommend mapping plus additive and curated adoption. It does not ask for maintenance depth: it automatically performs the Strict examination and previews `capabilities.codebaseMap.maintenancePreset: "strict"`.
 - The user can choose Coding Repository as the primary profile or add codebase mapping to another primary profile.
 - No files are written without an accepted complete summary, any mandatory exact review, and separate approval.
 
@@ -195,7 +197,7 @@ Expected behavior:
 
 Observed smoke: 2026-07-22 in visible Zellij/Pi panes against `/tmp/picm-coding-ignore-smoke`.
 
-- `/picm-adopt coding` entered Coding Repository directly with Root/Additive/Light choices, derived candidates through Git, reported that ignored content was not opened and symlinks were not followed, produced an exact additive preview, and applied no changes.
+- The earlier observed adoption smoke predates Strict-first behavior. Rerun it before recording a current observation; the regression expectation is no maintenance-depth choice and a Strict examination.
 - Regular `/picm-adopt` first performed path-only Git-aware classification from `package.json`, `src/`, and `test/`, offered/selected Coding Repository without needing the shortcut, and asked the tracked-data security question before content inspection.
 - The regular flow recognized the repo was small enough to keep its root map in `AGENTS.md` rather than manufacture `CONTEXT-MAP.md`.
 - It reported `.env.tracked` as ignored and unread, did not follow `ignored-target-link`, did not list or quote ignored contents, created no `.picm/` metadata, and left the Git diff empty. Only the expected project-local `.pi/settings.json` from package installation remained untracked.
@@ -212,7 +214,11 @@ Run `/picm-maintain` against the three adopted coding fixtures.
 
 Expected behavior:
 
-- Reads the configured Light/Balanced/Strict preset and states the inspected roots and omissions.
+- A bare interactive command displays exactly two run-depth choices with Strict preselected:
+  - Strict (recommended): broader systematic coverage across declared roots and mapped contexts; higher cost.
+  - Balanced: representative coverage of major boundaries and one coding path; lower cost.
+- `/picm-maintain strict` and `/picm-maintain balanced` bypass the selector. Every choice applies only to that run and leaves the stored preset unchanged.
+- Historical stored Light/Balanced/Strict values remain readable and preset-driven scheduled maintenance honors them; a missing stored value falls back to Balanced. Light never appears in the interactive selector.
 - Uses coding cold walks: root routing → map/equivalent → owning boundary → entry point → authoritative tests/checks.
 - `small-service` accepts the root map in `AGENTS.md`.
 - `monorepo-distributed` checks root/local responsibility agreement and manifest-level workspace coverage without attempting a full semantic dependency graph.
@@ -492,7 +498,7 @@ Expected behavior:
 - Marks `.picm/config.json` as `adoption.status: "adopted"` only when visible routing is adequate.
 - May write scanned-only `.picm/config.json`/`.picm/adoption-report.md` after approval, with a report link or brief scan summary for future `/picm-maintain` guidance.
 - Adoption report includes existing routing source, inferred layout profile, PiCM compatibility, optional ICM improvements, security/privacy notes, optional `.picm` artifacts, and a `Preserved as-is` section.
-- Coding adoption reports whether Coding Repository is primary or codebase mapping is composable, the selected mapping/adoption modes, resulting root/distributed shape, maintenance preset, proposed boundaries, evidence, and unknowns.
+- Coding adoption reports whether Coding Repository is primary or codebase mapping is composable, the selected mapping/adoption modes, resulting root/distributed shape, automatic Strict examination and stored strict preset, proposed boundaries, evidence, and unknowns.
 
 ### Optional file-role inventory
 

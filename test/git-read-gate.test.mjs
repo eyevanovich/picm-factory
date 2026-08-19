@@ -101,6 +101,7 @@ function extensionHarness({ entries = [], sendError, confirm = true } = {}) {
     },
     ui: {
       notify() {},
+      select: async (_title, items) => items[0],
       confirm: async () => confirm,
     },
   });

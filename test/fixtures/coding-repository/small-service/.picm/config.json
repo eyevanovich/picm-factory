@@ -22,7 +22,7 @@
       "roots": ["src", "test"],
       "map": "AGENTS.md",
       "localContexts": [],
-      "maintenancePreset": "light"
+      "maintenancePreset": "strict"
     }
   }
 }
