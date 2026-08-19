@@ -348,6 +348,7 @@ test("execution bindings close their stable file descriptors", async () => {
 
 test("bound built-in wrappers preserve ordinary read and write behavior on the host platform", async () => {
   await withFixture(async ({ root }) => {
+    write(join(root, "output", "host.txt"), "before\n");
     const h = extensionHarness();
     const ctx = h.context(root, "ordinary-binding-host-platform");
     const control = h.tools.get("picm_scan_control");
@@ -383,6 +384,23 @@ test("bound built-in wrappers preserve ordinary read and write behavior on the h
     assert.match(readResult.result.content[0].text, /^safe/);
     assert.equal(writeResult.isError, false);
     assert.equal(readFileSync(join(root, "output", "host.txt"), "utf8"), "host write\n");
+
+    const [missingCall] = await preflightParallelToolCalls(h, ctx, [{
+      id: "bound-host-missing-write",
+      toolName: "write",
+      input: { path: "output/missing.txt", content: "new file\n" },
+      tool: h.tools.get("write"),
+    }]);
+    if (process.platform === "linux") {
+      assert.equal(missingCall.blocked, undefined);
+      const [missingResult] = await Promise.all(executePreflightedToolCalls(h, ctx, [missingCall]));
+      assert.equal(missingResult.isError, false);
+      assert.equal(readFileSync(join(root, "output", "missing.txt"), "utf8"), "new file\n");
+    } else {
+      assert.equal(missingCall.blocked?.block, true);
+      assert.match(missingCall.blocked.reason, /descriptor-relative prospective writes are unavailable/);
+      assert.equal(existsSync(join(root, "output", "missing.txt")), false);
+    }
   });
 });
 
