@@ -77,7 +77,7 @@ Rules:
 - Keep routing readiness and adoption status separate. An inventory classification does not make inadequate routing adoptable and does not make a custom layout wrong.
 - Treat **Unclear / possible archive candidate** as a question for the owner, never a declaration that content is dead. State the evidence, preserve the path as-is, and recommend archive/delete consideration only after owner confirmation.
 - Do not turn the inventory into proposed destinations, renamed paths, or a conversion plan unless the user separately asks for options.
-- Never move, rename, archive, delete, merge, or rewrite files from the inventory. Any later file action requires an exact preview and separate explicit approval.
+- Never move, rename, archive, delete, merge, or rewrite files from the inventory. Any later file action requires an accepted complete summary, any mandatory exact review, and separate explicit approval under `preview-review-protocol.md`.
 - Keep sensitive material generic. Do not quote contents, and avoid reproducing filenames or paths that themselves reveal protected information; use a safe area label such as “private source area” when needed.
 - Omit the table when it would add noise to a small, already legible workspace.
 
@@ -143,7 +143,7 @@ Classify routing quality:
 4. **Neither exists**
    - Recommend creating `AGENTS.md` as the PiCM default.
    - Ask whether to also add a small `CLAUDE.md` compatibility shim for future Claude Code use.
-   - Preview exact contents before writing.
+   - Apply `preview-review-protocol.md` before writing.
 
 Suggested `CLAUDE.md` shim:
 
@@ -161,7 +161,7 @@ When routing is missing, partial, or conflicting, offer alternatives rather than
 - **Option 2 — Stronger ICM routing**: more opinionated route map inferred from the visible workflow, such as stage/role/specialist paths, local contracts, handoffs, stable references, and outputs.
 - **Option 3 — Scanned only for now**: write only report/scanned metadata after approval; do not mark adopted.
 
-For coding adoption, present Additive and Curated as proposal-depth choices in addition to readiness options. Curated mode can recommend canonical docs and compatibility pointers, but it does not weaken exact preview/write approval.
+For coding adoption, present Additive and Curated as proposal-depth choices in addition to readiness options. Curated mode can recommend canonical docs and compatibility pointers, but it does not weaken the summary-preview, mandatory-review, or separate-approval gate.
 
 Never write routing/context edits until the user is satisfied with the proposal and explicitly approves exact changes. Apply `preview-review-protocol.md` before every proposed project write. Treat option selection as design intent, not write approval. A preview request, review navigation, cadence choice, or vague assent is also not approval; revisions require a refreshed summary and mandatory reviews before a new separate approval.
 

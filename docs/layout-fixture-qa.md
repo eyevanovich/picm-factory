@@ -81,7 +81,7 @@ Expected behavior:
 - `/picm-adopt coding` skips the initial classification question but preserves the same security, scan, preview, and approval rules.
 - The flow offers root, distributed, and scan-and-recommend mapping; additive and curated adoption; and Light, Balanced, or Strict maintenance.
 - The user can choose Coding Repository as the primary profile or add codebase mapping to another primary profile.
-- No files are written without an exact preview and separate approval.
+- No files are written without an accepted complete summary, any mandatory exact review, and separate approval.
 
 ### Root and distributed maps
 
@@ -244,7 +244,7 @@ Expected behavior:
 - Identifies the final announcement's September 28 date as inconsistent with the approved September 18 date.
 - Reports **high confidence** in the visible output inconsistency, but only **medium confidence** that the publishing contract's weak fact-alignment Verify step contributed; it must not claim causal or provenance-grade certainty.
 - Recommends **both** an output patch for this run (restore September 18) and source-context healing for future runs (a Tier 2 contract fix requiring exact logistical facts to be checked against the approved brief).
-- Keeps trace mode framed as a heuristic, focused investigation and does not write either repair without exact preview and explicit approval.
+- Keeps trace mode framed as a heuristic, focused investigation and does not write either repair without an accepted complete summary, any mandatory exact review, and explicit approval.
 
 ### Maintenance Anti-Patterns
 
@@ -472,7 +472,7 @@ Expected behavior:
 - Uses an adequate existing `CLAUDE.md` or `AGENTS.md` as the routing source of truth instead of proposing replacement.
 - If both files exist, checks coexistence/conflict and offers optimization only as an approved optional edit.
 - If neither file exists, recommends `AGENTS.md` as the PiCM default and asks whether to add a `CLAUDE.md` compatibility shim.
-- Does not rewrite, merge, rename, move, delete, or create visible files without exact preview, user iteration, and approval.
+- Does not rewrite, merge, rename, move, delete, or create visible files without an accepted complete summary, any mandatory exact review, user iteration, and approval.
 - Does not treat option selection as write approval; if the user asks for preview or says not to write yet, it stops after preview and waits for a separate explicit approval before writing even `.picm/` files.
 - Separates readiness labels: `Ready`, `Ready with warnings`, `Needs routing before adoption`, and `Scanned only`.
 - Marks `.picm/config.json` as `adoption.status: "adopted"` only when visible routing is adequate.
@@ -501,7 +501,7 @@ Expected behavior:
 - Keeps routing readiness separate: the inventory does not turn the fixture's partial `AGENTS.md` into adequate routing or full adoption.
 - Does not invent an archive candidate when none is supported. If a path is unclear, asks the owner and preserves it as-is rather than labeling it dead.
 - Does not propose destinations or move, rename, archive, delete, merge, rewrite, or create files from the classification.
-- Does not write files without an exact preview and separate explicit approval.
+- Does not write files without an accepted complete summary, any mandatory exact review, and separate explicit approval.
 
 Observed smoke: 2026-07-19 in a visible Zellij/Pi pane against a disposable copy at `/tmp/picm-7hj-adopt-inventory`.
 

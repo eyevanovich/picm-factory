@@ -168,7 +168,7 @@ Routing policy:
 - If both exist, preserve both and check whether they cooperate or conflict. Offer coexistence optimization only as an approved edit.
 - If neither exists, recommend creating root `AGENTS.md` and ask whether to also add a small `CLAUDE.md` shim for future Claude Code compatibility.
 
-Do not create, rewrite, merge, rename, move, or delete any visible routing/context/workflow files without exact preview, user iteration, and explicit approval. Do not write `.picm/` files from an option selection alone; require explicit approval after showing exact planned contents.
+Do not create, rewrite, merge, rename, move, or delete any visible routing/context/workflow files without an accepted complete summary, any mandatory exact review, user iteration, and explicit approval. Do not write `.picm/` files from an option selection alone; apply `references/preview-review-protocol.md` first.
 
 ## Mode: maintain (`/picm-maintain`)
 
