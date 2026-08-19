@@ -77,7 +77,7 @@ Run both regular and explicit entry paths against disposable Git copies:
 
 Expected behavior:
 
-- Regular `/picm-adopt` uses only shallow Git-ignore-aware path signals before offering the Coding Repository profile; it does not require the shortcut.
+- After privacy review, regular `/picm-adopt` uses only shallow protected-inventory path signals before offering the Coding Repository profile; it does not require the shortcut.
 - `/picm-adopt coding` skips the initial classification question but preserves the same security, scan, preview, and approval rules.
 - The flow offers root, distributed, and scan-and-recommend mapping; additive and curated adoption; and Light, Balanced, or Strict maintenance.
 - The user can choose Coding Repository as the primary profile or add codebase mapping to another primary profile.
@@ -203,7 +203,7 @@ Expected behavior:
 - `monorepo-distributed` checks root/local responsibility agreement and manifest-level workspace coverage without attempting a full semantic dependency graph.
 - `hybrid-release-code` checks both coding and workflow routes for mixed release-related changes.
 - Preserves human-authored map content and proposes the smallest evidence-backed patch rather than regenerating whole files.
-- Applies the Git-ignore read boundary before every coding scan.
+- Applies the privacy-first Git and PiCM exclusion boundary before every coding scan.
 
 ### Stage Pipeline
 

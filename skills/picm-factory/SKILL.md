@@ -36,7 +36,7 @@ Load only what you need:
 - `references/interview-guide.md` — `/picm-new` interview flow.
 - `references/layout-profiles.md` — layout profile definitions and recommendation rules.
 - `references/adoption-guide.md` — `/picm-adopt` non-invasive process.
-- `references/coding-adoption-guide.md` — coding-repository detection, Git-ignore-safe scanning, mapping choices, and additive/curated adoption.
+- `references/coding-adoption-guide.md` — coding-repository detection, privacy-first protected scanning, mapping choices, and additive/curated adoption.
 - `references/maintenance-rubric.md` — `/picm-maintain` validation rubric.
 - `references/coding-maintenance-rubric.md` — Light/Balanced/Strict coding-map drift checks.
 

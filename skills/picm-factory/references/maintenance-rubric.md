@@ -14,7 +14,7 @@ Do not use hard failures unless the project is unreadable or dangerous.
 
 `/picm-maintain` is a heuristic health report and focused drift-investigation helper for folder-agent and coding-repository workspaces. It should keep the workspace aligned over time, but it must not silently rewrite the user's system or imply provenance-grade causal tracing.
 
-When the Coding Repository profile, `capabilities.codebaseMap`, or visible `CONTEXT-MAP.md` is present, load `coding-maintenance-rubric.md`. Its Light/Balanced/Strict checks extend this rubric, and its Git-ignore-safe read boundary applies before any coding scan.
+When the Coding Repository profile, `capabilities.codebaseMap`, or visible `CONTEXT-MAP.md` is present, load `coding-maintenance-rubric.md`. Its Light/Balanced/Strict checks extend this rubric, and its privacy-first exclusion boundary applies before any coding scan.
 
 For every non-trivial Warning or Suggestion, include a healing path:
 
@@ -25,7 +25,7 @@ For every non-trivial Warning or Suggestion, include a healing path:
 
 Never apply repairs automatically. Offer exact edits only in `Changes I can apply with your approval` and wait for explicit approval before writing.
 
-A configured automatic cycle means the first eligible interactive TUI session after `nextDueAt`, not a daemon or wall-clock job while Pi is closed. That cycle is chat-only and read-only: no agent-initiated Bash, report write, repair, commit, external side effect, or auto-heal. User-typed `!bash` remains unrestricted. The opted-in atomic update of `lastCycleAt`/`nextDueAt` is schedule bookkeeping and authorizes no other write. A due nudge only notifies and does not reset the cycle. Automatic maintenance may run with or without `.git`; when repository metadata is absent, the extension's transient isolated Git view still honors `.gitignore` without modifying the workspace.
+A configured automatic cycle means the first eligible interactive TUI session after `nextDueAt`, not a daemon or wall-clock job while Pi is closed. That cycle is chat-only and read-only: no agent-initiated Bash, report write, repair, commit, external side effect, or auto-heal. User-typed `!bash` remains unrestricted. The opted-in atomic update of `lastCycleAt`/`nextDueAt` is schedule bookkeeping and authorizes no other write. A due nudge only notifies and does not reset the cycle. Automatic maintenance may run with or without `.git`; it loads persisted PiCM exclusions, and when repository metadata is absent the extension's transient isolated Git view still honors `.gitignore` without modifying the workspace.
 
 ## Repair tiers
 
@@ -240,7 +240,7 @@ Healing paths:
 
 Checks:
 
-- explicitly invoked PiCM scans derive candidates through the Git-backed inventory, and built-in path reads receive an immediate `git check-ignore --no-index` gate; ignored paths are never opened, even when tracked
+- explicitly invoked PiCM workflows complete privacy review before protected inventory, and path reads receive immediate Git and PiCM exclusion checks; matching paths are never opened, even when tracked
 - `.gitignore` covers obvious secrets
 - context/examples do not contain credentials or sensitive data by accident
 - private/client material is handled intentionally
@@ -251,7 +251,7 @@ Typical findings:
 - committed `.env`/keys/tokens: Warning.
 - sensitive client data copied into examples without need: Warning.
 - missing `.env.example`: Suggestion.
-- coding scan reads or bypasses a Git-ignored path: Warning; stop the scan, disclose the boundary failure without quoting content, and do not continue until the user confirms a safe recovery path.
+- coding scan reads or bypasses a Git-ignored or PiCM-excluded path: Warning; stop the scan, disclose the boundary failure without quoting content, and do not continue until the user confirms a safe recovery path.
 
 ## Output format
 

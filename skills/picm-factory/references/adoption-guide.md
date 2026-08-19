@@ -322,5 +322,5 @@ Do not do these without explicit user approval for the exact action:
 - treat an inventory classification as permission to move, rename, archive, delete, merge, or rewrite a file
 - label a file dead or obsolete when visible evidence only supports “unclear”
 - treat an option choice or preview request as write approval
-- read a Git-ignored file during coding detection, adoption, or maintenance
-- bypass ignore rules through direct reads, `git show`, broad traversal, another worktree, or tracked-file status
+- read a Git-ignored or PiCM-excluded file during coding detection, adoption, or maintenance
+- bypass Git or PiCM exclusion rules through direct reads, `git show`, broad traversal, another worktree, or tracked-file status

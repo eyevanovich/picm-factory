@@ -172,7 +172,7 @@ Optional source-cited impact notes may document non-local effects that imports a
 
 The first-run checklist should be user-facing: tell the user they can state one real coding task normally, then describe what the agent should do from the auto-loaded root routing → map/equivalent → owning boundary → entry point → authoritative tests/checks. The user reviews the presented code diff and check result; the agent keeps cross-boundary effects and unknowns visible. Recommend `/picm-maintain` after the first real change or when repository boundaries/manifests/verification sources change.
 
-During explicitly invoked PiCM scan phases, ignored files are unreadable. Load `coding-adoption-guide.md` or `coding-maintenance-rubric.md` for the authoritative read-boundary procedure.
+During explicitly invoked PiCM workflows, protected paths are unreadable after the required privacy review. Load `coding-adoption-guide.md` or `coding-maintenance-rubric.md` for the authoritative exclusion-boundary procedure.
 
 ## Custom / Existing Structure
 
