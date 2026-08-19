@@ -1,6 +1,6 @@
 # Summary Preview and Exact Review Protocol
 
-Use this protocol for every project write proposed by `/picm-adopt` or `/picm-maintain`. It is conversational guidance, not a deterministic plan engine or semantic-equivalence checker.
+Use this protocol for every project write proposed by `/picm-adopt`, `/picm-maintain`, or `/picm-optimize`. It is conversational guidance, not a deterministic plan engine or semantic-equivalence checker.
 
 ## Write gate
 

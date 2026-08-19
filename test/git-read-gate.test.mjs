@@ -1265,7 +1265,7 @@ test("malformed completed state restores fail closed until settlement", async ()
 test("interactive commands bootstrap privacy before trusted skill loading", async () => {
   await withFixture(async ({ root }) => {
     const packageRoot = resolve(".");
-    for (const command of ["picm-new", "picm-adopt", "picm-maintain"]) {
+    for (const command of ["picm-new", "picm-adopt", "picm-maintain", "picm-optimize"]) {
       const h = extensionHarness();
       const ctx = h.context(root, `bootstrap-${command}`);
       await h.commands.get(command).handler(command === "picm-adopt" ? "coding" : "routing", ctx);

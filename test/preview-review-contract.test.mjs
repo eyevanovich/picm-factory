@@ -81,14 +81,16 @@ test("mandatory review and deterministic control-write boundaries remain explici
   ]) assert.ok(protocol.includes(signal), `missing mandatory-review signal: ${signal}`);
 });
 
-test("skill, adopt, coding, maintenance, help, and public guidance point to the protocol", () => {
+test("skill, adopt, coding, maintenance, optimization, help, and public guidance point to the protocol", () => {
   const expected = {
     "skills/picm-factory/SKILL.md": [protocolPath.split("/").at(-1), "Before every proposed project write"],
     "skills/picm-factory/references/adoption-guide.md": ["preview-review-protocol.md", "refreshed summary"],
     "skills/picm-factory/references/coding-adoption-guide.md": ["preview-review-protocol.md", "mandatory exact review"],
     "skills/picm-factory/references/maintenance-rubric.md": ["preview-review-protocol.md", "separate explicit approval"],
+    "skills/picm-factory/references/optimization-guide.md": ["preview-review-protocol.md", "separate explicit approval"],
     "prompts/picm-adopt.md": ["summary-preview and exact-review protocol", "separate explicit approval"],
     "prompts/picm-maintain.md": ["summary-preview and exact-review protocol", "separate explicit approval"],
+    "prompts/picm-optimize.md": ["summary-preview and exact-review protocol", "separate explicit approval"],
     "prompts/picm-help.md": ["complete concise summary", "selective exact review"],
     "README.md": ["complete concise summary", "`View all`, `Select files`, and `Return to summary`"],
     "docs/layout-fixture-qa.md": ["both `/picm-adopt` and `/picm-maintain`", "Repeat the no-write check"],
@@ -103,10 +105,11 @@ test("dispatch prompts preserve privacy bootstrap ordering and add preview guida
   const h = commandHarness();
   await h.commands.get("picm-adopt").handler("coding", h.ctx);
   await h.commands.get("picm-maintain").handler("routing", h.ctx);
+  await h.commands.get("picm-optimize").handler("", h.ctx);
   await h.commands.get("picm-help").handler("", h.ctx);
 
-  const [adopt, maintain, help] = h.sent;
-  for (const prompt of [adopt, maintain]) {
+  const [adopt, maintain, optimize, help] = h.sent;
+  for (const prompt of [adopt, maintain, optimize]) {
     const preflight = prompt.indexOf('action: "preflight"');
     const question = prompt.indexOf("ask this exact question");
     const summary = prompt.indexOf("complete concise `.picm/config.json` summary categories");
@@ -121,7 +124,8 @@ test("dispatch prompts preserve privacy bootstrap ordering and add preview guida
   }
   assert.ok(adopt.indexOf("load the `picm-factory` skill") < adopt.indexOf("summary-preview and exact-review protocol"));
   assert.match(maintain, /Before every proposed project write.*summary-preview and exact-review protocol/s);
-  assert.match(help, /Explain the shipped adoption\/maintenance summary-preview, selective exact-review/);
+  assert.match(optimize, /Before every proposed project write.*summary-preview and exact-review protocol/s);
+  assert.match(help, /Explain the shipped adoption\/maintenance\/optimization summary-preview, selective exact-review/);
 });
 
 test("shipped adopt prompt requires accepted persisted-privacy summary before privacy and skill", () => {
@@ -139,7 +143,7 @@ test("shipped adopt prompt requires accepted persisted-privacy summary before pr
   assert.match(adopt, /exact TUI patch confirmation is the mandatory exact review and separate write approval/);
 });
 
-test("contract keeps implementation non-goals and runtime modules untouched", () => {
+test("contract keeps implementation non-goals explicit", () => {
   for (const signal of [
     "not a deterministic plan engine or semantic-equivalence checker",
     "does not authorize crawling, a custom TUI, a workflow executor",

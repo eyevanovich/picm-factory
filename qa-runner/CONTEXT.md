@@ -1,11 +1,11 @@
 # QA Runner
 
 ## Purpose
-Run interactive PiCM Factory QA in visible Pi/Zellij panes, especially smoke tests for `/picm-new`, `/picm-adopt`, and `/picm-maintain` that may ask clarifying or approval questions.
+Run interactive PiCM Factory QA in visible Pi/Zellij panes, especially smoke tests for `/picm-new`, `/picm-adopt`, `/picm-maintain`, and `/picm-optimize` that may ask clarifying or approval questions.
 
 ## Inputs
 - Fixture or throwaway workspace path.
-- Command under test, usually one of `/picm-new`, `/picm-adopt`, `/picm-maintain`, or `/picm-maintain trace "..."`.
+- Command under test, usually one of `/picm-new`, `/picm-adopt`, `/picm-maintain`, `/picm-maintain trace "..."`, or `/picm-optimize`.
 - Expected behavior from `docs/layout-fixture-qa.md` or `docs/picm-new-scenarios.md`.
 
 ## Process

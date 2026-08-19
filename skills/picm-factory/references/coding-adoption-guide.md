@@ -6,7 +6,7 @@ Coding adoption maps agent-relevant repository context without trying to documen
 
 ## Security boundary: excluded means unreadable
 
-Coding repositories commonly store credentials, local configuration, private fixtures, generated artifacts, and large dependency trees behind Git or project privacy rules. Treat every exclusion source as a hard read boundary. The PiCM extension enforces this boundary only inside a workflow explicitly authorized by `/picm-new`, `/picm-adopt`, or `/picm-maintain`; outside that workflow ordinary Pi tools behave normally. User-typed `!bash` is an explicit human action and is never intercepted.
+Coding repositories commonly store credentials, local configuration, private fixtures, generated artifacts, and large dependency trees behind Git or project privacy rules. Treat every exclusion source as a hard read boundary. The PiCM extension enforces this boundary only inside a workflow explicitly authorized by `/picm-new`, `/picm-adopt`, `/picm-maintain`, or `/picm-optimize`; outside that workflow ordinary Pi tools behave normally. User-typed `!bash` is an explicit human action and is never intercepted.
 
 Before inspecting repository contents:
 

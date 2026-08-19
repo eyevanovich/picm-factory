@@ -1,7 +1,7 @@
 # PiCM Factory Context
 
 ## What we are building
-PiCM Factory is a project-local Pi Coding Agent package that helps users create, adopt, and maintain PiCM / ICM-style folder-agent workspaces and agent-readable coding repositories.
+PiCM Factory is a project-local Pi Coding Agent package that helps users create, adopt, maintain, and optimize PiCM / ICM-style folder-agent workspaces and agent-readable coding repositories.
 
 ## Product shape
 - **Factory**: one-time setup helper that interviews a user and creates a minimal viable folder-agent scaffold.
@@ -13,7 +13,7 @@ PiCM Factory is a project-local Pi Coding Agent package that helps users create,
 - Keep runtime methodology in the skill's references and templates; keep the extension thin.
 - Be non-destructive by default. Preview writes before applying them.
 - Treat security as a first-class requirement: secrets, client data, and private material must not be copied into context files or committed without explicit user approval.
-- Explicit `/picm-new`, `/picm-adopt`, and `/picm-maintain` workflows start privacy-pending. Protected scans combine Git standard excludes (`.gitignore`, `.git/info/exclude`, and global rules) with persisted `.picm/config.json` and session exclusions; matching contents are unreadable. Outside those workflows ordinary Pi tools remain unaffected, and user-typed `!bash` is never intercepted. When `.git` is absent, transient isolated Git metadata is created only after privacy review and never modifies the project.
+- Explicit `/picm-new`, `/picm-adopt`, `/picm-maintain`, and `/picm-optimize` workflows start privacy-pending. Protected scans combine Git standard excludes (`.gitignore`, `.git/info/exclude`, and global rules) with persisted `.picm/config.json` and session exclusions; matching contents are unreadable. Outside those workflows ordinary Pi tools remain unaffected, and user-typed `!bash` is never intercepted. When `.git` is absent, transient isolated Git metadata is created only after privacy review and never modifies the project.
 - Use `.pi/` for Pi config and `.picm/` for minimal PiCM metadata/reports, including optional persisted scan exclusions.
 - The visible folder structure and context files remain the source of truth.
 - `.picm/` is maintainer-only context and should not be read during normal workflow execution.
@@ -23,6 +23,7 @@ PiCM Factory is a project-local Pi Coding Agent package that helps users create,
 - `/picm-new` — interview-led minimal scaffold for new workspaces.
 - `/picm-adopt` — non-invasive read-first adoption flow for existing workflow and coding repositories; supports a Coding Repository profile and hybrid codebase-map capability.
 - `/picm-maintain` — validation/maintenance rubric with Pass/Warning/Suggestion output.
+- `/picm-optimize` — outcome-preserving proposals for agent-facing documentation only.
 - `/picm-help` — setup and command help.
 
 ## Specialist folders

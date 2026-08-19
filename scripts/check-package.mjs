@@ -29,6 +29,7 @@ const required = [
   "test/maintenance-controller.test.mjs",
   "test/maintenance-extension.test.mjs",
   "test/preview-review-contract.test.mjs",
+  "test/optimization-contract.test.mjs",
   "test/privacy-policy.test.mjs",
   "extensions/picm-factory.ts",
   "extensions/runtime/git-read-gate.mjs",
@@ -38,10 +39,12 @@ const required = [
   "extensions/runtime/maintenance-controller.mjs",
   "extensions/runtime/runtime-coordinator.mjs",
   "skills/picm-factory/SKILL.md",
+  "skills/picm-factory/references/optimization-guide.md",
   "skills/picm-factory/references/preview-review-protocol.md",
   "prompts/picm-new.md",
   "prompts/picm-adopt.md",
   "prompts/picm-maintain.md",
+  "prompts/picm-optimize.md",
   "prompts/picm-help.md",
   "docs/layout-fixture-qa.md",
   "docs/release-tagging-actions-research.md",
@@ -124,6 +127,7 @@ const requiredPackageFiles = [
   "skills/picm-factory/references/interview-guide.md",
   "skills/picm-factory/references/layout-profiles.md",
   "skills/picm-factory/references/maintenance-rubric.md",
+  "skills/picm-factory/references/optimization-guide.md",
   "skills/picm-factory/references/preview-review-protocol.md",
   "skills/picm-factory/templates/code-boundary-context.md",
   "skills/picm-factory/templates/context-map.md",
@@ -379,10 +383,14 @@ const previewReviewGuidance = {
   "skills/picm-factory/references/maintenance-rubric.md": ["preview-review-protocol.md"],
   "prompts/picm-adopt.md": ["summary-preview and exact-review protocol"],
   "prompts/picm-maintain.md": ["summary-preview and exact-review protocol"],
+  "prompts/picm-optimize.md": [
+    "summary-preview and exact-review protocol",
+    "No worthwhile optimizations found",
+  ],
   "prompts/picm-help.md": ["complete concise summary", "selective exact review"],
   "extensions/picm-factory.ts": [
     "summary-preview and exact-review protocol",
-    "adoption/maintenance summary-preview, selective exact-review",
+    "adoption/maintenance/optimization summary-preview, selective exact-review",
   ],
   "README.md": ["complete concise summary", "View all", "Select files", "Return to summary"],
   "docs/layout-fixture-qa.md": ["both `/picm-adopt` and `/picm-maintain`", "Repeat the no-write check"],
@@ -392,6 +400,41 @@ for (const [file, signals] of Object.entries(previewReviewGuidance)) {
   for (const signal of signals) {
     if (!text.includes(signal)) {
       console.error(`Preview/review guidance ${file} missing signal: ${signal}`);
+      process.exit(1);
+    }
+  }
+}
+
+const optimizationGuidance = {
+  "skills/picm-factory/references/optimization-guide.md": [
+    "protected Git-derived candidates and guarded reads",
+    "Inspect every identified agent-facing document",
+    "Preservation ledger",
+    "Do not claim semantic equivalence",
+    "generated artifacts or generated documentation",
+    "Let the user choose, combine, reject, or revise",
+    "No worthwhile optimizations found",
+    "Do not build a deterministic plan engine, semantic-equivalence system, reference crawler, orchestration layer",
+  ],
+  "skills/picm-factory/SKILL.md": [
+    "## Mode: optimize (`/picm-optimize`)",
+    "references/optimization-guide.md",
+  ],
+  "prompts/picm-optimize.md": [
+    "before loading the skill or using any project-reading tool",
+    "Inspect all agent-facing documentation",
+    "No worthwhile optimizations found",
+  ],
+  "README.md": [
+    "Outcome-preserving optimization",
+    "`/picm-optimize`",
+  ],
+};
+for (const [file, signals] of Object.entries(optimizationGuidance)) {
+  const text = readFileSync(join(root, file), "utf8");
+  for (const signal of signals) {
+    if (!text.includes(signal)) {
+      console.error(`Optimization guidance ${file} missing signal: ${signal}`);
       process.exit(1);
     }
   }
@@ -669,6 +712,7 @@ const publicTextFiles = [
   "skills/picm-factory/SKILL.md",
   "skills/picm-factory/references/coding-adoption-guide.md",
   "skills/picm-factory/references/coding-maintenance-rubric.md",
+  "skills/picm-factory/references/optimization-guide.md",
   "docs/layout-fixture-qa.md",
   "docs/picm-new-scenarios.md",
   "docs/release-tagging-actions-research.md",
@@ -709,6 +753,7 @@ const commandDecisionSignals = [
   "/picm-adopt",
   "/picm-maintain",
   "/picm-maintain trace",
+  "/picm-optimize",
   "mostly empty",
   "existing",
   "project-local",
@@ -720,6 +765,7 @@ const commandDecisionSignals = [
   "/picm-new [workflow description]",
   "/picm-adopt [coding | adoption request]",
   "/picm-maintain [coding | routing",
+  "/picm-optimize",
 ];
 for (const file of commandDecisionGuidanceFiles) {
   const text = readFileSync(join(root, file), "utf8").toLowerCase();

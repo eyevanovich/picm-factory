@@ -1,12 +1,13 @@
 # Agent Instructions
 
 ## Identity
-You are working on PiCM Factory, a project-local Pi package for creating, adopting, and maintaining PiCM / ICM-style folder-agent workspaces and coding-repository context maps.
+You are working on PiCM Factory, a project-local Pi package for creating, adopting, maintaining, and optimizing PiCM / ICM-style folder-agent workspaces and coding-repository context maps.
 
 ## Canonical terms
 - **Factory**: one-time helper for creating a new baseline workspace.
 - **Maintainer**: ongoing helper for checking and improving an existing workspace.
 - **Adoption**: non-invasive flow for adding PiCM support to an existing workflow or coding repository.
+- **Optimization**: outcome-preserving improvement of agent-facing documentation only.
 - **Layout profile**: a recommended primary workspace shape, not a rigid schema.
 - **Coding Repository**: first-class profile for code-primary workspaces.
 - **Codebase-map capability**: composable coding context mapping that may overlap another primary profile.
@@ -17,7 +18,7 @@ You are working on PiCM Factory, a project-local Pi package for creating, adopti
 - Do not build a custom TUI or workflow executor without clear evidence it is necessary.
 - Be non-destructive by default. Preview file changes before writing.
 - Security first: never copy secrets, credentials, tokens, private keys, regulated data, or sensitive client material into context files or examples.
-- Explicitly invoked `/picm-new`, `/picm-adopt`, and `/picm-maintain` workflows must complete privacy preflight/review before scanning. Protected inventory and immediate path checks combine root/nested `.gitignore`, `.git/info/exclude`, global Git excludes, `.picm/config.json` `privacy.excludedPaths`, and session exclusions; never inspect matching contents. Ordinary Pi work and user-typed `!bash` remain unrestricted.
+- Explicitly invoked `/picm-new`, `/picm-adopt`, `/picm-maintain`, and `/picm-optimize` workflows must complete privacy preflight/review before scanning. Protected inventory and immediate path checks combine root/nested `.gitignore`, `.git/info/exclude`, global Git excludes, `.picm/config.json` `privacy.excludedPaths`, and session exclusions; never inspect matching contents. Ordinary Pi work and user-typed `!bash` remain unrestricted.
 - `.pi/` is for Pi config. `.picm/` is for minimal PiCM metadata/reports, including optional persisted scan exclusions.
 - `.picm/` is maintainer-only context; normal workflow routing should skip it.
 
@@ -36,7 +37,7 @@ You are working on PiCM Factory, a project-local Pi package for creating, adopti
 | Task | Start here | Supporting files |
 | --- | --- | --- |
 | Change slash-command registration or dispatch | `extensions/picm-factory.ts` | Pi extension documentation |
-| Change scaffold, adoption, maintenance, or help behavior | `skills/picm-factory/SKILL.md` | The relevant file under `skills/picm-factory/references/` |
+| Change scaffold, adoption, maintenance, optimization, or help behavior | `skills/picm-factory/SKILL.md` | The relevant file under `skills/picm-factory/references/` |
 | Change coding adoption or context-map behavior | `skills/picm-factory/references/coding-adoption-guide.md` | `coding-maintenance-rubric.md`, `layout-profiles.md`, coding templates |
 | Change generated workspace content | `skills/picm-factory/templates/` | `skills/picm-factory/references/layout-profiles.md` |
 | Change npm packaging or release validation | `package.json` | `scripts/check-package.mjs`, `README.md`, `CHANGELOG.md` |
@@ -57,3 +58,10 @@ Interactive command QA is intentionally manual. Follow `qa-runner/CONTEXT.md`; d
 
 ## Contributions
 Read `CONTRIBUTING.md`. Keep changes small, preserve the safety model, and use GitHub Issues for public work tracking.
+
+## Maintaining this file
+
+Keep this file for knowledge useful to almost every future agent session in this project.
+Do not repeat what the codebase already shows; point to the authoritative file or command instead.
+Prefer rewriting or pruning existing entries over appending new ones.
+When updating this file, preserve this bar for all agents and keep entries concise.

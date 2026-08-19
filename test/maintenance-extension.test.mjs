@@ -89,6 +89,7 @@ test("command descriptions and completions expose optional arguments", () => {
   assert.match(h.commands.get("picm-new").description, /optionally add a workflow description/);
   assert.match(h.commands.get("picm-adopt").description, /type a space for optional arguments/);
   assert.match(h.commands.get("picm-maintain").description, /type a space for focus and trace arguments/);
+  assert.match(h.commands.get("picm-optimize").description, /agent-facing documentation/);
   assert.match(h.commands.get("picm-help").description, /command syntax, arguments, examples/);
 
   const adopt = h.commands.get("picm-adopt").getArgumentCompletions("");
@@ -384,6 +385,27 @@ test("new, adopt, and maintain reset scheduled cycles only after preflight and p
   const before = readFileSync(join(helpCwd, ".picm/config.json"), "utf8");
   await help.commands.get("picm-help").handler("", help.context(helpCwd));
   assert.equal(readFileSync(join(helpCwd, ".picm/config.json"), "utf8"), before);
+});
+
+test("optimization privacy review does not reset maintenance cadence", async (t) => {
+  const cwd = fixture(t, oldDue("nudge"));
+  const h = harness();
+  const ctx = h.context(cwd, "tui", "optimize-no-reset-session");
+  const before = readFileSync(join(cwd, ".picm/config.json"), "utf8");
+
+  await h.commands.get("picm-optimize").handler("", ctx);
+  await h.scanControl.execute("id", { action: "preflight" }, undefined, undefined, ctx);
+  const privacy = await h.scanControl.execute(
+    "id",
+    { action: "privacy", excludedPaths: [], persist: false },
+    undefined,
+    undefined,
+    ctx,
+  );
+
+  assert.equal(privacy.details.command, "picm-optimize");
+  assert.equal(privacy.details.maintenanceReset, undefined);
+  assert.equal(readFileSync(join(cwd, ".picm/config.json"), "utf8"), before);
 });
 
 test("maintenance reset is skipped when privacy is declined, incomplete, cancelled, or unproven on restore", async (t) => {
