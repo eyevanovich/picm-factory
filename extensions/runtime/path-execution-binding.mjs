@@ -184,7 +184,10 @@ function descriptorPath(fd, child = "") {
 }
 
 function retainedChildPath(parentFd, parentPath, child) {
-  return process.platform === "linux" ? descriptorPath(parentFd, child) : join(parentPath, child);
+  if (process.platform !== "linux") {
+    fail("descriptor-relative prospective writes are unavailable on this platform");
+  }
+  return descriptorPath(parentFd, child);
 }
 
 function removeCreatedDirectories(createdDirectories) {
