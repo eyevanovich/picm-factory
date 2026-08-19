@@ -1999,6 +1999,7 @@ test("session shutdown preserves cleanup and persistence errors", async () => {
 
 test("session shutdown clears orphaned execution leases", async () => {
   await withFixture(async ({ root }) => {
+    write(join(root, "output", "orphan.txt"), "before\n");
     const h = extensionHarness();
     const ctx = h.context(root, "execution-barrier-shutdown");
     const control = h.tools.get("picm_scan_control");
@@ -2665,8 +2666,8 @@ test("ordinary grep, find, and ls cannot traverse a swapped parent", async (t) =
 });
 
 test("bound writes preserve create semantics and clean up pre-execution cancellation", async (t) => {
-  if (process.platform === "win32") {
-    t.skip("symlink behavior is platform-specific");
+  if (process.platform !== "linux") {
+    t.skip("descriptor-relative prospective writes are Linux-specific");
     return;
   }
 
