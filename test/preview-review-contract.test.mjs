@@ -27,7 +27,11 @@ function commandHarness() {
     hasUI: true,
     waitForIdle: async () => {},
     sessionManager: { getBranch: () => [], getEntries: () => [], getSessionId: () => "preview-contract" },
-    ui: { notify() {}, confirm: async () => true },
+    ui: {
+      notify() {},
+      confirm: async () => true,
+      select: async (_title, items) => items[0],
+    },
   };
   return { commands, sent, ctx };
 }
@@ -126,6 +130,7 @@ test("dispatch prompts preserve privacy bootstrap ordering and add preview guida
   assert.match(maintain, /Before every proposed project write.*summary-preview and exact-review protocol/s);
   assert.match(optimize, /Before every proposed project write.*summary-preview and exact-review protocol/s);
   assert.match(help, /Explain the shipped adoption\/maintenance\/optimization summary-preview, selective exact-review/);
+  assert.match(maintain, /Maintenance run depth: strict.*run only.*Do not mutate/s);
 });
 
 test("shipped adopt prompt requires accepted persisted-privacy summary before privacy and skill", () => {
