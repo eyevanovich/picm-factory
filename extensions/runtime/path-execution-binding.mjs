@@ -12,8 +12,9 @@ import {
   unlinkSync,
   writeSync,
 } from "node:fs";
-import { spawnSync } from "node:child_process";
+import { spawn } from "node:child_process";
 import { basename, dirname, join, matchesGlob, relative, resolve, sep } from "node:path";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 const IMAGE_TYPE_SNIFF_BYTES = 4100;
 const PNG_SIGNATURE = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
@@ -268,8 +269,77 @@ function globMatches(fileName, pattern) {
   );
 }
 
-function truncateLine(line, maxLength = 2000) {
+function truncateLine(line, maxLength = 500) {
   return line.length <= maxLength ? line : `${line.slice(0, maxLength)}…`;
+}
+
+let ripgrepPathPromise;
+
+async function resolveRipgrep() {
+  ripgrepPathPromise ??= (async () => {
+    const entry = fileURLToPath(import.meta.resolve("@earendil-works/pi-coding-agent"));
+    const manager = await import(pathToFileURL(resolve(dirname(entry), "utils", "tools-manager.js")));
+    const path = await manager.ensureTool("rg");
+    if (!path) throw new Error("ripgrep is not available and could not be downloaded");
+    return path;
+  })();
+  return ripgrepPathPromise;
+}
+
+function truncateHead(content, maxBytes = 50 * 1024) {
+  const lines = content === "" ? [] : content.split("\n");
+  const totalBytes = Buffer.byteLength(content, "utf8");
+  if (totalBytes <= maxBytes) {
+    return { content, truncated: false, truncatedBy: null, totalLines: lines.length, totalBytes, outputLines: lines.length, outputBytes: totalBytes, lastLinePartial: false, firstLineExceedsLimit: false, maxLines: Number.MAX_SAFE_INTEGER, maxBytes };
+  }
+  const output = [];
+  let bytes = 0;
+  for (const line of lines) {
+    const next = Buffer.byteLength(line, "utf8") + (output.length ? 1 : 0);
+    if (bytes + next > maxBytes) break;
+    output.push(line);
+    bytes += next;
+  }
+  const result = output.join("\n");
+  return { content: result, truncated: true, truncatedBy: "bytes", totalLines: lines.length, totalBytes, outputLines: output.length, outputBytes: Buffer.byteLength(result, "utf8"), lastLinePartial: false, firstLineExceedsLimit: output.length === 0, maxLines: Number.MAX_SAFE_INTEGER, maxBytes };
+}
+
+async function ripgrepMatches(path, args, content, signal, remaining) {
+  return new Promise((resolvePromise, reject) => {
+    const child = spawn(path, args, { stdio: ["pipe", "pipe", "pipe"] });
+    const matches = [];
+    let stdout = "";
+    let stderr = "";
+    let limited = false;
+    const abort = () => child.kill();
+    signal?.addEventListener("abort", abort, { once: true });
+    child.stdout.on("data", (chunk) => {
+      stdout += chunk.toString();
+      const records = stdout.split("\n");
+      stdout = records.pop() ?? "";
+      for (const record of records) {
+        if (!record) continue;
+        const event = JSON.parse(record);
+        if (event.type === "match" && typeof event.data?.line_number === "number") {
+          matches.push(event.data.line_number);
+          if (matches.length >= remaining) {
+            limited = true;
+            child.kill();
+            break;
+          }
+        }
+      }
+    });
+    child.stderr.on("data", (chunk) => { stderr += chunk.toString(); });
+    child.on("error", reject);
+    child.on("close", (code) => {
+      signal?.removeEventListener("abort", abort);
+      if (signal?.aborted) return reject(new Error("Operation aborted"));
+      if (!limited && code !== 0 && code !== 1) return reject(new Error(stderr.trim() || `ripgrep exited with code ${code}`));
+      resolvePromise({ matches, limited });
+    });
+    child.stdin.end(content);
+  });
 }
 
 export async function executeBoundGrep(binding, params, signal) {
@@ -285,6 +355,7 @@ export async function executeBoundGrep(binding, params, signal) {
   const files = binding.files ?? [{ path: binding.absolutePath, readFile: binding.operations.readFile }];
   const matches = [];
   const effectiveLimit = Math.max(1, limit);
+  const ripgrepPath = await resolveRipgrep();
   for (const file of files) {
     const fileName = relative(binding.absolutePath, file.path) || basename(file.path);
     if (glob && !globMatches(fileName, glob) && !globMatches(basename(file.path), glob)) continue;
@@ -293,18 +364,10 @@ export async function executeBoundGrep(binding, params, signal) {
     if (ignoreCase) args.push("--ignore-case");
     if (literal) args.push("--fixed-strings");
     args.push("--", pattern, "-");
-    const result = spawnSync("rg", args, { input: content, encoding: "utf8", maxBuffer: 64 * 1024 * 1024 });
-    if (result.error) throw result.error;
-    if (result.status !== 0 && result.status !== 1) {
-      throw new Error(result.stderr.trim() || `ripgrep exited with code ${result.status}`);
-    }
     const lines = content.replace(/\r\n/g, "\n").replace(/\r/g, "\n").split("\n");
-    for (const rawEvent of result.stdout.split("\n")) {
-      if (!rawEvent) continue;
-      const event = JSON.parse(rawEvent);
-      if (event.type !== "match" || typeof event.data?.line_number !== "number") continue;
-      matches.push({ fileName, index: event.data.line_number - 1, lines });
-      if (matches.length >= effectiveLimit) break;
+    const result = await ripgrepMatches(ripgrepPath, args, content, signal, effectiveLimit - matches.length);
+    for (const lineNumber of result.matches) {
+      matches.push({ fileName, index: lineNumber - 1, lines });
     }
     if (matches.length >= effectiveLimit) break;
   }
@@ -330,23 +393,21 @@ export async function executeBoundGrep(binding, params, signal) {
     }
   }
   const text = output.join("\n");
-  const maxBytes = 50 * 1024;
-  const originalBytes = Buffer.byteLength(text, "utf8");
-  const truncated = originalBytes > maxBytes;
-  const content = truncated ? Buffer.from(text).subarray(0, maxBytes).toString("utf8") : text;
+  const truncation = truncateHead(text);
+  const content = truncation.content;
   const details = {};
   const notices = [];
   if (matches.length >= effectiveLimit) {
     details.matchLimitReached = effectiveLimit;
     notices.push(`${effectiveLimit} matches limit reached. Use limit=${effectiveLimit * 2} for more, or refine pattern`);
   }
-  if (truncated) {
-    details.truncation = { truncated: true, originalBytes, keptBytes: maxBytes, maxBytes };
+  if (truncation.truncated) {
+    details.truncation = truncation;
     notices.push("50KB limit reached");
   }
   if (linesTruncated) {
     details.linesTruncated = true;
-    notices.push("Some lines truncated to 2000 chars. Use read tool to see full lines");
+    notices.push("Some lines truncated to 500 chars. Use read tool to see full lines");
   }
   const textWithNotices = notices.length ? `${content}\n\n[${notices.join(". ")}]` : content;
   return {

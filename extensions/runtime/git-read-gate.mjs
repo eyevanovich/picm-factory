@@ -436,9 +436,12 @@ export function createGitReadGate({
         });
       }
     }
-    for (const child of await readdir(resolvedPath.absolutePath, { withFileTypes: true })) {
-      if (!child.isDirectory() || child.isSymbolicLink()) continue;
-      const displayPath = resolve(resolvedPath.absolutePath, child.name);
+    const pendingDirectories = [resolvedPath.absolutePath];
+    while (pendingDirectories.length > 0) {
+      const parentPath = pendingDirectories.pop();
+      for (const child of await readdir(parentPath, { withFileTypes: true })) {
+        if (!child.isDirectory() || child.isSymbolicLink()) continue;
+        const displayPath = resolve(parentPath, child.name);
       const admittedStat = await fs.lstat(displayPath);
       if (admittedStat.isSymbolicLink() || !admittedStat.isDirectory()) continue;
       const canonicalPath = await fs.realpath(displayPath);
@@ -447,19 +450,23 @@ export function createGitReadGate({
         !isInside(canonicalWorktree, canonicalPath)
       ) continue;
       const gitPath = toGitPath(inventory.worktree, canonicalPath);
+      if (gitPath === ".git" || gitPath.startsWith(".git/")) continue;
       const ignoredChild = [...inventory.ignored].some((path) => {
         const normalized = path.replace(/\/$/, "");
         return gitPath === normalized || gitPath.startsWith(`${normalized}/`);
       });
       if (ignoredChild || await privacyDecision(canonicalPath, exclusions)) continue;
-      if (entries.some((entry) => entry.displayPath === displayPath)) continue;
-      entries.push({
-        absolutePath: displayPath,
-        canonicalPath,
-        displayPath,
-        isDirectory: true,
-        identity: fileIdentity(admittedStat),
-      });
+        pendingDirectories.push(displayPath);
+        if (!entries.some((entry) => entry.displayPath === displayPath)) {
+          entries.push({
+            absolutePath: displayPath,
+            canonicalPath,
+            displayPath,
+            isDirectory: true,
+            identity: fileIdentity(admittedStat),
+          });
+        }
+      }
     }
     resolvedPath.traversalEntries = entries;
   }

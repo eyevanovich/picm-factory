@@ -354,8 +354,9 @@ test("guarded directory grep rg find and ls filter protected descendants", async
     write(join(root, "docs", "public.md"), "VISIBLE_MARKER\n");
     write(join(root, "docs", "root.ts"), "export const visible = true;\n");
     write(join(root, "docs", "a.js"), `marker ${"x".repeat(2100)}\n`);
-    write(join(root, "docs", "large.md"), `${Array.from({ length: 40 }, () => `HIT ${"y".repeat(1900)}`).join("\n")}\n`);
+    write(join(root, "docs", "large.md"), `${Array.from({ length: 120 }, () => `HIT ${"y".repeat(1900)}`).join("\n")}\n`);
     mkdirSync(join(root, "docs", "empty"));
+    mkdirSync(join(root, "docs", "nested", "empty"), { recursive: true });
     write(join(root, "docs", "private", "secret.md"), "PRIVATE_MARKER\n");
     git(root, "add", "docs/public.md", "docs/root.ts", "docs/a.js", "docs/large.md", "docs/private/secret.md");
     const h = extensionHarness();
@@ -384,24 +385,41 @@ test("guarded directory grep rg find and ls filter protected descendants", async
     const contractSpecs = [
       { id: "directory-find-root-glob", toolName: "find", input: { path: "docs", pattern: "**/*.ts" } },
       { id: "directory-find-brace-glob", toolName: "find", input: { path: "docs", pattern: "*.{js,ts}" } },
+      { id: "directory-find-nested-empty", toolName: "find", input: { path: "docs", pattern: "**" } },
       { id: "directory-grep-ripgrep-regex", toolName: "grep", input: { path: "docs", pattern: "(?i)marker", glob: "[ab].{js,ts}" } },
       { id: "directory-grep-byte-limit", toolName: "grep", input: { path: "docs", pattern: "HIT", glob: "large.md" } },
       { id: "directory-find-limit", toolName: "find", input: { path: "docs", pattern: "**", limit: 1 } },
       { id: "directory-ls-limit", toolName: "ls", input: { path: "docs", limit: 1 } },
       { id: "directory-ls-empty", toolName: "ls", input: { path: "docs/empty" } },
+      { id: "directory-find-root-internals", toolName: "find", input: { path: ".", pattern: "**" } },
     ].map((spec) => ({ ...spec, tool: h.tools.get(spec.toolName) }));
     const contractCalls = await preflightParallelToolCalls(h, ctx, contractSpecs);
     const contractResults = await Promise.all(executePreflightedToolCalls(h, ctx, contractCalls));
     assert.match(contractResults[0].result.content[0].text, /^root\.ts$/m);
     assert.match(contractResults[1].result.content[0].text, /a\.js|root\.ts/);
-    assert.equal(contractResults[2].result.details?.linesTruncated, true);
-    assert.equal(contractResults[3].result.details?.truncation?.truncated, true);
-    assert.match(contractResults[3].result.content[0].text, /50KB limit reached/);
-    assert.equal(contractResults[4].result.details?.resultLimitReached, 1);
-    assert.match(contractResults[4].result.content[0].text, /1 results limit reached/);
-    assert.equal(contractResults[5].result.details?.entryLimitReached, 1);
-    assert.match(contractResults[5].result.content[0].text, /1 entries limit reached/);
-    assert.equal(contractResults[6].result.content[0].text, "(empty directory)");
+    assert.match(contractResults[2].result.content[0].text, /nested\/empty\//);
+    assert.equal(contractResults[3].result.details?.linesTruncated, true);
+    assert.equal(contractResults[4].result.details?.truncation?.truncated, true);
+    assert.match(contractResults[4].result.content[0].text, /50KB limit reached/);
+    assert.equal(contractResults[5].result.details?.resultLimitReached, 1);
+    assert.match(contractResults[5].result.content[0].text, /1 results limit reached/);
+    assert.equal(contractResults[6].result.details?.entryLimitReached, 1);
+    assert.match(contractResults[6].result.content[0].text, /1 entries limit reached/);
+    assert.equal(contractResults[7].result.content[0].text, "(empty directory)");
+    assert.doesNotMatch(contractResults[8].result.content[0].text, /(?:^|\/)\.git\//m);
+
+    const abortController = new AbortController();
+    abortController.abort();
+    const [abortCall] = await preflightParallelToolCalls(h, ctx, [{
+      id: "directory-grep-aborted",
+      toolName: "grep",
+      input: { path: "docs", pattern: "marker" },
+      signal: abortController.signal,
+      tool: h.tools.get("grep"),
+    }]);
+    const [aborted] = await Promise.all(executePreflightedToolCalls(h, ctx, [abortCall]));
+    assert.equal(aborted.isError, true);
+    assert.match(aborted.result.content[0].text, /Operation aborted/);
   });
 });
 
