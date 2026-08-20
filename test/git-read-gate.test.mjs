@@ -146,7 +146,36 @@ function deferred() {
   return { promise, resolve: resolvePromise };
 }
 
-function fakeRipgrepSpawn({ stdout = [], stderr = [], code = 0, hold = false } = {}) {
+async function assertRejectsWithin(promise, expected, timeoutMs = 250) {
+  let timer;
+  const outcome = await Promise.race([
+    promise.then(
+      () => ({ resolved: true }),
+      (error) => ({ error }),
+    ),
+    new Promise((resolvePromise) => {
+      timer = setTimeout(
+        () => resolvePromise({ error: new Error(`operation did not settle within ${timeoutMs}ms`) }),
+        timeoutMs,
+      );
+    }),
+  ]);
+  clearTimeout(timer);
+  assert.equal(outcome.resolved, undefined, "operation unexpectedly resolved");
+  assert.match(outcome.error.message, expected);
+}
+
+function fakeRipgrepSpawn({
+  stdout = [],
+  stderr = [],
+  code = 0,
+  hold = false,
+  killResult = true,
+  killError,
+  closeOnKill = true,
+  errorAfterKill,
+  onChild,
+} = {}) {
   return () => {
     const child = new EventEmitter();
     child.stdout = new PassThrough();
@@ -162,10 +191,13 @@ function fakeRipgrepSpawn({ stdout = [], stderr = [], code = 0, hold = false } =
       child.emit("close", exitCode);
     };
     child.kill = () => {
-      child.killed = true;
-      queueMicrotask(() => close(null));
-      return true;
+      if (killError) throw killError;
+      child.killed = killResult;
+      if (errorAfterKill) process.nextTick(() => child.emit("error", errorAfterKill));
+      if (killResult && closeOnKill) queueMicrotask(() => close(null));
+      return killResult;
     };
+    onChild?.(child);
     setImmediate(() => {
       if (closed) return;
       for (const chunk of stdout) child.stdout.write(chunk);
@@ -174,6 +206,16 @@ function fakeRipgrepSpawn({ stdout = [], stderr = [], code = 0, hold = false } =
     });
     return child;
   };
+}
+
+function assertRipgrepListenersCleared(child) {
+  assert.equal(child.listenerCount("error"), 0);
+  assert.equal(child.listenerCount("close"), 0);
+  assert.equal(child.stdin.listenerCount("error"), 0);
+  assert.equal(child.stdout.listenerCount("data"), 0);
+  assert.equal(child.stdout.listenerCount("error"), 0);
+  assert.equal(child.stderr.listenerCount("data"), 0);
+  assert.equal(child.stderr.listenerCount("error"), 0);
 }
 
 async function preflightParallelToolCalls(h, ctx, calls) {
@@ -723,18 +765,87 @@ test("guarded bindings reject FIFO replacement without blocking", async (t) => {
   });
 });
 
-test("guarded grep aborts while ripgrep resolution is pending", async () => {
-  const resolution = deferred();
+test("guarded grep aborts while ripgrep resolution never settles", async () => {
   const controller = new AbortController();
   const execution = executeBoundGrep(
     { absolutePath: "/virtual/file", operations: { readFile: async () => Buffer.from("match\n") } },
     { pattern: "match" },
     controller.signal,
-    async () => resolution.promise,
+    async () => new Promise(() => {}),
   );
   controller.abort();
-  resolution.resolve("rg");
-  await assert.rejects(execution, /Operation aborted/);
+  await assertRejectsWithin(execution, /^Operation aborted$/);
+});
+
+test("guarded grep reports deterministic subprocess termination failures", async () => {
+  const binding = {
+    absolutePath: "/virtual/file.txt",
+    operations: { readFile: async () => Buffer.from("match\n") },
+  };
+  const validMatch = `${JSON.stringify({ type: "match", data: { line_number: 1 } })}\n`;
+  const execute = (spawnMatcher, resourceLimits, signal) => executeBoundGrep(
+    binding,
+    { pattern: "match" },
+    signal,
+    {
+      resolveMatcher: async () => "synthetic-rg",
+      spawnMatcher,
+      resourceLimits: {
+        maxRipgrepTerminationWaitMs: 20,
+        ...resourceLimits,
+      },
+    },
+  );
+
+  let falseKillChild;
+  await assertRejectsWithin(
+    execute(
+      fakeRipgrepSpawn({
+        stdout: [validMatch],
+        hold: true,
+        killResult: false,
+        errorAfterKill: new Error("synthetic deferred kill error"),
+        onChild: (child) => { falseKillChild = child; },
+      }),
+      { maxGrepMatches: 1 },
+    ),
+    /PICM_GREP_TERMINATION_FAILED: ripgrep termination request returned false/,
+  );
+  assertRipgrepListenersCleared(falseKillChild);
+
+  let thrownKillChild;
+  const controller = new AbortController();
+  const cancellation = execute(
+    fakeRipgrepSpawn({
+      hold: true,
+      killError: new Error("synthetic kill failure"),
+      onChild: (child) => { thrownKillChild = child; },
+    }),
+    undefined,
+    controller.signal,
+  );
+  await new Promise((resolvePromise) => setImmediate(resolvePromise));
+  controller.abort();
+  await assertRejectsWithin(
+    cancellation,
+    /PICM_GREP_TERMINATION_FAILED: ripgrep termination request failed: synthetic kill failure/,
+  );
+  assertRipgrepListenersCleared(thrownKillChild);
+
+  let timedOutChild;
+  await assertRejectsWithin(
+    execute(
+      fakeRipgrepSpawn({
+        stdout: ["x".repeat(65)],
+        hold: true,
+        closeOnKill: false,
+        onChild: (child) => { timedOutChild = child; },
+      }),
+      { maxRipgrepRecordBytes: 128, maxRipgrepStdoutBytes: 32 },
+    ),
+    /PICM_GREP_TERMINATION_TIMEOUT: ripgrep did not close within 20ms/,
+  );
+  assertRipgrepListenersCleared(timedOutChild);
 });
 
 test("guarded grep rejects malformed subprocess output failures and resource overruns", async () => {
@@ -793,6 +904,43 @@ test("guarded grep rejects malformed subprocess output failures and resource ove
   await assert.rejects(pending, /Operation aborted/);
 });
 
+test("guarded grep preserves ripgrep line semantics and reports reached resource caps", async () => {
+  const execute = (
+    content,
+    lineNumber,
+    { context = 0, limit = 100, resourceLimits } = {},
+  ) => executeBoundGrep(
+    {
+      absolutePath: "/virtual/file.txt",
+      operations: { readFile: async () => Buffer.from(content) },
+    },
+    { pattern: "match", context, limit },
+    undefined,
+    {
+      resolveMatcher: async () => "synthetic-rg",
+      spawnMatcher: fakeRipgrepSpawn({
+        stdout: [`${JSON.stringify({ type: "match", data: { line_number: lineNumber } })}\n`],
+      }),
+      resourceLimits,
+    },
+  );
+
+  await assert.rejects(
+    execute("one\rtwo", 2),
+    /PICM_GREP_SUBPROCESS_INVALID: malformed ripgrep match record/,
+  );
+  const valid = await execute("one\rtwo\nmatch", 2);
+  assert.match(valid.content[0].text, /^file\.txt:2: match$/m);
+
+  const belowCap = await execute("match\n", 1, {
+    context: 1,
+    limit: 10,
+    resourceLimits: { maxGrepMatches: 2 },
+  });
+  assert.equal(belowCap.details?.matchResourceLimitReached, undefined);
+  assert.doesNotMatch(belowCap.content[0].text, /file\.txt-2-/);
+});
+
 test("registered grep and rg handle malformed output cancellation spawn and exit failures", async () => {
   const cases = [
     {
@@ -800,6 +948,20 @@ test("registered grep and rg handle malformed output cancellation spawn and exit
       spawnMatcher: fakeRipgrepSpawn({ stdout: ["not-json\n"] }),
       expected: /malformed ripgrep JSON record/,
     },
+    ...[
+      ["zero-line", 0],
+      ["negative-line", -1],
+      ["fractional-line", 1.5],
+      ["unsafe-line", Number.MAX_SAFE_INTEGER + 1],
+      ["non-number-line", "1"],
+      ["out-of-range-line", 2],
+    ].map(([name, lineNumber]) => ({
+      name,
+      spawnMatcher: fakeRipgrepSpawn({
+        stdout: [`${JSON.stringify({ type: "match", data: { line_number: lineNumber } })}\n`],
+      }),
+      expected: /PICM_GREP_SUBPROCESS_INVALID: malformed ripgrep match record/,
+    })),
     {
       name: "record-limit",
       spawnMatcher: fakeRipgrepSpawn({ stdout: ["x".repeat(65)] }),
@@ -2662,41 +2824,51 @@ test("registered guarded tools fail closed after restore settlement and shutdown
     return;
   }
   for (const resetEvent of ["session_tree", "agent_settled", "session_shutdown"]) {
-    for (const toolName of ["read", "edit", "write"]) {
+    for (const toolName of ["read", "edit", "write", "grep", "rg", "find", "ls"]) {
       await withFixture(async ({ root }) => {
         writeFileSync(
           join(root, ".gitignore"),
-          `${readFileSync(join(root, ".gitignore"), "utf8")}private-lifecycle*/\n`,
+          `${readFileSync(join(root, ".gitignore"), "utf8")}private-lifecycle-*/\n`,
         );
+        const privateDirectory = `private-lifecycle-${toolName}`;
+        const privatePath = join(root, privateDirectory, "file.txt");
+        const privateContent = toolName === "edit"
+          ? "approved before\n"
+          : `PRIVATE_${toolName.toUpperCase()}_UNCHANGED\n`;
+        write(privatePath, privateContent);
+
         let path;
         let input;
+        let admittedRoot;
         let approvedPath;
-        let privatePath;
         if (toolName === "read") {
           path = "safe.txt";
-          approvedPath = join(root, "approved-safe.txt");
-          privatePath = join(root, "private-lifecycle", "read.txt");
-          write(privatePath, "PRIVATE_READ_MUST_NOT_APPEAR\n");
           input = { path };
-        } else if (toolName === "edit") {
-          path = "edit-lifecycle/file.txt";
-          approvedPath = join(root, "approved-edit-lifecycle");
-          privatePath = join(root, "private-lifecycle-edit", "file.txt");
+          admittedRoot = join(root, path);
+          approvedPath = join(root, "approved-safe.txt");
+        } else if (toolName === "edit" || toolName === "write") {
+          path = `${toolName}-lifecycle/file.txt`;
           write(join(root, path), "approved before\n");
-          write(privatePath, "approved before\n");
           git(root, "add", path);
-          input = {
-            path,
-            edits: [{ oldText: "approved before", newText: "must not reach private" }],
-          };
+          input = toolName === "edit"
+            ? {
+                path,
+                edits: [{ oldText: "approved before", newText: "must not reach private" }],
+              }
+            : { path, content: "must not reach private\n" };
+          admittedRoot = dirname(join(root, path));
+          approvedPath = join(root, `approved-${toolName}-lifecycle`);
         } else {
-          path = "write-lifecycle/file.txt";
-          approvedPath = join(root, "approved-write-lifecycle");
-          privatePath = join(root, "private-lifecycle-write", "file.txt");
-          write(join(root, path), "approved before\n");
-          write(privatePath, "PRIVATE_WRITE_UNCHANGED\n");
-          git(root, "add", path);
-          input = { path, content: "must not reach private\n" };
+          path = `${toolName}-lifecycle`;
+          write(join(root, path, "file.txt"), "approved search content\n");
+          git(root, "add", `${path}/file.txt`);
+          input = toolName === "grep" || toolName === "rg"
+            ? { path, pattern: "approved" }
+            : toolName === "find"
+              ? { path, pattern: "*" }
+              : { path };
+          admittedRoot = join(root, path);
+          approvedPath = join(root, `approved-${toolName}-lifecycle`);
         }
 
         const entries = [];
@@ -2707,7 +2879,7 @@ test("registered guarded tools fail closed after restore settlement and shutdown
         await control.execute("preflight", { action: "preflight" }, undefined, undefined, ctx);
         await control.execute(
           "privacy",
-          { action: "privacy", excludedPaths: ["private-lifecycle", "private-lifecycle-edit", "private-lifecycle-write"], persist: false },
+          { action: "privacy", excludedPaths: [privateDirectory], persist: false },
           undefined,
           undefined,
           ctx,
@@ -2724,25 +2896,19 @@ test("registered guarded tools fail closed after restore settlement and shutdown
           ctx,
         ), undefined);
 
-        if (toolName === "read") {
-          renameSync(join(root, path), approvedPath);
-          symlinkSync("private-lifecycle/read.txt", join(root, path));
-        } else {
-          const originalParent = dirname(join(root, path));
-          renameSync(originalParent, approvedPath);
-          const target = toolName === "edit" ? "private-lifecycle-edit" : "private-lifecycle-write";
-          symlinkSync(target, originalParent, "dir");
-        }
+        renameSync(admittedRoot, approvedPath);
+        symlinkSync(
+          toolName === "read" ? `${privateDirectory}/file.txt` : privateDirectory,
+          admittedRoot,
+          toolName === "read" ? "file" : "dir",
+        );
 
         await h.handlers.get(resetEvent)({}, ctx);
         await assert.rejects(
           h.tools.get(toolName).execute(id, input, undefined, undefined, ctx),
           /PICM_PATH_BINDING_MISSING/,
         );
-        assert.equal(
-          readFileSync(privatePath, "utf8"),
-          toolName === "edit" ? "approved before\n" : toolName === "write" ? "PRIVATE_WRITE_UNCHANGED\n" : "PRIVATE_READ_MUST_NOT_APPEAR\n",
-        );
+        assert.equal(readFileSync(privatePath, "utf8"), privateContent);
         await h.handlers.get("tool_execution_end")(
           { toolCallId: id, toolName, result: { content: [] }, isError: true },
           ctx,
@@ -2906,58 +3072,115 @@ test("session shutdown clears orphaned execution leases", async () => {
   });
 });
 
-test("one session shutdown preserves another session's bound execution", async (t) => {
+test("one session shutdown rejects its guarded calls and preserves another session's bindings", async (t) => {
   if (process.platform === "win32") {
     t.skip("symlink behavior is platform-specific");
     return;
   }
-  await withFixture(async ({ root }) => {
-    writeFileSync(
-      join(root, ".gitignore"),
-      `${readFileSync(join(root, ".gitignore"), "utf8")}private-cross-session/\n`,
-    );
-    write(join(root, "private-cross-session", "secret.txt"), "PRIVATE_CROSS_SESSION\n");
-    const h = extensionHarness();
-    const control = h.tools.get("picm_scan_control");
-    const firstCtx = h.context(root, "cross-session-shutdown-a");
-    const secondCtx = h.context(root, "cross-session-shutdown-b");
-    for (const ctx of [firstCtx, secondCtx]) {
-      await h.commands.get("picm-adopt").handler("coding", ctx);
-      await control.execute("preflight", { action: "preflight" }, undefined, undefined, ctx);
-      await control.execute(
-        "privacy",
-        { action: "privacy", excludedPaths: ["private-cross-session"], persist: false },
-        undefined,
-        undefined,
-        ctx,
+  for (const toolName of ["read", "grep", "rg", "find", "ls"]) {
+    await withFixture(async ({ root }) => {
+      writeFileSync(
+        join(root, ".gitignore"),
+        `${readFileSync(join(root, ".gitignore"), "utf8")}private-cross-session-*/\n`,
       );
-      await control.execute("begin", { action: "begin" }, undefined, undefined, ctx);
-    }
+      const privateDirectory = `private-cross-session-${toolName}`;
+      const privatePath = join(root, privateDirectory, "secret.txt");
+      const privateContent = `PRIVATE_CROSS_SESSION_${toolName.toUpperCase()}\n`;
+      write(privatePath, privateContent);
 
-    const id = "cross-session-bound-read";
-    const input = { path: "safe.txt" };
-    await h.handlers.get("tool_execution_start")(
-      { toolCallId: id, toolName: "read", args: input },
-      secondCtx,
-    );
-    assert.equal(await h.handlers.get("tool_call")(
-      { toolCallId: id, toolName: "read", input },
-      secondCtx,
-    ), undefined);
-    renameSync(join(root, "safe.txt"), join(root, "approved-cross-session-safe.txt"));
-    symlinkSync("private-cross-session/secret.txt", join(root, "safe.txt"));
+      let path;
+      let input;
+      let admittedRoot;
+      let approvedPath;
+      if (toolName === "read") {
+        path = "safe.txt";
+        input = { path };
+        admittedRoot = join(root, path);
+        approvedPath = join(root, "approved-cross-session-safe.txt");
+      } else {
+        path = `${toolName}-cross-session`;
+        write(join(root, path, "guide.md"), "approved cross-session guide\n");
+        git(root, "add", `${path}/guide.md`);
+        input = toolName === "grep" || toolName === "rg"
+          ? { path, pattern: "approved" }
+          : toolName === "find"
+            ? { path, pattern: "*" }
+            : { path };
+        admittedRoot = join(root, path);
+        approvedPath = join(root, `approved-${toolName}-cross-session`);
+      }
 
-    await h.handlers.get("session_shutdown")({}, firstCtx);
-    const result = await h.tools.get("read").execute(id, input, undefined, undefined, secondCtx);
-    const text = result.content.map((part) => part.text ?? "").join("\n");
-    assert.match(text, /safe/);
-    assert.doesNotMatch(text, /PRIVATE_CROSS_SESSION/);
-    await h.handlers.get("tool_execution_end")(
-      { toolCallId: id, toolName: "read", result, isError: false },
-      secondCtx,
-    );
-    await h.handlers.get("session_shutdown")({}, secondCtx);
-  });
+      const validMatch = `${JSON.stringify({ type: "match", data: { line_number: 1 } })}\n`;
+      const h = extensionHarness({
+        grepExecutionOptions: {
+          resolveMatcher: async () => "synthetic-rg",
+          spawnMatcher: fakeRipgrepSpawn({ stdout: [validMatch] }),
+        },
+      });
+      const control = h.tools.get("picm_scan_control");
+      const firstCtx = h.context(root, `cross-session-shutdown-a-${toolName}`);
+      const secondCtx = h.context(root, `cross-session-shutdown-b-${toolName}`);
+      for (const ctx of [firstCtx, secondCtx]) {
+        await h.commands.get("picm-adopt").handler("coding", ctx);
+        await control.execute("preflight", { action: "preflight" }, undefined, undefined, ctx);
+        await control.execute(
+          "privacy",
+          { action: "privacy", excludedPaths: [privateDirectory], persist: false },
+          undefined,
+          undefined,
+          ctx,
+        );
+        await control.execute("begin", { action: "begin" }, undefined, undefined, ctx);
+      }
+
+      const firstId = `cross-session-a-${toolName}`;
+      const secondId = `cross-session-b-${toolName}`;
+      for (const [id, ctx] of [[firstId, firstCtx], [secondId, secondCtx]]) {
+        await h.handlers.get("tool_execution_start")(
+          { toolCallId: id, toolName, args: input },
+          ctx,
+        );
+        assert.equal(await h.handlers.get("tool_call")(
+          { toolCallId: id, toolName, input },
+          ctx,
+        ), undefined);
+      }
+
+      renameSync(admittedRoot, approvedPath);
+      symlinkSync(
+        toolName === "read" ? `${privateDirectory}/secret.txt` : privateDirectory,
+        admittedRoot,
+        toolName === "read" ? "file" : "dir",
+      );
+
+      await h.handlers.get("session_shutdown")({}, firstCtx);
+      await assert.rejects(
+        h.tools.get(toolName).execute(firstId, input, undefined, undefined, firstCtx),
+        /PICM_PATH_BINDING_MISSING/,
+      );
+      await h.handlers.get("tool_execution_end")(
+        { toolCallId: firstId, toolName, result: { content: [] }, isError: true },
+        firstCtx,
+      );
+
+      const result = await h.tools.get(toolName).execute(
+        secondId,
+        input,
+        undefined,
+        undefined,
+        secondCtx,
+      );
+      const text = result.content.map((part) => part.text ?? "").join("\n");
+      assert.match(text, toolName === "read" ? /safe/ : /guide\.md/);
+      assert.doesNotMatch(text, /PRIVATE_CROSS_SESSION|secret\.txt/);
+      assert.equal(readFileSync(privatePath, "utf8"), privateContent);
+      await h.handlers.get("tool_execution_end")(
+        { toolCallId: secondId, toolName, result, isError: false },
+        secondCtx,
+      );
+      await h.handlers.get("session_shutdown")({}, secondCtx);
+    });
+  }
 });
 
 test("execution leases stay isolated by session", async () => {

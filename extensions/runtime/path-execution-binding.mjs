@@ -27,6 +27,7 @@ export const DEFAULT_PATH_BINDING_LIMITS = Object.freeze({
   maxRipgrepRecordBytes: 1024 * 1024,
   maxRipgrepStdoutBytes: 8 * 1024 * 1024,
   maxRipgrepStderrBytes: 256 * 1024,
+  maxRipgrepTerminationWaitMs: 2_000,
   maxGrepMatches: 1_000,
   maxGrepContextLines: 100,
   maxGrepRenderedBytes: GREP_OUTPUT_LIMIT_BYTES,
@@ -319,10 +320,36 @@ async function resolveRipgrep() {
   return ripgrepPathPromise;
 }
 
+function runAbortable(operation, signal) {
+  if (!signal) return Promise.resolve().then(operation);
+  if (signal.aborted) return Promise.reject(new Error("Operation aborted"));
+  return new Promise((resolvePromise, reject) => {
+    let settled = false;
+    const settle = (finish) => {
+      if (settled) return;
+      settled = true;
+      signal.removeEventListener("abort", abort);
+      finish();
+    };
+    const abort = () => settle(() => reject(new Error("Operation aborted")));
+    signal.addEventListener("abort", abort, { once: true });
+    Promise.resolve()
+      .then(() => {
+        if (signal.aborted) throw new Error("Operation aborted");
+        return operation();
+      })
+      .then(
+        (value) => settle(() => resolvePromise(value)),
+        (error) => settle(() => reject(error)),
+      );
+  });
+}
+
 async function ripgrepMatches(
   path,
   args,
   content,
+  lineCount,
   signal,
   remaining,
   { spawnMatcher, resourceLimits },
@@ -343,36 +370,87 @@ async function ripgrepMatches(
     let stderrBytes = 0;
     let limited = false;
     let settled = false;
-    const settle = (operation) => {
+    let termination;
+    let terminationTimer;
+
+    function cleanup() {
+      if (terminationTimer) clearTimeout(terminationTimer);
+      terminationTimer = undefined;
+      signal?.removeEventListener("abort", abort);
+      child.stdout?.off("data", onStdout);
+      child.stderr?.off("data", onStderr);
+      child.off("close", onClose);
+      if (termination) {
+        try { child.stdin?.destroy(); } catch {}
+        try { child.stdout?.destroy(); } catch {}
+        try { child.stderr?.destroy(); } catch {}
+      }
+      queueMicrotask(() => {
+        child.stdin?.off("error", onStdinError);
+        child.stdout?.off("error", onStreamError);
+        child.stderr?.off("error", onStreamError);
+        child.off("error", onChildError);
+      });
+    }
+
+    function settle(operation) {
       if (settled) return;
       settled = true;
-      signal?.removeEventListener("abort", abort);
+      cleanup();
       operation();
-    };
-    const stop = () => {
+    }
+
+    function terminationFailure(reason) {
+      return new Error(`PICM_GREP_TERMINATION_FAILED: ${reason}`);
+    }
+
+    function requestTermination(outcome) {
+      if (settled || termination) return;
+      termination = outcome;
       try { child.stdin?.destroy(); } catch {}
+      let requested;
       try {
-        if (!child.killed) child.kill();
-      } catch {}
-    };
-    const rejectAndStop = (error) => {
-      stop();
-      settle(() => reject(error));
-    };
-    const abort = () => rejectAndStop(new Error("Operation aborted"));
-    signal?.addEventListener("abort", abort, { once: true });
-    child.stdout?.on("data", (chunk) => {
-      if (limited || settled) return;
+        requested = child.killed || child.kill();
+      } catch (error) {
+        settle(() => reject(terminationFailure(
+          `ripgrep termination request failed: ${error instanceof Error ? error.message : error}`,
+        )));
+        return;
+      }
+      if (!requested) {
+        settle(() => reject(terminationFailure("ripgrep termination request returned false")));
+        return;
+      }
+      if (settled) return;
+      terminationTimer = setTimeout(() => {
+        if (settled) return;
+        try { child.kill("SIGKILL"); } catch {}
+        settle(() => reject(new Error(
+          `PICM_GREP_TERMINATION_TIMEOUT: ripgrep did not close within ${resourceLimits.maxRipgrepTerminationWaitMs}ms`,
+        )));
+      }, resourceLimits.maxRipgrepTerminationWaitMs);
+    }
+
+    function rejectAfterTermination(error) {
+      requestTermination({ type: "reject", error });
+    }
+
+    function abort() {
+      rejectAfterTermination(new Error("Operation aborted"));
+    }
+
+    function onStdout(chunk) {
+      if (termination || settled) return;
       stdoutBytes += Buffer.byteLength(chunk);
       if (stdoutBytes > resourceLimits.maxRipgrepStdoutBytes) {
-        rejectAndStop(new Error(
+        rejectAfterTermination(new Error(
           `PICM_GREP_RESOURCE_LIMIT: stdout exceeds ${resourceLimits.maxRipgrepStdoutBytes} bytes`,
         ));
         return;
       }
       stdout += chunk.toString();
       if (Buffer.byteLength(stdout, "utf8") > resourceLimits.maxRipgrepRecordBytes) {
-        rejectAndStop(new Error(
+        rejectAfterTermination(new Error(
           `PICM_GREP_RESOURCE_LIMIT: JSON record exceeds ${resourceLimits.maxRipgrepRecordBytes} bytes`,
         ));
         return;
@@ -382,7 +460,7 @@ async function ripgrepMatches(
       for (const record of records) {
         if (!record) continue;
         if (Buffer.byteLength(record, "utf8") > resourceLimits.maxRipgrepRecordBytes) {
-          rejectAndStop(new Error(
+          rejectAfterTermination(new Error(
             `PICM_GREP_RESOURCE_LIMIT: JSON record exceeds ${resourceLimits.maxRipgrepRecordBytes} bytes`,
           ));
           return;
@@ -391,56 +469,102 @@ async function ripgrepMatches(
         try {
           event = JSON.parse(record);
         } catch {
-          rejectAndStop(new Error("PICM_GREP_SUBPROCESS_INVALID: malformed ripgrep JSON record"));
+          rejectAfterTermination(new Error(
+            "PICM_GREP_SUBPROCESS_INVALID: malformed ripgrep JSON record",
+          ));
           return;
         }
-        if (event.type === "match" && typeof event.data?.line_number === "number") {
-          matches.push(event.data.line_number);
+        if (event?.type === "match") {
+          const lineNumber = event.data?.line_number;
+          if (!Number.isSafeInteger(lineNumber) || lineNumber < 1 || lineNumber > lineCount) {
+            rejectAfterTermination(new Error(
+              "PICM_GREP_SUBPROCESS_INVALID: malformed ripgrep match record",
+            ));
+            return;
+          }
+          matches.push(lineNumber);
           if (matches.length >= remaining) {
             limited = true;
-            stop();
+            requestTermination({ type: "resolve" });
             return;
           }
         }
       }
-    });
-    child.stderr?.on("data", (chunk) => {
-      if (settled) return;
+    }
+
+    function onStderr(chunk) {
+      if (termination || settled) return;
       stderrBytes += Buffer.byteLength(chunk);
       if (stderrBytes > resourceLimits.maxRipgrepStderrBytes) {
-        rejectAndStop(new Error(
+        rejectAfterTermination(new Error(
           `PICM_GREP_RESOURCE_LIMIT: stderr exceeds ${resourceLimits.maxRipgrepStderrBytes} bytes`,
         ));
         return;
       }
       stderr += chunk.toString();
-    });
-    child.stdin?.on("error", (error) => {
-      if (limited || settled) return;
-      rejectAndStop(error);
-    });
-    child.stdout?.on("error", (error) => rejectAndStop(error));
-    child.stderr?.on("error", (error) => rejectAndStop(error));
-    child.on("error", (error) => rejectAndStop(
-      new Error(`Failed to run ripgrep: ${error instanceof Error ? error.message : error}`),
-    ));
-    child.on("close", (code) => {
+    }
+
+    function onStdinError(error) {
+      if (termination || settled) return;
+      rejectAfterTermination(error);
+    }
+
+    function onStreamError(error) {
+      if (termination || settled) return;
+      rejectAfterTermination(error);
+    }
+
+    function onChildError(error) {
+      if (termination) {
+        settle(() => reject(terminationFailure(
+          `ripgrep emitted an error during termination: ${error instanceof Error ? error.message : error}`,
+        )));
+        return;
+      }
+      settle(() => reject(new Error(
+        `Failed to run ripgrep: ${error instanceof Error ? error.message : error}`,
+      )));
+    }
+
+    function onClose(code) {
       if (settled) return;
-      if (signal?.aborted) return settle(() => reject(new Error("Operation aborted")));
-      if (!limited && stdout.trim() !== "") {
-        return settle(() => reject(new Error(
+      if (termination?.type === "reject") {
+        settle(() => reject(termination.error));
+        return;
+      }
+      if (termination?.type === "resolve") {
+        settle(() => resolvePromise({ matches, limited }));
+        return;
+      }
+      if (signal?.aborted) {
+        settle(() => reject(new Error("Operation aborted")));
+        return;
+      }
+      if (stdout.trim() !== "") {
+        settle(() => reject(new Error(
           "PICM_GREP_SUBPROCESS_INVALID: incomplete ripgrep JSON record",
         )));
+        return;
       }
-      if (!limited && code !== 0 && code !== 1) {
-        return settle(() => reject(new Error(stderr.trim() || `ripgrep exited with code ${code}`)));
+      if (code !== 0 && code !== 1) {
+        settle(() => reject(new Error(stderr.trim() || `ripgrep exited with code ${code}`)));
+        return;
       }
       settle(() => resolvePromise({ matches, limited }));
-    });
+    }
+
+    signal?.addEventListener("abort", abort, { once: true });
+    child.stdout?.on("data", onStdout);
+    child.stderr?.on("data", onStderr);
+    child.stdin?.on("error", onStdinError);
+    child.stdout?.on("error", onStreamError);
+    child.stderr?.on("error", onStreamError);
+    child.on("error", onChildError);
+    child.on("close", onClose);
     try {
       child.stdin?.end(content);
     } catch (error) {
-      rejectAndStop(error);
+      rejectAfterTermination(error);
     }
   });
 }
@@ -476,7 +600,7 @@ export async function executeBoundGrep(binding, params, signal, matcherOptions =
     : Number.isFinite(context) ? Math.max(0, Math.floor(context)) : 0;
   const contextSize = Math.min(requestedContext, resourceLimits.maxGrepContextLines);
   const contextResourceLimited = requestedContext > resourceLimits.maxGrepContextLines;
-  const ripgrepPath = await resolveMatcher();
+  const ripgrepPath = await runAbortable(resolveMatcher, signal);
   if (signal?.aborted) throw new Error("Operation aborted");
   for (const file of files) {
     if (signal?.aborted) throw new Error("Operation aborted");
@@ -491,11 +615,17 @@ export async function executeBoundGrep(binding, params, signal, matcherOptions =
     if (ignoreCase) args.push("--ignore-case");
     if (literal) args.push("--fixed-strings");
     args.push("--", pattern, "-");
-    const lines = content.replace(/\r\n/g, "\n").replace(/\r/g, "\n").split("\n");
+    const normalizedContent = content.replace(/\r\n/g, "\n");
+    const splitLines = normalizedContent.split("\n");
+    const lineCount = normalizedContent.length === 0
+      ? 0
+      : splitLines.length - (normalizedContent.endsWith("\n") ? 1 : 0);
+    const lines = splitLines.slice(0, lineCount).map((line) => line.replace(/\r/g, ""));
     const result = await ripgrepMatches(
       ripgrepPath,
       args,
       content,
+      lineCount,
       signal,
       effectiveLimit - matches.length,
       { spawnMatcher, resourceLimits },
@@ -564,7 +694,7 @@ export async function executeBoundGrep(binding, params, signal, matcherOptions =
       notices.push(`${effectiveLimit} matches limit reached. Use limit=${effectiveLimit * 2} for more, or refine pattern`);
     }
   }
-  if (matchResourceLimited) {
+  if (matchResourceLimited && matches.length >= effectiveLimit) {
     details.matchResourceLimitReached = resourceLimits.maxGrepMatches;
     notices.push(`${resourceLimits.maxGrepMatches} matches resource limit reached. Refine pattern`);
   }
