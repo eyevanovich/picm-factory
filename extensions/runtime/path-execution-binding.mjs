@@ -330,6 +330,7 @@ async function ripgrepMatches(path, args, content, signal, remaining) {
     };
     signal?.addEventListener("abort", abort, { once: true });
     child.stdout.on("data", (chunk) => {
+      if (limited || settled) return;
       stdout += chunk.toString();
       const records = stdout.split("\n");
       stdout = records.pop() ?? "";
@@ -337,6 +338,11 @@ async function ripgrepMatches(path, args, content, signal, remaining) {
         if (!record) continue;
         const event = JSON.parse(record);
         if (event.type === "match" && typeof event.data?.line_number === "number") {
+          if (matches.length >= remaining) {
+            limited = true;
+            stop();
+            break;
+          }
           matches.push(event.data.line_number);
           if (matches.length >= remaining) {
             limited = true;
@@ -389,7 +395,7 @@ export async function executeBoundGrep(binding, params, signal, resolveMatcher =
     args.push("--", pattern, "-");
     const lines = content.replace(/\r\n/g, "\n").replace(/\r/g, "\n").split("\n");
     const result = await ripgrepMatches(ripgrepPath, args, content, signal, effectiveLimit - matches.length);
-    for (const lineNumber of result.matches) {
+    for (const lineNumber of result.matches.slice(0, effectiveLimit - matches.length)) {
       matches.push({ fileName, index: lineNumber - 1, lines });
     }
     if (matches.length >= effectiveLimit) break;

@@ -395,6 +395,7 @@ test("guarded directory grep rg find and ls filter protected descendants", async
       { id: "directory-ls-limit", toolName: "ls", input: { path: "docs", limit: 1 } },
       { id: "directory-ls-empty", toolName: "ls", input: { path: "docs/empty" } },
       { id: "directory-find-root-internals", toolName: "find", input: { path: ".", pattern: "**" } },
+      { id: "directory-grep-match-limit", toolName: "grep", input: { path: "docs", pattern: "HIT", glob: "large.md", limit: 1 } },
     ].map((spec) => ({ ...spec, tool: h.tools.get(spec.toolName) }));
     const contractCalls = await preflightParallelToolCalls(h, ctx, contractSpecs);
     const contractResults = await Promise.all(executePreflightedToolCalls(h, ctx, contractCalls));
@@ -413,6 +414,8 @@ test("guarded directory grep rg find and ls filter protected descendants", async
     assert.match(contractResults[7].result.content[0].text, /1 entries limit reached/);
     assert.equal(contractResults[8].result.content[0].text, "(empty directory)");
     assert.doesNotMatch(contractResults[9].result.content[0].text, /(?:^|\/)\.git\//m);
+    assert.equal(contractResults[10].result.details?.matchLimitReached, 1);
+    assert.equal((contractResults[10].result.content[0].text.match(/^large\.md:\d+:/gm) ?? []).length, 1);
 
     const abortController = new AbortController();
     abortController.abort();
