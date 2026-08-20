@@ -705,7 +705,7 @@ test("treats present submodules as separate guarded worktrees", async (t) => {
   t.after(() => rmSync(source, { recursive: true, force: true }));
 
   git(source, "init", "-q");
-  write(join(source, ".gitignore"), "secret.txt\n");
+  write(join(source, ".gitignore"), "secret.txt\nignored-empty/\n");
   write(join(source, "safe.txt"), "safe\n");
   write(join(source, "secret.txt"), "synthetic ignored\n");
   git(source, "add", ".gitignore", "safe.txt");
@@ -716,6 +716,7 @@ test("treats present submodules as separate guarded worktrees", async (t) => {
   git(root, "-c", "protocol.file.allow=always", "submodule", "add", "-q", source, "vendor/lib");
   const gate = createGitReadGate({ cwd: root, packageRoot: root });
   t.after(() => gate.dispose());
+  mkdirSync(join(root, "vendor", "lib", "ignored-empty"));
 
   assert.equal((await gate.checkPath("read", "vendor/lib/safe.txt")).allowed, true);
   assert.match((await gate.checkPath("read", "vendor/lib/secret.txt")).reason, /ignored by Git/);
@@ -724,6 +725,12 @@ test("treats present submodules as separate guarded worktrees", async (t) => {
   assert.equal(inventory.worktree.endsWith("/vendor/lib"), true);
   assert.equal(inventory.candidates.has("safe.txt"), true);
   assert.equal(inventory.candidates.has("secret.txt"), false);
+  const privacyTraversal = await gate.checkPrivacyPath("find", "vendor/lib", ["unrelated-private"]);
+  assert.equal(privacyTraversal.allowed, true);
+  assert.equal(
+    privacyTraversal.executionBinding.traversalEntries.some((entry) => entry.displayPath.endsWith("ignored-empty")),
+    false,
+  );
   write(join(root, ".gitignore"), "vendor/lib/\n");
   assert.match((await gate.checkPath("read", "vendor/lib/safe.txt")).reason, /ignored by parent/);
 });

@@ -520,6 +520,61 @@ export function createGitReadGate({
     };
   }
 
+  async function guardedInventoryForPath(canonicalPath, exclusions) {
+    const nestedBoundary = await boundaryForPath(canonicalPath);
+    const boundaryRoot = nestedBoundary ?? canonicalWorktree;
+    const gitPath = toGitPath(boundaryRoot, canonicalPath);
+    if (gitPath === ".git" || gitPath.startsWith(".git/")) {
+      return { decision: { allowed: false, protected: true, reason: ".git internals are not readable" } };
+    }
+
+    if (nestedBoundary) {
+      const parentBoundaryPath = toGitPath(canonicalWorktree, nestedBoundary);
+      const parentIgnore = await runWorkspaceGit([
+        "check-ignore",
+        "--no-index",
+        "-q",
+        "--",
+        parentBoundaryPath,
+      ]);
+      if (parentIgnore.code === 0) {
+        return { decision: { allowed: false, protected: true, reason: "submodule boundary is ignored by parent Git worktree" } };
+      }
+      if (parentIgnore.code !== 1) {
+        return {
+          decision: {
+            allowed: false,
+            protected: true,
+            reason: `Parent Git ignore check was unresolved: ${parentIgnore.stderr.trim() || `exit ${parentIgnore.code}`}`,
+          },
+        };
+      }
+    }
+
+    const inventory = await filterPrivacyInventory(
+      nestedBoundary
+        ? await inventoryForBoundary(nestedBoundary)
+        : await refreshInventoryUnchecked(),
+      exclusions,
+    );
+    const ignoreResult = nestedBoundary
+      ? await runGit(nestedBoundary, ["check-ignore", "--no-index", "-q", "--", gitPath])
+      : await runWorkspaceGit(["check-ignore", "--no-index", "-q", "--", gitPath]);
+    if (ignoreResult.code === 0) {
+      return { decision: { allowed: false, protected: true, reason: "path is ignored by Git" } };
+    }
+    if (ignoreResult.code !== 1) {
+      return {
+        decision: {
+          allowed: false,
+          protected: true,
+          reason: `Git ignore check was unresolved: ${ignoreResult.stderr.trim() || `exit ${ignoreResult.code}`}`,
+        },
+      };
+    }
+    return { inventory, gitPath };
+  }
+
   async function checkPrivacyPath(toolName, inputPath, privacyExcludedPaths = []) {
     if (!PATH_TOOLS.has(toolName) || privacyExcludedPaths.length === 0) {
       return { allowed: true, protected: false };
@@ -549,7 +604,9 @@ export function createGitReadGate({
           };
         }
         await discoverWorktree();
-        const inventory = await filterPrivacyInventory(await refreshInventoryUnchecked(), exclusions);
+        const boundary = await guardedInventoryForPath(resolvedPath.canonicalPath, exclusions);
+        if (boundary.decision) return boundary.decision;
+        const { inventory } = boundary;
         await addTraversalEntries(resolvedPath, inventory, exclusions);
       }
       return decision.allowed
@@ -615,65 +672,9 @@ export function createGitReadGate({
     const privatePath = await privacyDecision(resolvedPath.canonicalPath, exclusions);
     if (privatePath) return privatePath;
 
-    const nestedBoundary = await boundaryForPath(resolvedPath.canonicalPath);
-    const boundaryRoot = nestedBoundary ?? canonicalWorktree;
-    const gitPath = toGitPath(boundaryRoot, resolvedPath.canonicalPath);
-    if (gitPath === ".git" || gitPath.startsWith(".git/")) {
-      return { allowed: false, protected: true, reason: ".git internals are not readable" };
-    }
-
-    if (nestedBoundary) {
-      const parentBoundaryPath = toGitPath(canonicalWorktree, nestedBoundary);
-      const parentIgnore = await runWorkspaceGit([
-        "check-ignore",
-        "--no-index",
-        "-q",
-        "--",
-        parentBoundaryPath,
-      ]);
-      if (parentIgnore.code === 0) {
-        return { allowed: false, protected: true, reason: "submodule boundary is ignored by parent Git worktree" };
-      }
-      if (parentIgnore.code !== 1) {
-        return {
-          allowed: false,
-          protected: true,
-          reason: `Parent Git ignore check was unresolved: ${parentIgnore.stderr.trim() || `exit ${parentIgnore.code}`}`,
-        };
-      }
-    }
-
-    const inventory = await filterPrivacyInventory(
-      nestedBoundary
-        ? await inventoryForBoundary(nestedBoundary)
-        : await refreshInventoryUnchecked(),
-      exclusions,
-    );
-    const ignoreResult = nestedBoundary
-      ? await runGit(nestedBoundary, [
-        "check-ignore",
-        "--no-index",
-        "-q",
-        "--",
-        gitPath,
-      ])
-      : await runWorkspaceGit([
-      "check-ignore",
-      "--no-index",
-      "-q",
-      "--",
-      gitPath,
-      ]);
-    if (ignoreResult.code === 0) {
-      return { allowed: false, protected: true, reason: "path is ignored by Git" };
-    }
-    if (ignoreResult.code !== 1) {
-      return {
-        allowed: false,
-        protected: true,
-        reason: `Git ignore check was unresolved: ${ignoreResult.stderr.trim() || `exit ${ignoreResult.code}`}`,
-      };
-    }
+    const boundary = await guardedInventoryForPath(resolvedPath.canonicalPath, exclusions);
+    if (boundary.decision) return boundary.decision;
+    const { inventory, gitPath } = boundary;
 
     if (resolvedPath.stat?.isDirectory()) {
       if (!TRAVERSAL_TOOLS.has(toolName)) {
