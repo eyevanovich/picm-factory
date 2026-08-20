@@ -367,8 +367,11 @@ test("guarded directory grep rg find and ls filter protected descendants", async
     write(join(root, "docs", "context.md"), "before\nHIT one\nHIT two\nafter\n");
     mkdirSync(join(root, "docs", "empty"));
     mkdirSync(join(root, "docs", "nested", "empty"), { recursive: true });
+    mkdirSync(join(root, "docs", "ignored-empty"));
+    writeFileSync(join(root, ".gitignore"), `${readFileSync(join(root, ".gitignore"), "utf8")}docs/ignored-empty/\n`);
     write(join(root, "docs", "private", "secret.md"), "PRIVATE_MARKER\n");
     git(root, "add", "docs/public.md", "docs/root.ts", "docs/a.js", "docs/large.md", "docs/context.md", "docs/private/secret.md");
+    git(root, "add", ".gitignore");
     const h = extensionHarness();
     const ctx = h.context(root, "guarded-directory-filtering");
     const control = h.tools.get("picm_scan_control");
@@ -390,6 +393,7 @@ test("guarded directory grep rg find and ls filter protected descendants", async
       const text = result.result.content.map((part) => part.text ?? "").join("\n");
       assert.match(text, /public\.md|VISIBLE_MARKER/);
       assert.doesNotMatch(text, /secret\.md|PRIVATE_MARKER|private\//);
+      assert.doesNotMatch(text, /ignored-empty/);
     }
 
     const contractSpecs = [

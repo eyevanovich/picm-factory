@@ -385,6 +385,17 @@ export function createGitReadGate({
     return plan;
   }
 
+  async function traversalDirectoryIsIgnored(canonicalPath, inventory) {
+    const gitPath = toGitPath(inventory.worktree, canonicalPath);
+    if (gitPath === ".git" || gitPath.startsWith(".git/")) return true;
+    const result = inventory.isolated || inventory.worktree === worktree
+      ? await runWorkspaceGit(["check-ignore", "--no-index", "-q", "--", gitPath])
+      : await runGit(inventory.worktree, ["check-ignore", "--no-index", "-q", "--", gitPath]);
+    if (result.code === 0) return true;
+    if (result.code === 1) return false;
+    throw new Error(`Git ignore check was unresolved: ${result.stderr.trim() || `exit ${result.code}`}`);
+  }
+
   async function addTraversalEntries(resolvedPath, inventory, exclusions) {
     if (!resolvedPath.stat?.isDirectory()) return;
     const entries = [];
@@ -425,7 +436,9 @@ export function createGitReadGate({
       const canonicalPath = await fs.realpath(displayPath);
       if (
         isInside(resolvedPath.canonicalPath, canonicalPath) &&
-        isInside(canonicalWorktree, canonicalPath)
+        isInside(canonicalWorktree, canonicalPath) &&
+        !await traversalDirectoryIsIgnored(canonicalPath, inventory) &&
+        !await privacyDecision(canonicalPath, exclusions)
       ) {
         entries.push({
           absolutePath: displayPath,
@@ -442,20 +455,15 @@ export function createGitReadGate({
       for (const child of await readdir(parentPath, { withFileTypes: true })) {
         if (!child.isDirectory() || child.isSymbolicLink()) continue;
         const displayPath = resolve(parentPath, child.name);
-      const admittedStat = await fs.lstat(displayPath);
-      if (admittedStat.isSymbolicLink() || !admittedStat.isDirectory()) continue;
-      const canonicalPath = await fs.realpath(displayPath);
-      if (
-        !isInside(resolvedPath.canonicalPath, canonicalPath) ||
-        !isInside(canonicalWorktree, canonicalPath)
-      ) continue;
-      const gitPath = toGitPath(inventory.worktree, canonicalPath);
-      if (gitPath === ".git" || gitPath.startsWith(".git/")) continue;
-      const ignoredChild = [...inventory.ignored].some((path) => {
-        const normalized = path.replace(/\/$/, "");
-        return gitPath === normalized || gitPath.startsWith(`${normalized}/`);
-      });
-      if (ignoredChild || await privacyDecision(canonicalPath, exclusions)) continue;
+        const admittedStat = await fs.lstat(displayPath);
+        if (admittedStat.isSymbolicLink() || !admittedStat.isDirectory()) continue;
+        const canonicalPath = await fs.realpath(displayPath);
+        if (
+          !isInside(resolvedPath.canonicalPath, canonicalPath) ||
+          !isInside(canonicalWorktree, canonicalPath) ||
+          await traversalDirectoryIsIgnored(canonicalPath, inventory) ||
+          await privacyDecision(canonicalPath, exclusions)
+        ) continue;
         pendingDirectories.push(displayPath);
         if (!entries.some((entry) => entry.displayPath === displayPath)) {
           entries.push({
