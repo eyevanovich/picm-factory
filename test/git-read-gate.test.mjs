@@ -353,9 +353,11 @@ test("guarded directory grep rg find and ls filter protected descendants", async
   await withFixture(async ({ root }) => {
     write(join(root, "docs", "public.md"), "VISIBLE_MARKER\n");
     write(join(root, "docs", "root.ts"), "export const visible = true;\n");
+    write(join(root, "docs", "a.js"), `marker ${"x".repeat(2100)}\n`);
+    write(join(root, "docs", "large.md"), `${Array.from({ length: 40 }, () => `HIT ${"y".repeat(1900)}`).join("\n")}\n`);
     mkdirSync(join(root, "docs", "empty"));
     write(join(root, "docs", "private", "secret.md"), "PRIVATE_MARKER\n");
-    git(root, "add", "docs/public.md", "docs/root.ts", "docs/private/secret.md");
+    git(root, "add", "docs/public.md", "docs/root.ts", "docs/a.js", "docs/large.md", "docs/private/secret.md");
     const h = extensionHarness();
     const ctx = h.context(root, "guarded-directory-filtering");
     const control = h.tools.get("picm_scan_control");
@@ -372,7 +374,7 @@ test("guarded directory grep rg find and ls filter protected descendants", async
     ].map((spec) => ({ ...spec, tool: h.tools.get(spec.toolName) }));
     const calls = await preflightParallelToolCalls(h, ctx, specs);
     assert.equal(calls.every((call) => call.blocked === undefined), true);
-    const results = await executePreflightedToolCalls(h, ctx, calls);
+    const results = await Promise.all(executePreflightedToolCalls(h, ctx, calls));
     for (const result of results) {
       const text = result.result.content.map((part) => part.text ?? "").join("\n");
       assert.match(text, /public\.md|VISIBLE_MARKER/);
@@ -381,18 +383,42 @@ test("guarded directory grep rg find and ls filter protected descendants", async
 
     const contractSpecs = [
       { id: "directory-find-root-glob", toolName: "find", input: { path: "docs", pattern: "**/*.ts" } },
+      { id: "directory-find-brace-glob", toolName: "find", input: { path: "docs", pattern: "*.{js,ts}" } },
+      { id: "directory-grep-ripgrep-regex", toolName: "grep", input: { path: "docs", pattern: "(?i)marker", glob: "[ab].{js,ts}" } },
+      { id: "directory-grep-byte-limit", toolName: "grep", input: { path: "docs", pattern: "HIT", glob: "large.md" } },
       { id: "directory-find-limit", toolName: "find", input: { path: "docs", pattern: "**", limit: 1 } },
       { id: "directory-ls-limit", toolName: "ls", input: { path: "docs", limit: 1 } },
       { id: "directory-ls-empty", toolName: "ls", input: { path: "docs/empty" } },
     ].map((spec) => ({ ...spec, tool: h.tools.get(spec.toolName) }));
     const contractCalls = await preflightParallelToolCalls(h, ctx, contractSpecs);
-    const contractResults = await executePreflightedToolCalls(h, ctx, contractCalls);
+    const contractResults = await Promise.all(executePreflightedToolCalls(h, ctx, contractCalls));
     assert.match(contractResults[0].result.content[0].text, /^root\.ts$/m);
-    assert.equal(contractResults[1].result.details?.resultLimitReached, 1);
-    assert.match(contractResults[1].result.content[0].text, /1 results limit reached/);
-    assert.equal(contractResults[2].result.details?.entryLimitReached, 1);
-    assert.match(contractResults[2].result.content[0].text, /1 entries limit reached/);
-    assert.equal(contractResults[3].result.content[0].text, "(empty directory)");
+    assert.match(contractResults[1].result.content[0].text, /a\.js|root\.ts/);
+    assert.equal(contractResults[2].result.details?.linesTruncated, true);
+    assert.equal(contractResults[3].result.details?.truncation?.truncated, true);
+    assert.match(contractResults[3].result.content[0].text, /50KB limit reached/);
+    assert.equal(contractResults[4].result.details?.resultLimitReached, 1);
+    assert.match(contractResults[4].result.content[0].text, /1 results limit reached/);
+    assert.equal(contractResults[5].result.details?.entryLimitReached, 1);
+    assert.match(contractResults[5].result.content[0].text, /1 entries limit reached/);
+    assert.equal(contractResults[6].result.content[0].text, "(empty directory)");
+  });
+});
+
+test("guarded directory bindings reject retained child symlink replacement", async (t) => {
+  if (process.platform === "win32") {
+    t.skip("symlink behavior is platform-specific");
+    return;
+  }
+  await withFixture(async ({ root, packageRoot }) => {
+    mkdirSync(join(root, "docs", "empty"));
+    const gate = createGitReadGate({ cwd: root, packageRoot });
+    const decision = await gate.checkPath("ls", "docs", ["private"]);
+    assert.equal(decision.allowed, true);
+    renameSync(join(root, "docs", "empty"), join(root, "docs", "approved-empty"));
+    symlinkSync("../secrets", join(root, "docs", "empty"), "dir");
+    assert.throws(() => gate.bindPath(decision.executionBinding), /changed|symlink|ENOTDIR/);
+    await gate.dispose();
   });
 });
 

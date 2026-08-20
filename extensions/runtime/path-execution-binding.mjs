@@ -12,7 +12,8 @@ import {
   unlinkSync,
   writeSync,
 } from "node:fs";
-import { basename, dirname, join, relative, resolve, sep } from "node:path";
+import { spawnSync } from "node:child_process";
+import { basename, dirname, join, matchesGlob, relative, resolve, sep } from "node:path";
 
 const IMAGE_TYPE_SNIFF_BYTES = 4100;
 const PNG_SIGNATURE = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
@@ -262,15 +263,9 @@ function prepareParent(plan) {
 }
 
 function globMatches(fileName, pattern) {
-  const source = pattern
-    .replace(/[.+^${}()|[\]\\]/g, "\\$&")
-    .replaceAll("**/", "\1")
-    .replaceAll("**", "\0")
-    .replaceAll("*", "[^/]*")
-    .replaceAll("?", "[^/]")
-    .replaceAll("\1", "(?:.*/)?")
-    .replaceAll("\0", ".*");
-  return new RegExp(`^(?:${source})$`).test(fileName);
+  return matchesGlob(fileName, pattern) || (
+    pattern.startsWith("**/") && matchesGlob(fileName, pattern.slice(3))
+  );
 }
 
 function truncateLine(line, maxLength = 2000) {
@@ -288,26 +283,27 @@ export async function executeBoundGrep(binding, params, signal) {
     limit = 100,
   } = params;
   const files = binding.files ?? [{ path: binding.absolutePath, readFile: binding.operations.readFile }];
-  let matcher;
-  try {
-    const expression = literal ? undefined : new RegExp(pattern, ignoreCase ? "i" : "");
-    matcher = literal
-      ? (line) => ignoreCase
-        ? line.toLocaleLowerCase().includes(pattern.toLocaleLowerCase())
-        : line.includes(pattern)
-      : (line) => expression.test(line);
-  } catch (error) {
-    throw new Error(`Invalid search pattern: ${error instanceof Error ? error.message : error}`);
-  }
   const matches = [];
   const effectiveLimit = Math.max(1, limit);
   for (const file of files) {
     const fileName = relative(binding.absolutePath, file.path) || basename(file.path);
     if (glob && !globMatches(fileName, glob) && !globMatches(basename(file.path), glob)) continue;
-    const lines = (await file.readFile()).toString("utf8").replace(/\r\n/g, "\n").replace(/\r/g, "\n").split("\n");
-    for (let index = 0; index < lines.length; index += 1) {
-      if (!matcher(lines[index])) continue;
-      matches.push({ fileName, index, lines });
+    const content = (await file.readFile()).toString("utf8");
+    const args = ["--json", "--line-number", "--color=never"];
+    if (ignoreCase) args.push("--ignore-case");
+    if (literal) args.push("--fixed-strings");
+    args.push("--", pattern, "-");
+    const result = spawnSync("rg", args, { input: content, encoding: "utf8", maxBuffer: 64 * 1024 * 1024 });
+    if (result.error) throw result.error;
+    if (result.status !== 0 && result.status !== 1) {
+      throw new Error(result.stderr.trim() || `ripgrep exited with code ${result.status}`);
+    }
+    const lines = content.replace(/\r\n/g, "\n").replace(/\r/g, "\n").split("\n");
+    for (const rawEvent of result.stdout.split("\n")) {
+      if (!rawEvent) continue;
+      const event = JSON.parse(rawEvent);
+      if (event.type !== "match" || typeof event.data?.line_number !== "number") continue;
+      matches.push({ fileName, index: event.data.line_number - 1, lines });
       if (matches.length >= effectiveLimit) break;
     }
     if (matches.length >= effectiveLimit) break;
@@ -318,6 +314,7 @@ export async function executeBoundGrep(binding, params, signal) {
   }
   const output = [];
   const emitted = new Set();
+  let linesTruncated = false;
   const contextSize = Math.max(0, context);
   for (const { fileName, index, lines } of matches) {
     const start = Math.max(0, index - contextSize);
@@ -327,15 +324,34 @@ export async function executeBoundGrep(binding, params, signal) {
       if (emitted.has(key)) continue;
       emitted.add(key);
       const separator = current === index ? ":" : "-";
-      output.push(`${fileName}${separator}${current + 1}${separator} ${truncateLine(lines[current])}`);
+      const shortened = truncateLine(lines[current]);
+      if (shortened !== lines[current]) linesTruncated = true;
+      output.push(`${fileName}${separator}${current + 1}${separator} ${shortened}`);
     }
   }
   const text = output.join("\n");
-  const truncated = Buffer.byteLength(text, "utf8") > 50 * 1024;
-  const content = truncated ? Buffer.from(text).subarray(0, 50 * 1024).toString("utf8") : text;
+  const maxBytes = 50 * 1024;
+  const originalBytes = Buffer.byteLength(text, "utf8");
+  const truncated = originalBytes > maxBytes;
+  const content = truncated ? Buffer.from(text).subarray(0, maxBytes).toString("utf8") : text;
+  const details = {};
+  const notices = [];
+  if (matches.length >= effectiveLimit) {
+    details.matchLimitReached = effectiveLimit;
+    notices.push(`${effectiveLimit} matches limit reached. Use limit=${effectiveLimit * 2} for more, or refine pattern`);
+  }
+  if (truncated) {
+    details.truncation = { truncated: true, originalBytes, keptBytes: maxBytes, maxBytes };
+    notices.push("50KB limit reached");
+  }
+  if (linesTruncated) {
+    details.linesTruncated = true;
+    notices.push("Some lines truncated to 2000 chars. Use read tool to see full lines");
+  }
+  const textWithNotices = notices.length ? `${content}\n\n[${notices.join(". ")}]` : content;
   return {
-    content: [{ type: "text", text: truncated ? `${content}\n\n[50KB limit reached]` : content }],
-    details: matches.length >= effectiveLimit ? { matchLimitReached: effectiveLimit } : undefined,
+    content: [{ type: "text", text: textWithNotices }],
+    details: Object.keys(details).length ? details : undefined,
   };
 }
 
@@ -381,7 +397,9 @@ export function createPathExecutionBinding(plan) {
             retainedFiles.push({
               path: entry.displayPath ?? entry.absolutePath,
               isDirectory: entry.isDirectory,
-              content: entry.isDirectory ? undefined : readAll(entryFd),
+              content: entry.isDirectory || !["grep", "rg"].includes(plan.toolName)
+                ? undefined
+                : readAll(entryFd),
             });
             closeSync(entryFd);
           } catch (error) {
@@ -506,14 +524,17 @@ export function createPathExecutionBinding(plan) {
                 }
               : {
                   exists: async () => true,
-                  glob: async (pattern, searchPath, options) => retainedFiles
-                    .filter((entry) => {
-                      const path = relative(searchPath, entry.path).split(sep).join("/");
-                      const candidate = pattern.includes("/") ? path : basename(path);
-                      return path && globMatches(candidate, pattern);
-                    })
-                    .slice(0, options.limit)
-                    .map((entry) => entry.isDirectory ? `${entry.path}${sep}` : entry.path),
+                  glob: async (pattern, searchPath, options) => {
+                    if (!traversalDirectory) fail("validated find target is not a directory");
+                    return retainedFiles
+                      .filter((entry) => {
+                        const path = relative(searchPath, entry.path).split(sep).join("/");
+                        const candidate = pattern.includes("/") ? path : basename(path);
+                        return path && globMatches(candidate, pattern);
+                      })
+                      .slice(0, options.limit)
+                      .map((entry) => entry.isDirectory ? `${entry.path}${sep}` : entry.path);
+                  },
                 },
     release() {
       if (released) return;

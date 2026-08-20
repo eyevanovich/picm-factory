@@ -391,12 +391,16 @@ export function createGitReadGate({
     const directories = new Set();
     for (const candidate of inventory.candidates) {
       const absolutePath = resolve(inventory.worktree, candidate);
-      if (absolutePath === resolvedPath.canonicalPath || !isInside(resolvedPath.canonicalPath, absolutePath)) continue;
+      if (absolutePath === resolvedPath.absolutePath) continue;
       try {
         const stat = await fs.lstat(absolutePath);
         if (stat.isSymbolicLink() || !stat.isFile()) continue;
         const canonicalPath = await fs.realpath(absolutePath);
-        if (!isInside(resolvedPath.canonicalPath, canonicalPath)) continue;
+        if (
+          !isInside(resolvedPath.canonicalPath, canonicalPath) ||
+          !isInside(canonicalWorktree, canonicalPath) ||
+          await privacyDecision(canonicalPath, exclusions)
+        ) continue;
         const displayPath = resolve(
           resolvedPath.absolutePath,
           relative(resolvedPath.canonicalPath, canonicalPath),
@@ -405,7 +409,7 @@ export function createGitReadGate({
           directories.add(directory);
         }
         entries.push({
-          absolutePath: canonicalPath,
+          absolutePath,
           canonicalPath,
           displayPath,
           isDirectory: false,
@@ -416,22 +420,32 @@ export function createGitReadGate({
       }
     }
     for (const displayPath of directories) {
+      const admittedStat = await fs.lstat(displayPath);
+      if (admittedStat.isSymbolicLink() || !admittedStat.isDirectory()) continue;
       const canonicalPath = await fs.realpath(displayPath);
-      const stat = await fs.lstat(canonicalPath);
-      if (!stat.isSymbolicLink() && stat.isDirectory()) {
+      if (
+        isInside(resolvedPath.canonicalPath, canonicalPath) &&
+        isInside(canonicalWorktree, canonicalPath)
+      ) {
         entries.push({
-          absolutePath: canonicalPath,
+          absolutePath: displayPath,
           canonicalPath,
           displayPath,
           isDirectory: true,
-          identity: fileIdentity(stat),
+          identity: fileIdentity(admittedStat),
         });
       }
     }
     for (const child of await readdir(resolvedPath.absolutePath, { withFileTypes: true })) {
       if (!child.isDirectory() || child.isSymbolicLink()) continue;
       const displayPath = resolve(resolvedPath.absolutePath, child.name);
+      const admittedStat = await fs.lstat(displayPath);
+      if (admittedStat.isSymbolicLink() || !admittedStat.isDirectory()) continue;
       const canonicalPath = await fs.realpath(displayPath);
+      if (
+        !isInside(resolvedPath.canonicalPath, canonicalPath) ||
+        !isInside(canonicalWorktree, canonicalPath)
+      ) continue;
       const gitPath = toGitPath(inventory.worktree, canonicalPath);
       const ignoredChild = [...inventory.ignored].some((path) => {
         const normalized = path.replace(/\/$/, "");
@@ -439,13 +453,12 @@ export function createGitReadGate({
       });
       if (ignoredChild || await privacyDecision(canonicalPath, exclusions)) continue;
       if (entries.some((entry) => entry.displayPath === displayPath)) continue;
-      const stat = await fs.lstat(canonicalPath);
       entries.push({
-        absolutePath: canonicalPath,
+        absolutePath: displayPath,
         canonicalPath,
         displayPath,
         isDirectory: true,
-        identity: fileIdentity(stat),
+        identity: fileIdentity(admittedStat),
       });
     }
     resolvedPath.traversalEntries = entries;
