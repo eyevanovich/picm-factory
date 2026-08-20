@@ -17,7 +17,28 @@ import { basename, dirname, join, matchesGlob, relative, resolve, sep } from "no
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 const IMAGE_TYPE_SNIFF_BYTES = 4100;
+const GREP_OUTPUT_LIMIT_BYTES = 50 * 1024;
 const PNG_SIGNATURE = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
+
+export const DEFAULT_PATH_BINDING_LIMITS = Object.freeze({
+  maxRetainedFileBytes: 8 * 1024 * 1024,
+  maxTraversalSnapshotBytes: 64 * 1024 * 1024,
+  maxTraversalEntries: 10_000,
+  maxRipgrepRecordBytes: 1024 * 1024,
+  maxRipgrepStdoutBytes: 8 * 1024 * 1024,
+  maxRipgrepStderrBytes: 256 * 1024,
+  maxGrepMatches: 1_000,
+  maxGrepContextLines: 100,
+  maxGrepRenderedBytes: GREP_OUTPUT_LIMIT_BYTES,
+});
+
+export function resolvePathBindingLimits(overrides = {}) {
+  const limits = { ...DEFAULT_PATH_BINDING_LIMITS, ...overrides };
+  for (const [name, value] of Object.entries(limits)) {
+    if (!Number.isSafeInteger(value) || value < 1) fail(`invalid ${name} resource limit`);
+  }
+  return Object.freeze(limits);
+}
 
 function fail(message) {
   throw new Error(`PICM_PATH_BINDING_FAILED: ${message}`);
@@ -53,16 +74,28 @@ function openFlags(toolName) {
     : toolName === "write"
       ? constants.O_WRONLY
       : constants.O_RDONLY;
-  return access | (constants.O_NOFOLLOW ?? 0) | (constants.O_BINARY ?? 0);
+  return access | (constants.O_NOFOLLOW ?? 0) | (constants.O_NONBLOCK ?? 0) |
+    (constants.O_BINARY ?? 0);
 }
 
-function readAll(fd) {
+function assertBoundRegularFile(fd, expectedIdentity, label) {
+  const stat = fstatSync(fd);
+  if (!stat.isFile()) fail(`${label} is not a regular file`);
+  assertIdentity(stat, expectedIdentity, label);
+  if (stat.nlink > 1) fail(`${label} has multiple hard links`);
+  return stat;
+}
+
+function readAll(fd, maxBytes = Number.MAX_SAFE_INTEGER, label = "file") {
+  const initial = fstatSync(fd);
+  if (initial.size > maxBytes) fail(`${label} exceeds ${maxBytes} bytes`);
   const chunks = [];
   let position = 0;
   while (true) {
-    const chunk = Buffer.allocUnsafe(64 * 1024);
+    const chunk = Buffer.allocUnsafe(Math.min(64 * 1024, maxBytes - position + 1));
     const bytesRead = readSync(fd, chunk, 0, chunk.length, position);
     if (bytesRead === 0) break;
+    if (position + bytesRead > maxBytes) fail(`${label} exceeds ${maxBytes} bytes`);
     chunks.push(chunk.subarray(0, bytesRead));
     position += bytesRead;
   }
@@ -286,33 +319,29 @@ async function resolveRipgrep() {
   return ripgrepPathPromise;
 }
 
-function truncateHead(content, maxBytes = 50 * 1024) {
-  const lines = content === "" ? [] : content.split("\n");
-  const totalBytes = Buffer.byteLength(content, "utf8");
-  if (totalBytes <= maxBytes) {
-    return { content, truncated: false, truncatedBy: null, totalLines: lines.length, totalBytes, outputLines: lines.length, outputBytes: totalBytes, lastLinePartial: false, firstLineExceedsLimit: false, maxLines: Number.MAX_SAFE_INTEGER, maxBytes };
-  }
-  const output = [];
-  let bytes = 0;
-  for (const line of lines) {
-    const next = Buffer.byteLength(line, "utf8") + (output.length ? 1 : 0);
-    if (bytes + next > maxBytes) break;
-    output.push(line);
-    bytes += next;
-  }
-  const result = output.join("\n");
-  return { content: result, truncated: true, truncatedBy: "bytes", totalLines: lines.length, totalBytes, outputLines: output.length, outputBytes: Buffer.byteLength(result, "utf8"), lastLinePartial: false, firstLineExceedsLimit: output.length === 0, maxLines: Number.MAX_SAFE_INTEGER, maxBytes };
-}
-
-async function ripgrepMatches(path, args, content, signal, remaining) {
+async function ripgrepMatches(
+  path,
+  args,
+  content,
+  signal,
+  remaining,
+  { spawnMatcher, resourceLimits },
+) {
   if (signal?.aborted) throw new Error("Operation aborted");
   return new Promise((resolvePromise, reject) => {
-    const child = spawn(path, args, { stdio: ["pipe", "pipe", "pipe"] });
+    let child;
+    try {
+      child = spawnMatcher(path, args, { stdio: ["pipe", "pipe", "pipe"] });
+    } catch (error) {
+      reject(new Error(`Failed to run ripgrep: ${error instanceof Error ? error.message : error}`));
+      return;
+    }
     const matches = [];
     let stdout = "";
+    let stdoutBytes = 0;
     let stderr = "";
+    let stderrBytes = 0;
     let limited = false;
-    let aborted = false;
     let settled = false;
     const settle = (operation) => {
       if (settled) return;
@@ -321,55 +350,102 @@ async function ripgrepMatches(path, args, content, signal, remaining) {
       operation();
     };
     const stop = () => {
-      child.stdin.destroy();
-      if (!child.killed) child.kill();
+      try { child.stdin?.destroy(); } catch {}
+      try {
+        if (!child.killed) child.kill();
+      } catch {}
     };
-    const abort = () => {
-      aborted = true;
+    const rejectAndStop = (error) => {
       stop();
+      settle(() => reject(error));
     };
+    const abort = () => rejectAndStop(new Error("Operation aborted"));
     signal?.addEventListener("abort", abort, { once: true });
-    child.stdout.on("data", (chunk) => {
+    child.stdout?.on("data", (chunk) => {
       if (limited || settled) return;
+      stdoutBytes += Buffer.byteLength(chunk);
+      if (stdoutBytes > resourceLimits.maxRipgrepStdoutBytes) {
+        rejectAndStop(new Error(
+          `PICM_GREP_RESOURCE_LIMIT: stdout exceeds ${resourceLimits.maxRipgrepStdoutBytes} bytes`,
+        ));
+        return;
+      }
       stdout += chunk.toString();
+      if (Buffer.byteLength(stdout, "utf8") > resourceLimits.maxRipgrepRecordBytes) {
+        rejectAndStop(new Error(
+          `PICM_GREP_RESOURCE_LIMIT: JSON record exceeds ${resourceLimits.maxRipgrepRecordBytes} bytes`,
+        ));
+        return;
+      }
       const records = stdout.split("\n");
       stdout = records.pop() ?? "";
       for (const record of records) {
         if (!record) continue;
-        const event = JSON.parse(record);
+        if (Buffer.byteLength(record, "utf8") > resourceLimits.maxRipgrepRecordBytes) {
+          rejectAndStop(new Error(
+            `PICM_GREP_RESOURCE_LIMIT: JSON record exceeds ${resourceLimits.maxRipgrepRecordBytes} bytes`,
+          ));
+          return;
+        }
+        let event;
+        try {
+          event = JSON.parse(record);
+        } catch {
+          rejectAndStop(new Error("PICM_GREP_SUBPROCESS_INVALID: malformed ripgrep JSON record"));
+          return;
+        }
         if (event.type === "match" && typeof event.data?.line_number === "number") {
-          if (matches.length >= remaining) {
-            limited = true;
-            stop();
-            break;
-          }
           matches.push(event.data.line_number);
           if (matches.length >= remaining) {
             limited = true;
             stop();
-            break;
+            return;
           }
         }
       }
     });
-    child.stderr.on("data", (chunk) => { stderr += chunk.toString(); });
-    child.stdin.on("error", (error) => {
-      if (limited || aborted) return;
-      settle(() => reject(error));
+    child.stderr?.on("data", (chunk) => {
+      if (settled) return;
+      stderrBytes += Buffer.byteLength(chunk);
+      if (stderrBytes > resourceLimits.maxRipgrepStderrBytes) {
+        rejectAndStop(new Error(
+          `PICM_GREP_RESOURCE_LIMIT: stderr exceeds ${resourceLimits.maxRipgrepStderrBytes} bytes`,
+        ));
+        return;
+      }
+      stderr += chunk.toString();
     });
-    child.on("error", (error) => settle(() => reject(error)));
+    child.stdin?.on("error", (error) => {
+      if (limited || settled) return;
+      rejectAndStop(error);
+    });
+    child.stdout?.on("error", (error) => rejectAndStop(error));
+    child.stderr?.on("error", (error) => rejectAndStop(error));
+    child.on("error", (error) => rejectAndStop(
+      new Error(`Failed to run ripgrep: ${error instanceof Error ? error.message : error}`),
+    ));
     child.on("close", (code) => {
-      if (aborted || signal?.aborted) return settle(() => reject(new Error("Operation aborted")));
+      if (settled) return;
+      if (signal?.aborted) return settle(() => reject(new Error("Operation aborted")));
+      if (!limited && stdout.trim() !== "") {
+        return settle(() => reject(new Error(
+          "PICM_GREP_SUBPROCESS_INVALID: incomplete ripgrep JSON record",
+        )));
+      }
       if (!limited && code !== 0 && code !== 1) {
         return settle(() => reject(new Error(stderr.trim() || `ripgrep exited with code ${code}`)));
       }
       settle(() => resolvePromise({ matches, limited }));
     });
-    child.stdin.end(content);
+    try {
+      child.stdin?.end(content);
+    } catch (error) {
+      rejectAndStop(error);
+    }
   });
 }
 
-export async function executeBoundGrep(binding, params, signal, resolveMatcher = resolveRipgrep) {
+export async function executeBoundGrep(binding, params, signal, matcherOptions = resolveRipgrep) {
   if (signal?.aborted) throw new Error("Operation aborted");
   const {
     pattern,
@@ -379,22 +455,51 @@ export async function executeBoundGrep(binding, params, signal, resolveMatcher =
     context = 0,
     limit = 100,
   } = params;
+  const options = typeof matcherOptions === "function"
+    ? { resolveMatcher: matcherOptions }
+    : matcherOptions ?? {};
+  const resolveMatcher = options.resolveMatcher ?? resolveRipgrep;
+  const spawnMatcher = options.spawnMatcher ?? spawn;
+  const resourceLimits = resolvePathBindingLimits({
+    ...(binding.resourceLimits ?? {}),
+    ...(options.resourceLimits ?? {}),
+  });
   const files = binding.files ?? [{ path: binding.absolutePath, readFile: binding.operations.readFile }];
   const matches = [];
-  const effectiveLimit = Math.max(1, limit);
+  const requestedLimit = limit === Infinity
+    ? Number.MAX_SAFE_INTEGER
+    : Number.isFinite(limit) ? Math.max(1, Math.floor(limit)) : 100;
+  const effectiveLimit = Math.min(requestedLimit, resourceLimits.maxGrepMatches);
+  const matchResourceLimited = requestedLimit > resourceLimits.maxGrepMatches;
+  const requestedContext = context === Infinity
+    ? Number.MAX_SAFE_INTEGER
+    : Number.isFinite(context) ? Math.max(0, Math.floor(context)) : 0;
+  const contextSize = Math.min(requestedContext, resourceLimits.maxGrepContextLines);
+  const contextResourceLimited = requestedContext > resourceLimits.maxGrepContextLines;
   const ripgrepPath = await resolveMatcher();
   if (signal?.aborted) throw new Error("Operation aborted");
   for (const file of files) {
     if (signal?.aborted) throw new Error("Operation aborted");
     const fileName = relative(binding.absolutePath, file.path) || basename(file.path);
     if (glob && !globMatches(fileName, glob) && !globMatches(basename(file.path), glob)) continue;
-    const content = (await file.readFile()).toString("utf8");
+    const fileBuffer = await file.readFile();
+    if (fileBuffer.length > resourceLimits.maxRetainedFileBytes) {
+      fail(`guarded grep file exceeds ${resourceLimits.maxRetainedFileBytes} bytes`);
+    }
+    const content = fileBuffer.toString("utf8");
     const args = ["--json", "--line-number", "--color=never"];
     if (ignoreCase) args.push("--ignore-case");
     if (literal) args.push("--fixed-strings");
     args.push("--", pattern, "-");
     const lines = content.replace(/\r\n/g, "\n").replace(/\r/g, "\n").split("\n");
-    const result = await ripgrepMatches(ripgrepPath, args, content, signal, effectiveLimit - matches.length);
+    const result = await ripgrepMatches(
+      ripgrepPath,
+      args,
+      content,
+      signal,
+      effectiveLimit - matches.length,
+      { spawnMatcher, resourceLimits },
+    );
     for (const lineNumber of result.matches.slice(0, effectiveLimit - matches.length)) {
       matches.push({ fileName, index: lineNumber - 1, lines });
     }
@@ -405,8 +510,15 @@ export async function executeBoundGrep(binding, params, signal, resolveMatcher =
     return { content: [{ type: "text", text: "No matches found" }], details: undefined };
   }
   const output = [];
+  const renderedByteLimit = Math.min(
+    resourceLimits.maxGrepRenderedBytes,
+    GREP_OUTPUT_LIMIT_BYTES,
+  );
+  let outputBytes = 0;
+  let totalOutputBytes = 0;
+  let totalOutputLines = 0;
+  let retainingOutput = true;
   let linesTruncated = false;
-  const contextSize = Math.max(0, context);
   for (const { fileName, index, lines } of matches) {
     const start = Math.max(0, index - contextSize);
     const end = Math.min(lines.length - 1, index + contextSize);
@@ -414,21 +526,59 @@ export async function executeBoundGrep(binding, params, signal, resolveMatcher =
       const separator = current === index ? ":" : "-";
       const shortened = truncateLine(lines[current]);
       if (shortened !== lines[current]) linesTruncated = true;
-      output.push(`${fileName}${separator}${current + 1}${separator} ${shortened}`);
+      const rendered = `${fileName}${separator}${current + 1}${separator} ${shortened}`;
+      const renderedBytes = Buffer.byteLength(rendered, "utf8");
+      totalOutputBytes += renderedBytes + (totalOutputLines > 0 ? 1 : 0);
+      totalOutputLines += 1;
+      if (retainingOutput) {
+        const retainedBytes = renderedBytes + (output.length > 0 ? 1 : 0);
+        if (outputBytes + retainedBytes <= renderedByteLimit) {
+          output.push(rendered);
+          outputBytes += retainedBytes;
+        } else {
+          retainingOutput = false;
+        }
+      }
     }
   }
-  const text = output.join("\n");
-  const truncation = truncateHead(text);
-  const content = truncation.content;
+  const content = output.join("\n");
+  const truncated = totalOutputBytes > renderedByteLimit;
+  const truncation = {
+    content,
+    truncated,
+    truncatedBy: truncated ? "bytes" : null,
+    totalLines: totalOutputLines,
+    totalBytes: totalOutputBytes,
+    outputLines: output.length,
+    outputBytes,
+    lastLinePartial: false,
+    firstLineExceedsLimit: truncated && output.length === 0,
+    maxLines: Number.MAX_SAFE_INTEGER,
+    maxBytes: renderedByteLimit,
+  };
   const details = {};
   const notices = [];
   if (matches.length >= effectiveLimit) {
     details.matchLimitReached = effectiveLimit;
-    notices.push(`${effectiveLimit} matches limit reached. Use limit=${effectiveLimit * 2} for more, or refine pattern`);
+    if (!matchResourceLimited) {
+      notices.push(`${effectiveLimit} matches limit reached. Use limit=${effectiveLimit * 2} for more, or refine pattern`);
+    }
+  }
+  if (matchResourceLimited) {
+    details.matchResourceLimitReached = resourceLimits.maxGrepMatches;
+    notices.push(`${resourceLimits.maxGrepMatches} matches resource limit reached. Refine pattern`);
+  }
+  if (contextResourceLimited) {
+    details.contextLimitReached = resourceLimits.maxGrepContextLines;
+    notices.push(`Context limited to ${resourceLimits.maxGrepContextLines} lines`);
   }
   if (truncation.truncated) {
     details.truncation = truncation;
-    notices.push("50KB limit reached");
+    notices.push(
+      renderedByteLimit === GREP_OUTPUT_LIMIT_BYTES
+        ? "50KB limit reached"
+        : `${renderedByteLimit}-byte rendered output limit reached`,
+    );
   }
   if (linesTruncated) {
     details.linesTruncated = true;
@@ -441,10 +591,11 @@ export async function executeBoundGrep(binding, params, signal, resolveMatcher =
   };
 }
 
-export function createPathExecutionBinding(plan) {
+export function createPathExecutionBinding(plan, limitOverrides) {
   if (!plan || !["read", "edit", "write", "grep", "rg", "find", "ls"].includes(plan.toolName)) {
     fail("invalid execution binding plan");
   }
+  const resourceLimits = resolvePathBindingLimits(limitOverrides);
 
   let fd;
   let created = false;
@@ -452,6 +603,7 @@ export function createPathExecutionBinding(plan) {
   let directoryFds = [];
   let boundPath = plan.absolutePath;
   const retainedFiles = [];
+  let traversalSnapshotBytes = 0;
   let traversalDirectory = false;
   try {
     if (plan.targetIdentity) {
@@ -460,6 +612,9 @@ export function createPathExecutionBinding(plan) {
       traversalDirectory = ["grep", "rg", "find", "ls"].includes(plan.toolName) && descriptorStat.isDirectory();
       if (!descriptorStat.isFile() && !traversalDirectory) fail("validated target has an unsupported type");
       assertIdentity(descriptorStat, plan.targetIdentity, "validated target");
+      if (descriptorStat.isFile() && descriptorStat.nlink > 1) {
+        fail("validated target has multiple hard links");
+      }
       assertCurrentPath(
         plan.absolutePath,
         plan.canonicalPath,
@@ -468,10 +623,14 @@ export function createPathExecutionBinding(plan) {
       );
       if (traversalDirectory) {
         for (const entry of plan.traversalEntries ?? []) {
+          if (retainedFiles.length >= resourceLimits.maxTraversalEntries) {
+            fail(`traversal snapshot exceeds ${resourceLimits.maxTraversalEntries} entries`);
+          }
           const entryFd = openSync(
             entry.absolutePath,
             constants.O_RDONLY | (entry.isDirectory ? (constants.O_DIRECTORY ?? 0) : 0) |
-              (constants.O_NOFOLLOW ?? 0) | (constants.O_BINARY ?? 0),
+              (constants.O_NOFOLLOW ?? 0) | (constants.O_NONBLOCK ?? 0) |
+              (constants.O_BINARY ?? 0),
           );
           try {
             const stat = fstatSync(entryFd);
@@ -479,13 +638,29 @@ export function createPathExecutionBinding(plan) {
               fail("validated traversal target has an unsupported type");
             }
             assertIdentity(stat, entry.identity, "validated traversal target");
+            if (!entry.isDirectory && stat.nlink > 1) {
+              fail("validated traversal target has multiple hard links");
+            }
             assertCurrentPath(entry.absolutePath, entry.canonicalPath, entry.identity, "validated traversal target");
+            let content;
+            if (!entry.isDirectory && ["grep", "rg"].includes(plan.toolName)) {
+              assertBoundRegularFile(entryFd, entry.identity, "validated traversal target");
+              content = readAll(
+                entryFd,
+                resourceLimits.maxRetainedFileBytes,
+                "retained file",
+              );
+            }
+            const displayPath = entry.displayPath ?? entry.absolutePath;
+            traversalSnapshotBytes += Buffer.byteLength(displayPath, "utf8") + 64 +
+              (content?.length ?? 0);
+            if (traversalSnapshotBytes > resourceLimits.maxTraversalSnapshotBytes) {
+              fail(`traversal snapshot exceeds ${resourceLimits.maxTraversalSnapshotBytes} bytes`);
+            }
             retainedFiles.push({
-              path: entry.displayPath ?? entry.absolutePath,
+              path: displayPath,
               isDirectory: entry.isDirectory,
-              content: entry.isDirectory || !["grep", "rg"].includes(plan.toolName)
-                ? undefined
-                : readAll(entryFd),
+              content,
             });
             closeSync(entryFd);
           } catch (error) {
@@ -517,6 +692,7 @@ export function createPathExecutionBinding(plan) {
       }
       const descriptorStat = fstatSync(fd);
       if (!descriptorStat.isFile()) fail("prospective write target is not a regular file");
+      if (descriptorStat.nlink > 1) fail("prospective write target has multiple hard links");
       const identity = fileIdentity(descriptorStat);
       const stat = lstatSync(boundPath);
       if (stat.isSymbolicLink()) fail("prospective write target became a symlink after validation");
@@ -555,6 +731,7 @@ export function createPathExecutionBinding(plan) {
     fd,
     toolName: plan.toolName,
     absolutePath: plan.absolutePath,
+    resourceLimits,
     files: traversalDirectory
       ? retainedFiles.filter((file) => !file.isDirectory).map((file) => ({
           path: file.path,
@@ -564,14 +741,24 @@ export function createPathExecutionBinding(plan) {
     operations: plan.toolName === "read"
       ? {
           access: async () => {},
-          readFile: async () => readAll(fd),
-          detectImageMimeType: async () => detectImageMimeType(readPrefix(fd, IMAGE_TYPE_SNIFF_BYTES)),
+          readFile: async () => {
+            assertBoundRegularFile(fd, descriptorIdentity, "validated read target");
+            return readAll(fd);
+          },
+          detectImageMimeType: async () => {
+            assertBoundRegularFile(fd, descriptorIdentity, "validated read target");
+            return detectImageMimeType(readPrefix(fd, IMAGE_TYPE_SNIFF_BYTES));
+          },
         }
       : plan.toolName === "edit"
         ? {
             access: async () => {},
-            readFile: async () => readAll(fd),
+            readFile: async () => {
+              assertBoundRegularFile(fd, descriptorIdentity, "validated edit target");
+              return readAll(fd);
+            },
             writeFile: async (_path, content) => {
+              assertBoundRegularFile(fd, descriptorIdentity, "validated edit target");
               mutated = true;
               writeAll(fd, content);
             },
@@ -580,6 +767,7 @@ export function createPathExecutionBinding(plan) {
           ? {
               mkdir: async () => {},
               writeFile: async (_path, content) => {
+                assertBoundRegularFile(fd, descriptorIdentity, "validated write target");
                 mutated = true;
                 writeAll(fd, content);
               },
@@ -588,7 +776,14 @@ export function createPathExecutionBinding(plan) {
             ? {
                 isDirectory: async () => traversalDirectory,
                 readFile: async (path) => {
-                  if (!traversalDirectory) return readAll(fd).toString("utf8");
+                  if (!traversalDirectory) {
+                    assertBoundRegularFile(fd, descriptorIdentity, "validated grep target");
+                    return readAll(
+                      fd,
+                      resourceLimits.maxRetainedFileBytes,
+                      "guarded grep file",
+                    ).toString("utf8");
+                  }
                   const file = retainedFiles.find((entry) => entry.path === path && !entry.isDirectory);
                   if (!file) fail("path is outside the validated traversal snapshot");
                   return file.content.toString("utf8");

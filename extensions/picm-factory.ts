@@ -95,6 +95,7 @@ function scheduledMaintenancePrompt(): string {
 
 type PicmFactoryExtensionOptions = {
   createCoordinator?: typeof createRuntimeCoordinator;
+  grepExecutionOptions?: Parameters<typeof executeBoundGrep>[3];
 };
 
 export default function picmFactoryExtension(
@@ -118,7 +119,7 @@ export default function picmFactoryExtension(
       async execute(toolCallId: string, params: any, signal: AbortSignal | undefined, onUpdate: any, ctx: ExtensionContext) {
         const binding = coordinator.beginBoundPathExecution(toolCallId, ctx, toolName);
         if (binding && (toolName === "grep" || toolName === "rg")) {
-          return executeBoundGrep(binding, params, signal);
+          return executeBoundGrep(binding, params, signal, options.grepExecutionOptions);
         }
         const tool = createTool(ctx.cwd, binding ? { operations: binding.operations } : undefined);
         return tool.execute(toolCallId, params, signal, onUpdate, ctx);

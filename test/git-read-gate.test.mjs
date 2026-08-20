@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
+import { EventEmitter } from "node:events";
 import {
   existsSync,
   fstatSync,
@@ -21,6 +22,7 @@ import {
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
+import { PassThrough } from "node:stream";
 import test from "node:test";
 
 import {
@@ -96,6 +98,7 @@ function extensionHarness({
   appendError,
   confirm = true,
   createCoordinator,
+  grepExecutionOptions,
 } = {}) {
   const handlers = new Map();
   const commands = new Map();
@@ -115,7 +118,7 @@ function extensionHarness({
       sent.push(message);
     },
   };
-  picmFactoryExtension(pi, createCoordinator ? { createCoordinator } : undefined);
+  picmFactoryExtension(pi, { createCoordinator, grepExecutionOptions });
   const context = (cwd, sessionId = "session-1", mode = "tui") => ({
     cwd,
     mode,
@@ -141,6 +144,36 @@ function deferred() {
     resolvePromise = resolve;
   });
   return { promise, resolve: resolvePromise };
+}
+
+function fakeRipgrepSpawn({ stdout = [], stderr = [], code = 0, hold = false } = {}) {
+  return () => {
+    const child = new EventEmitter();
+    child.stdout = new PassThrough();
+    child.stderr = new PassThrough();
+    child.stdin = new PassThrough();
+    child.killed = false;
+    let closed = false;
+    const close = (exitCode) => {
+      if (closed) return;
+      closed = true;
+      child.stdout.end();
+      child.stderr.end();
+      child.emit("close", exitCode);
+    };
+    child.kill = () => {
+      child.killed = true;
+      queueMicrotask(() => close(null));
+      return true;
+    };
+    setImmediate(() => {
+      if (closed) return;
+      for (const chunk of stdout) child.stdout.write(chunk);
+      for (const chunk of stderr) child.stderr.write(chunk);
+      if (!hold) close(code);
+    });
+    return child;
+  };
 }
 
 async function preflightParallelToolCalls(h, ctx, calls) {
@@ -249,6 +282,91 @@ test("allows file candidates and rejects non-traversal directories", async () =>
       assert.match((await gate.checkPath("read", "ignored-target-link")).reason, /symlinks/);
       assert.match((await gate.checkPath("read", "safe-dir-link/file.txt")).reason, /symlink/);
     }
+  });
+});
+
+test("rejects multiply-linked regular files for direct operations and traversal snapshots", async () => {
+  if (process.platform === "win32") return;
+  await withFixture(async ({ root, packageRoot }) => {
+    writeFileSync(
+      join(root, ".gitignore"),
+      `${readFileSync(join(root, ".gitignore"), "utf8")}ignored-hardlinks/\ntracked-hidden.txt\n`,
+    );
+    const aliases = [
+      ["ignored-alias.txt", "ignored-hardlinks/secret.txt", "IGNORED_HARDLINK"],
+      ["tracked-alias.txt", "tracked-hidden.txt", "TRACKED_IGNORED_HARDLINK"],
+      ["private-alias.txt", "private-hardlinks/secret.txt", "PRIVATE_HARDLINK"],
+    ];
+    for (const [eligible, protectedPath, marker] of aliases) {
+      write(join(root, eligible), `${marker}\n`);
+      mkdirSync(dirname(join(root, protectedPath)), { recursive: true });
+      linkSync(join(root, eligible), join(root, protectedPath));
+      git(root, "add", eligible);
+    }
+    git(root, "add", ".gitignore");
+    git(root, "add", "-f", "tracked-hidden.txt");
+
+    const gate = createGitReadGate({ cwd: root, packageRoot });
+    const exclusions = ["private-hardlinks"];
+    for (const [eligible] of aliases) {
+      for (const toolName of ["read", "edit", "write", "grep", "rg", "find", "ls"]) {
+        const decision = await gate.checkPath(toolName, eligible, exclusions);
+        assert.equal(decision.allowed, false, `${toolName} unexpectedly admitted ${eligible}`);
+        assert.match(decision.reason, /multiple hard links/);
+      }
+    }
+
+    for (const toolName of ["grep", "rg", "find", "ls"]) {
+      const decision = await gate.checkPath(toolName, ".", exclusions);
+      assert.equal(decision.allowed, true);
+      const binding = gate.bindPath(decision.executionBinding);
+      try {
+        let visible;
+        if (toolName === "grep" || toolName === "rg") {
+          visible = binding.files.map((file) => file.path);
+        } else if (toolName === "find") {
+          visible = await binding.operations.glob("**", root, { limit: 1000 });
+        } else {
+          visible = await binding.operations.readdir(root);
+        }
+        assert.doesNotMatch(visible.join("\n"), /(?:ignored|tracked|private)-alias\.txt/);
+      } finally {
+        binding.release();
+      }
+    }
+    await gate.dispose();
+  });
+});
+
+test("rechecks hard-link count immediately before guarded reads and mutations", async () => {
+  if (process.platform === "win32") return;
+  await withFixture(async ({ root, packageRoot }) => {
+    const gate = createGitReadGate({ cwd: root, packageRoot });
+    for (const toolName of ["read", "edit", "write", "grep", "rg"]) {
+      const path = `runtime-${toolName}.txt`;
+      write(join(root, path), "approved before\n");
+      git(root, "add", path);
+      const decision = await gate.checkPath(toolName, path, ["private-hardlinks"]);
+      assert.equal(decision.allowed, true);
+      const binding = gate.bindPath(decision.executionBinding);
+      mkdirSync(join(root, "private-hardlinks"), { recursive: true });
+      const alias = join(root, "private-hardlinks", `${toolName}.txt`);
+      if (toolName === "edit") {
+        assert.equal((await binding.operations.readFile()).toString("utf8"), "approved before\n");
+      }
+      linkSync(join(root, path), alias);
+      if (["read", "grep", "rg"].includes(toolName)) {
+        await assert.rejects(binding.operations.readFile(path), /multiple hard links/);
+      } else {
+        await assert.rejects(
+          binding.operations.writeFile(path, "must not be written\n"),
+          /multiple hard links/,
+        );
+      }
+      assert.equal(readFileSync(alias, "utf8"), "approved before\n");
+      binding.release();
+    }
+    await gate.dispose();
   });
 });
 
@@ -403,51 +521,165 @@ test("guarded directory grep rg find and ls filter protected descendants", async
       assert.doesNotMatch(text, /ignored-empty/);
     }
 
+    const grepContractCases = [
+      { id: "ripgrep-regex", input: { path: "docs", pattern: "(?i)marker", glob: "[ab].{js,ts}" } },
+      { id: "literal-ignore-case", input: { path: "docs", pattern: "visible_marker", glob: "public.md", literal: true, ignoreCase: true } },
+      { id: "byte-limit", input: { path: "docs", pattern: "HIT", glob: "large.md" } },
+      { id: "overlap", input: { path: "docs", pattern: "HIT", glob: "context.md", context: 1 } },
+      { id: "match-limit", input: { path: "docs", pattern: "HIT", glob: "large.md", limit: 1 } },
+      { id: "no-match", input: { path: "docs", pattern: "NO_SUCH_MARKER" } },
+    ];
     const contractSpecs = [
       { id: "directory-find-root-glob", toolName: "find", input: { path: "docs", pattern: "**/*.ts" } },
       { id: "directory-find-brace-glob", toolName: "find", input: { path: "docs", pattern: "*.{js,ts}" } },
       { id: "directory-find-nested-empty", toolName: "find", input: { path: "docs", pattern: "**" } },
-      { id: "directory-grep-ripgrep-regex", toolName: "grep", input: { path: "docs", pattern: "(?i)marker", glob: "[ab].{js,ts}" } },
-      { id: "directory-grep-byte-limit", toolName: "grep", input: { path: "docs", pattern: "HIT", glob: "large.md" } },
-      { id: "directory-grep-overlap", toolName: "grep", input: { path: "docs", pattern: "HIT", glob: "context.md", context: 1 } },
       { id: "directory-find-limit", toolName: "find", input: { path: "docs", pattern: "**", limit: 1 } },
       { id: "directory-ls-limit", toolName: "ls", input: { path: "docs", limit: 1 } },
       { id: "directory-ls-empty", toolName: "ls", input: { path: "docs/empty" } },
       { id: "directory-find-root-internals", toolName: "find", input: { path: ".", pattern: "**" } },
-      { id: "directory-grep-match-limit", toolName: "grep", input: { path: "docs", pattern: "HIT", glob: "large.md", limit: 1 } },
+      ...["grep", "rg"].flatMap((toolName) => grepContractCases.map(({ id, input }) => ({
+        id: `directory-${toolName}-${id}`,
+        toolName,
+        input,
+      }))),
     ].map((spec) => ({ ...spec, tool: h.tools.get(spec.toolName) }));
     const contractCalls = await preflightParallelToolCalls(h, ctx, contractSpecs);
     const contractResults = await Promise.all(executePreflightedToolCalls(h, ctx, contractCalls));
-    assert.match(contractResults[0].result.content[0].text, /^root\.ts$/m);
-    assert.match(contractResults[1].result.content[0].text, /a\.js|root\.ts/);
-    assert.match(contractResults[2].result.content[0].text, /nested\/empty\//);
-    assert.equal(contractResults[3].result.details?.linesTruncated, true);
-    assert.match(contractResults[3].result.content[0].text, /\.\.\. \[truncated\]/);
-    assert.equal(contractResults[4].result.details?.truncation?.truncated, true);
-    assert.match(contractResults[4].result.content[0].text, /50KB limit reached/);
-    assert.equal((contractResults[5].result.content[0].text.match(/context\.md[:-]2[:-]/g) ?? []).length, 2);
-    assert.equal((contractResults[5].result.content[0].text.match(/context\.md[:-]3[:-]/g) ?? []).length, 2);
-    assert.equal(contractResults[6].result.details?.resultLimitReached, 1);
-    assert.match(contractResults[6].result.content[0].text, /1 results limit reached/);
-    assert.equal(contractResults[7].result.details?.entryLimitReached, 1);
-    assert.match(contractResults[7].result.content[0].text, /1 entries limit reached/);
-    assert.equal(contractResults[8].result.content[0].text, "(empty directory)");
-    assert.doesNotMatch(contractResults[9].result.content[0].text, /(?:^|\/)\.git\//m);
-    assert.equal(contractResults[10].result.details?.matchLimitReached, 1);
-    assert.equal((contractResults[10].result.content[0].text.match(/^large\.md:\d+:/gm) ?? []).length, 1);
+    const contractById = new Map(contractCalls.map((call, index) => [call.id, contractResults[index]]));
+    const resultFor = (id) => contractById.get(id).result;
+    assert.match(resultFor("directory-find-root-glob").content[0].text, /^root\.ts$/m);
+    assert.match(resultFor("directory-find-brace-glob").content[0].text, /a\.js|root\.ts/);
+    assert.match(resultFor("directory-find-nested-empty").content[0].text, /nested\/empty\//);
+    assert.equal(resultFor("directory-find-limit").details?.resultLimitReached, 1);
+    assert.match(resultFor("directory-find-limit").content[0].text, /1 results limit reached/);
+    assert.equal(resultFor("directory-ls-limit").details?.entryLimitReached, 1);
+    assert.match(resultFor("directory-ls-limit").content[0].text, /1 entries limit reached/);
+    assert.equal(resultFor("directory-ls-empty").content[0].text, "(empty directory)");
+    assert.doesNotMatch(resultFor("directory-find-root-internals").content[0].text, /(?:^|\/)\.git\//m);
+    for (const toolName of ["grep", "rg"]) {
+      const regex = resultFor(`directory-${toolName}-ripgrep-regex`);
+      assert.equal(regex.details?.linesTruncated, true);
+      assert.match(regex.content[0].text, /\.\.\. \[truncated\]/);
+      assert.match(resultFor(`directory-${toolName}-literal-ignore-case`).content[0].text, /VISIBLE_MARKER/);
+      const byteLimit = resultFor(`directory-${toolName}-byte-limit`);
+      assert.equal(byteLimit.details?.truncation?.truncated, true);
+      assert.match(byteLimit.content[0].text, /50KB limit reached/);
+      const overlap = resultFor(`directory-${toolName}-overlap`).content[0].text;
+      assert.equal((overlap.match(/context\.md[:-]2[:-]/g) ?? []).length, 2);
+      assert.equal((overlap.match(/context\.md[:-]3[:-]/g) ?? []).length, 2);
+      const matchLimit = resultFor(`directory-${toolName}-match-limit`);
+      assert.equal(matchLimit.details?.matchLimitReached, 1);
+      assert.equal((matchLimit.content[0].text.match(/^large\.md:\d+:/gm) ?? []).length, 1);
+      assert.equal(resultFor(`directory-${toolName}-no-match`).content[0].text, "No matches found");
+    }
 
-    const abortController = new AbortController();
-    abortController.abort();
-    const [abortCall] = await preflightParallelToolCalls(h, ctx, [{
-      id: "directory-grep-aborted",
-      toolName: "grep",
-      input: { path: "docs", pattern: "marker" },
-      signal: abortController.signal,
-      tool: h.tools.get("grep"),
-    }]);
-    const [aborted] = await Promise.all(executePreflightedToolCalls(h, ctx, [abortCall]));
-    assert.equal(aborted.isError, true);
-    assert.match(aborted.result.content[0].text, /Operation aborted/);
+    for (const toolName of ["grep", "rg"]) {
+      const abortController = new AbortController();
+      abortController.abort();
+      const [abortCall] = await preflightParallelToolCalls(h, ctx, [{
+        id: `directory-${toolName}-aborted`,
+        toolName,
+        input: { path: "docs", pattern: "marker" },
+        signal: abortController.signal,
+        tool: h.tools.get(toolName),
+      }]);
+      const [aborted] = await Promise.all(executePreflightedToolCalls(h, ctx, [abortCall]));
+      assert.equal(aborted.isError, true);
+      assert.match(aborted.result.content[0].text, /Operation aborted/);
+    }
+  });
+});
+
+test("guarded grep and rg enforce per-file and aggregate snapshot ceilings", async () => {
+  await withFixture(async ({ root, packageRoot }) => {
+    write(join(root, "resource", "large.txt"), `${"x".repeat(700)}\n`);
+    write(join(root, "resource", "second.txt"), `${"y".repeat(700)}\n`);
+    git(root, "add", "resource/large.txt", "resource/second.txt");
+
+    for (const toolName of ["grep", "rg"]) {
+      const perFileGate = createGitReadGate({
+        cwd: root,
+        packageRoot,
+        pathBindingLimits: {
+          maxRetainedFileBytes: 32,
+          maxTraversalSnapshotBytes: 1024,
+        },
+      });
+      const directoryDecision = await perFileGate.checkPath(toolName, "resource");
+      assert.equal(directoryDecision.allowed, true);
+      assert.throws(
+        () => perFileGate.bindPath(directoryDecision.executionBinding),
+        /retained file exceeds 32 bytes/,
+      );
+      const fileDecision = await perFileGate.checkPath(toolName, "resource/large.txt");
+      assert.equal(fileDecision.allowed, true);
+      const fileBinding = perFileGate.bindPath(fileDecision.executionBinding);
+      await assert.rejects(fileBinding.operations.readFile("resource/large.txt"), /exceeds 32 bytes/);
+      fileBinding.release();
+      await perFileGate.dispose();
+
+      const aggregateGate = createGitReadGate({
+        cwd: root,
+        packageRoot,
+        pathBindingLimits: {
+          maxRetainedFileBytes: 1024,
+          maxTraversalSnapshotBytes: 1024,
+        },
+      });
+      const aggregateDecision = await aggregateGate.checkPath(toolName, "resource");
+      assert.equal(aggregateDecision.allowed, true);
+      assert.throws(
+        () => aggregateGate.bindPath(aggregateDecision.executionBinding),
+        /traversal snapshot exceeds 1024 bytes/,
+      );
+      await aggregateGate.dispose();
+
+      const entryGate = createGitReadGate({
+        cwd: root,
+        packageRoot,
+        pathBindingLimits: { maxTraversalEntries: 1 },
+      });
+      const entryDecision = await entryGate.checkPath(toolName, "resource");
+      assert.equal(entryDecision.allowed, false);
+      assert.match(entryDecision.reason, /traversal admission exceeds 1 entries/);
+      await entryGate.dispose();
+
+      const metadataGate = createGitReadGate({
+        cwd: root,
+        packageRoot,
+        pathBindingLimits: { maxTraversalSnapshotBytes: 1 },
+      });
+      const metadataDecision = await metadataGate.checkPath(toolName, "resource");
+      assert.equal(metadataDecision.allowed, false);
+      assert.match(metadataDecision.reason, /traversal admission exceeds 1 bytes/);
+      await metadataGate.dispose();
+    }
+  });
+});
+
+test("guarded traversal bounds directory discovery before retaining entries", async () => {
+  await withFixture(async ({ root, packageRoot }) => {
+    writeFileSync(
+      join(root, ".gitignore"),
+      `${readFileSync(join(root, ".gitignore"), "utf8")}resource-discovery/ignored-*\n`,
+    );
+    write(join(root, "resource-discovery", "visible.txt"), "visible\n");
+    for (let index = 0; index < 32; index += 1) {
+      write(join(root, "resource-discovery", `ignored-${index}.txt`), "ignored\n");
+    }
+    git(root, "add", ".gitignore", "resource-discovery/visible.txt");
+
+    for (const toolName of ["grep", "rg", "find", "ls"]) {
+      const gate = createGitReadGate({
+        cwd: root,
+        packageRoot,
+        pathBindingLimits: { maxTraversalEntries: 8 },
+      });
+      const decision = await gate.checkPath(toolName, "resource-discovery");
+      assert.equal(decision.allowed, false);
+      assert.match(decision.reason, /traversal discovery exceeds 8 entries/);
+      await gate.dispose();
+    }
   });
 });
 
@@ -468,6 +700,29 @@ test("guarded directory bindings reject retained child symlink replacement", asy
   });
 });
 
+test("guarded bindings reject FIFO replacement without blocking", async (t) => {
+  if (process.platform === "win32") {
+    t.skip("FIFO behavior is POSIX-specific");
+    return;
+  }
+  await withFixture(async ({ root, packageRoot }) => {
+    const gate = createGitReadGate({ cwd: root, packageRoot });
+    for (const toolName of ["read", "edit", "write"]) {
+      const path = `fifo-${toolName}.txt`;
+      write(join(root, path), "approved\n");
+      git(root, "add", path);
+      const decision = await gate.checkPath(toolName, path);
+      assert.equal(decision.allowed, true);
+      renameSync(join(root, path), join(root, `approved-${path}`));
+      execFileSync("mkfifo", [join(root, path)]);
+      const startedAt = Date.now();
+      assert.throws(() => gate.bindPath(decision.executionBinding));
+      assert.ok(Date.now() - startedAt < 1000, `${toolName} FIFO rejection blocked`);
+    }
+    await gate.dispose();
+  });
+});
+
 test("guarded grep aborts while ripgrep resolution is pending", async () => {
   const resolution = deferred();
   const controller = new AbortController();
@@ -480,6 +735,221 @@ test("guarded grep aborts while ripgrep resolution is pending", async () => {
   controller.abort();
   resolution.resolve("rg");
   await assert.rejects(execution, /Operation aborted/);
+});
+
+test("guarded grep rejects malformed subprocess output failures and resource overruns", async () => {
+  const binding = {
+    absolutePath: "/virtual/file.txt",
+    operations: { readFile: async () => Buffer.from("match\n") },
+  };
+  const execute = (spawnMatcher, resourceLimits, signal) => executeBoundGrep(
+    binding,
+    { pattern: "match" },
+    signal,
+    {
+      resolveMatcher: async () => "synthetic-rg",
+      spawnMatcher,
+      resourceLimits,
+    },
+  );
+
+  await assert.rejects(
+    execute(fakeRipgrepSpawn({ stdout: ["not-json\n"] })),
+    /malformed ripgrep JSON record/,
+  );
+  await assert.rejects(
+    execute(fakeRipgrepSpawn({ stdout: ["x".repeat(65)] }), {
+      maxRipgrepRecordBytes: 32,
+      maxRipgrepStdoutBytes: 128,
+    }),
+    /JSON record exceeds 32 bytes/,
+  );
+  await assert.rejects(
+    execute(fakeRipgrepSpawn({ stdout: ["x".repeat(65)] }), {
+      maxRipgrepRecordBytes: 128,
+      maxRipgrepStdoutBytes: 32,
+    }),
+    /stdout exceeds 32 bytes/,
+  );
+  await assert.rejects(
+    execute(fakeRipgrepSpawn({ stderr: ["e".repeat(65)], code: 2 }), {
+      maxRipgrepStderrBytes: 32,
+    }),
+    /stderr exceeds 32 bytes/,
+  );
+  await assert.rejects(
+    execute(() => { throw new Error("synthetic spawn failure"); }),
+    /Failed to run ripgrep: synthetic spawn failure/,
+  );
+  await assert.rejects(
+    execute(fakeRipgrepSpawn({ stderr: ["synthetic exit failure"], code: 2 })),
+    /synthetic exit failure/,
+  );
+
+  const controller = new AbortController();
+  const pending = execute(fakeRipgrepSpawn({ hold: true }), undefined, controller.signal);
+  await new Promise((resolvePromise) => setImmediate(resolvePromise));
+  controller.abort();
+  await assert.rejects(pending, /Operation aborted/);
+});
+
+test("registered grep and rg handle malformed output cancellation spawn and exit failures", async () => {
+  const cases = [
+    {
+      name: "malformed",
+      spawnMatcher: fakeRipgrepSpawn({ stdout: ["not-json\n"] }),
+      expected: /malformed ripgrep JSON record/,
+    },
+    {
+      name: "record-limit",
+      spawnMatcher: fakeRipgrepSpawn({ stdout: ["x".repeat(65)] }),
+      resourceLimits: { maxRipgrepRecordBytes: 32, maxRipgrepStdoutBytes: 128 },
+      expected: /JSON record exceeds 32 bytes/,
+    },
+    {
+      name: "stdout-limit",
+      spawnMatcher: fakeRipgrepSpawn({ stdout: ["x".repeat(65)] }),
+      resourceLimits: { maxRipgrepRecordBytes: 128, maxRipgrepStdoutBytes: 32 },
+      expected: /stdout exceeds 32 bytes/,
+    },
+    {
+      name: "stderr-limit",
+      spawnMatcher: fakeRipgrepSpawn({ stderr: ["e".repeat(65)], code: 2 }),
+      resourceLimits: { maxRipgrepStderrBytes: 32 },
+      expected: /stderr exceeds 32 bytes/,
+    },
+    {
+      name: "spawn",
+      spawnMatcher: () => { throw new Error("registered spawn failure"); },
+      expected: /Failed to run ripgrep: registered spawn failure/,
+    },
+    {
+      name: "exit",
+      spawnMatcher: fakeRipgrepSpawn({ stderr: ["registered exit failure"], code: 2 }),
+      expected: /registered exit failure/,
+    },
+    {
+      name: "cancel",
+      spawnMatcher: fakeRipgrepSpawn({ hold: true }),
+      expected: /Operation aborted/,
+      abort: true,
+    },
+  ];
+  await withFixture(async ({ root }) => {
+    for (const toolName of ["grep", "rg"]) {
+      for (const scenario of cases) {
+        const h = extensionHarness({
+          grepExecutionOptions: {
+            resolveMatcher: async () => "synthetic-rg",
+            spawnMatcher: scenario.spawnMatcher,
+            resourceLimits: scenario.resourceLimits,
+          },
+        });
+        const ctx = h.context(root, `registered-${toolName}-${scenario.name}`);
+        const control = h.tools.get("picm_scan_control");
+        await h.commands.get("picm-adopt").handler("coding", ctx);
+        await control.execute("preflight", { action: "preflight" }, undefined, undefined, ctx);
+        await control.execute(
+          "privacy",
+          { action: "privacy", excludedPaths: [], persist: false },
+          undefined,
+          undefined,
+          ctx,
+        );
+        await control.execute("begin", { action: "begin" }, undefined, undefined, ctx);
+        const controller = new AbortController();
+        const [call] = await preflightParallelToolCalls(h, ctx, [{
+          id: `${toolName}-${scenario.name}`,
+          toolName,
+          input: { path: "safe.txt", pattern: "safe" },
+          signal: controller.signal,
+          tool: h.tools.get(toolName),
+        }]);
+        const [execution] = executePreflightedToolCalls(h, ctx, [call]);
+        if (scenario.abort) {
+          await new Promise((resolvePromise) => setImmediate(resolvePromise));
+          controller.abort();
+        }
+        const result = await execution;
+        assert.equal(result.isError, true);
+        assert.match(result.result.content[0].text, scenario.expected);
+        await h.handlers.get("session_shutdown")({}, ctx);
+      }
+    }
+  });
+});
+
+test("registered grep and rg bound match context and rendered-output work", async () => {
+  await withFixture(async ({ root }) => {
+    const sourceLines = Array.from(
+      { length: 40 },
+      (_, index) => `line-${index}-${"x".repeat(40)}`,
+    );
+    write(join(root, "bounded-render.txt"), sourceLines.join("\n"));
+    git(root, "add", "bounded-render.txt");
+    const records = [2, 4, 6].map((lineNumber) => `${JSON.stringify({
+      type: "match",
+      data: { line_number: lineNumber },
+    })}\n`).join("");
+    const h = extensionHarness({
+      grepExecutionOptions: {
+        resolveMatcher: async () => "synthetic-rg",
+        spawnMatcher: fakeRipgrepSpawn({ stdout: [records] }),
+        resourceLimits: {
+          maxGrepMatches: 2,
+          maxGrepContextLines: 2,
+          maxGrepRenderedBytes: 64,
+        },
+      },
+    });
+    const ctx = h.context(root, "registered-grep-render-limits");
+    const control = h.tools.get("picm_scan_control");
+    await h.commands.get("picm-adopt").handler("coding", ctx);
+    await control.execute("preflight", { action: "preflight" }, undefined, undefined, ctx);
+    await control.execute(
+      "privacy",
+      { action: "privacy", excludedPaths: [], persist: false },
+      undefined,
+      undefined,
+      ctx,
+    );
+    await control.execute("begin", { action: "begin" }, undefined, undefined, ctx);
+
+    for (const toolName of ["grep", "rg"]) {
+      const [call] = await preflightParallelToolCalls(h, ctx, [{
+        id: `bounded-render-${toolName}`,
+        toolName,
+        input: {
+          path: "bounded-render.txt",
+          pattern: "line",
+          limit: Number.MAX_SAFE_INTEGER,
+          context: Number.MAX_SAFE_INTEGER,
+        },
+        tool: h.tools.get(toolName),
+      }]);
+      const [result] = await Promise.all(executePreflightedToolCalls(h, ctx, [call]));
+      assert.equal(result.isError, false);
+      assert.equal(result.result.details?.matchLimitReached, 2);
+      assert.equal(result.result.details?.matchResourceLimitReached, 2);
+      assert.equal(result.result.details?.contextLimitReached, 2);
+      assert.equal(result.result.details?.truncation?.truncated, true);
+      const logicalOutput = [1, 3].flatMap((matchIndex) => {
+        const start = Math.max(0, matchIndex - 2);
+        const end = Math.min(sourceLines.length - 1, matchIndex + 2);
+        return sourceLines.slice(start, end + 1).map((line, offset) => {
+          const lineIndex = start + offset;
+          const separator = lineIndex === matchIndex ? ":" : "-";
+          return `bounded-render.txt${separator}${lineIndex + 1}${separator} ${line}`;
+        });
+      }).join("\n");
+      assert.equal(result.result.details.truncation.totalLines, 9);
+      assert.equal(
+        result.result.details.truncation.totalBytes,
+        Buffer.byteLength(logicalOutput, "utf8"),
+      );
+    }
+    await h.handlers.get("session_shutdown")({}, ctx);
+  });
 });
 
 test("execution bindings close their stable file descriptors", async () => {
@@ -2186,6 +2656,162 @@ test("restore and settlement discard orphaned execution leases", async () => {
   }
 });
 
+test("registered guarded tools fail closed after restore settlement and shutdown clear admission", async (t) => {
+  if (process.platform === "win32") {
+    t.skip("symlink behavior is platform-specific");
+    return;
+  }
+  for (const resetEvent of ["session_tree", "agent_settled", "session_shutdown"]) {
+    for (const toolName of ["read", "edit", "write"]) {
+      await withFixture(async ({ root }) => {
+        writeFileSync(
+          join(root, ".gitignore"),
+          `${readFileSync(join(root, ".gitignore"), "utf8")}private-lifecycle*/\n`,
+        );
+        let path;
+        let input;
+        let approvedPath;
+        let privatePath;
+        if (toolName === "read") {
+          path = "safe.txt";
+          approvedPath = join(root, "approved-safe.txt");
+          privatePath = join(root, "private-lifecycle", "read.txt");
+          write(privatePath, "PRIVATE_READ_MUST_NOT_APPEAR\n");
+          input = { path };
+        } else if (toolName === "edit") {
+          path = "edit-lifecycle/file.txt";
+          approvedPath = join(root, "approved-edit-lifecycle");
+          privatePath = join(root, "private-lifecycle-edit", "file.txt");
+          write(join(root, path), "approved before\n");
+          write(privatePath, "approved before\n");
+          git(root, "add", path);
+          input = {
+            path,
+            edits: [{ oldText: "approved before", newText: "must not reach private" }],
+          };
+        } else {
+          path = "write-lifecycle/file.txt";
+          approvedPath = join(root, "approved-write-lifecycle");
+          privatePath = join(root, "private-lifecycle-write", "file.txt");
+          write(join(root, path), "approved before\n");
+          write(privatePath, "PRIVATE_WRITE_UNCHANGED\n");
+          git(root, "add", path);
+          input = { path, content: "must not reach private\n" };
+        }
+
+        const entries = [];
+        const h = extensionHarness({ entries });
+        const ctx = h.context(root, `cleared-admission-${resetEvent}-${toolName}`);
+        const control = h.tools.get("picm_scan_control");
+        await h.commands.get("picm-adopt").handler("coding", ctx);
+        await control.execute("preflight", { action: "preflight" }, undefined, undefined, ctx);
+        await control.execute(
+          "privacy",
+          { action: "privacy", excludedPaths: ["private-lifecycle", "private-lifecycle-edit", "private-lifecycle-write"], persist: false },
+          undefined,
+          undefined,
+          ctx,
+        );
+        await control.execute("begin", { action: "begin" }, undefined, undefined, ctx);
+
+        const id = `${resetEvent}-${toolName}`;
+        await h.handlers.get("tool_execution_start")(
+          { toolCallId: id, toolName, args: input },
+          ctx,
+        );
+        assert.equal(await h.handlers.get("tool_call")(
+          { toolCallId: id, toolName, input },
+          ctx,
+        ), undefined);
+
+        if (toolName === "read") {
+          renameSync(join(root, path), approvedPath);
+          symlinkSync("private-lifecycle/read.txt", join(root, path));
+        } else {
+          const originalParent = dirname(join(root, path));
+          renameSync(originalParent, approvedPath);
+          const target = toolName === "edit" ? "private-lifecycle-edit" : "private-lifecycle-write";
+          symlinkSync(target, originalParent, "dir");
+        }
+
+        await h.handlers.get(resetEvent)({}, ctx);
+        await assert.rejects(
+          h.tools.get(toolName).execute(id, input, undefined, undefined, ctx),
+          /PICM_PATH_BINDING_MISSING/,
+        );
+        assert.equal(
+          readFileSync(privatePath, "utf8"),
+          toolName === "edit" ? "approved before\n" : toolName === "write" ? "PRIVATE_WRITE_UNCHANGED\n" : "PRIVATE_READ_MUST_NOT_APPEAR\n",
+        );
+        await h.handlers.get("tool_execution_end")(
+          { toolCallId: id, toolName, result: { content: [] }, isError: true },
+          ctx,
+        );
+        if (resetEvent !== "session_shutdown") {
+          await h.handlers.get("session_shutdown")({}, ctx);
+        }
+      });
+    }
+  }
+});
+
+test("protected cleanup retains every tombstone until matching execution end", async (t) => {
+  if (process.platform === "win32") {
+    t.skip("symlink behavior is platform-specific");
+    return;
+  }
+  await withFixture(async ({ root }) => {
+    writeFileSync(
+      join(root, ".gitignore"),
+      `${readFileSync(join(root, ".gitignore"), "utf8")}private-tombstones/\n`,
+    );
+    write(join(root, "private-tombstones", "secret.txt"), "PRIVATE_TOMBSTONE\n");
+    const h = extensionHarness();
+    const ctx = h.context(root, "tombstone-capacity");
+    const control = h.tools.get("picm_scan_control");
+    await h.commands.get("picm-adopt").handler("coding", ctx);
+    await control.execute("preflight", { action: "preflight" }, undefined, undefined, ctx);
+    await control.execute(
+      "privacy",
+      { action: "privacy", excludedPaths: ["private-tombstones"], persist: false },
+      undefined,
+      undefined,
+      ctx,
+    );
+    await control.execute("begin", { action: "begin" }, undefined, undefined, ctx);
+
+    for (let index = 0; index < 257; index += 1) {
+      const id = `tombstone-${index}`;
+      const input = { path: "safe.txt" };
+      await h.handlers.get("tool_execution_start")(
+        { toolCallId: id, toolName: "read", args: input },
+        ctx,
+      );
+      assert.equal(await h.handlers.get("tool_call")(
+        { toolCallId: id, toolName: "read", input },
+        ctx,
+      ), undefined);
+    }
+    renameSync(join(root, "safe.txt"), join(root, "approved-tombstone-safe.txt"));
+    symlinkSync("private-tombstones/secret.txt", join(root, "safe.txt"));
+    await h.handlers.get("session_shutdown")({}, ctx);
+    await assert.rejects(
+      h.tools.get("read").execute(
+        "tombstone-0",
+        { path: "safe.txt" },
+        undefined,
+        undefined,
+        ctx,
+      ),
+      /PICM_PATH_BINDING_MISSING/,
+    );
+    await h.handlers.get("tool_execution_end")(
+      { toolCallId: "tombstone-0", toolName: "read", result: { content: [] }, isError: true },
+      ctx,
+    );
+  });
+});
+
 test("session shutdown preserves cleanup and persistence errors", async () => {
   await withFixture(async ({ root }) => {
     const cleanupError = new Error("synthetic shutdown cleanup failure");
@@ -2277,6 +2903,60 @@ test("session shutdown clears orphaned execution leases", async () => {
     }]);
     const [result] = await Promise.all(executePreflightedToolCalls(h, ctx, [completion]));
     assert.equal(result.result.details.completed, true);
+  });
+});
+
+test("one session shutdown preserves another session's bound execution", async (t) => {
+  if (process.platform === "win32") {
+    t.skip("symlink behavior is platform-specific");
+    return;
+  }
+  await withFixture(async ({ root }) => {
+    writeFileSync(
+      join(root, ".gitignore"),
+      `${readFileSync(join(root, ".gitignore"), "utf8")}private-cross-session/\n`,
+    );
+    write(join(root, "private-cross-session", "secret.txt"), "PRIVATE_CROSS_SESSION\n");
+    const h = extensionHarness();
+    const control = h.tools.get("picm_scan_control");
+    const firstCtx = h.context(root, "cross-session-shutdown-a");
+    const secondCtx = h.context(root, "cross-session-shutdown-b");
+    for (const ctx of [firstCtx, secondCtx]) {
+      await h.commands.get("picm-adopt").handler("coding", ctx);
+      await control.execute("preflight", { action: "preflight" }, undefined, undefined, ctx);
+      await control.execute(
+        "privacy",
+        { action: "privacy", excludedPaths: ["private-cross-session"], persist: false },
+        undefined,
+        undefined,
+        ctx,
+      );
+      await control.execute("begin", { action: "begin" }, undefined, undefined, ctx);
+    }
+
+    const id = "cross-session-bound-read";
+    const input = { path: "safe.txt" };
+    await h.handlers.get("tool_execution_start")(
+      { toolCallId: id, toolName: "read", args: input },
+      secondCtx,
+    );
+    assert.equal(await h.handlers.get("tool_call")(
+      { toolCallId: id, toolName: "read", input },
+      secondCtx,
+    ), undefined);
+    renameSync(join(root, "safe.txt"), join(root, "approved-cross-session-safe.txt"));
+    symlinkSync("private-cross-session/secret.txt", join(root, "safe.txt"));
+
+    await h.handlers.get("session_shutdown")({}, firstCtx);
+    const result = await h.tools.get("read").execute(id, input, undefined, undefined, secondCtx);
+    const text = result.content.map((part) => part.text ?? "").join("\n");
+    assert.match(text, /safe/);
+    assert.doesNotMatch(text, /PRIVATE_CROSS_SESSION/);
+    await h.handlers.get("tool_execution_end")(
+      { toolCallId: id, toolName: "read", result, isError: false },
+      secondCtx,
+    );
+    await h.handlers.get("session_shutdown")({}, secondCtx);
   });
 });
 

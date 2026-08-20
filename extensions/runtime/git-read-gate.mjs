@@ -1,6 +1,6 @@
 import { execFile } from "node:child_process";
 import { realpathSync } from "node:fs";
-import { lstat, mkdtemp, readdir, realpath, rm } from "node:fs/promises";
+import { lstat, mkdtemp, opendir, realpath, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -12,6 +12,7 @@ import {
 import {
   createPathExecutionBinding,
   fileIdentity,
+  resolvePathBindingLimits,
 } from "./path-execution-binding.mjs";
 
 const execFileAsync = promisify(execFile);
@@ -42,6 +43,10 @@ function hasGitlinkEntry(output, gitPath) {
   ));
 }
 
+function hasMultipleHardLinks(stat) {
+  return stat?.isFile?.() === true && typeof stat.nlink === "number" && stat.nlink > 1;
+}
+
 async function defaultRunGit(cwd, args) {
   try {
     const result = await execFileAsync("git", ["-C", cwd, ...args], {
@@ -69,6 +74,7 @@ export function createGitReadGate({
   cwd,
   packageRoot,
   canonicalPackageRoot: configuredCanonicalPackageRoot,
+  pathBindingLimits,
   runGit = defaultRunGit,
   fs = { lstat, realpath, realpathSync, mkdtemp, rm },
 } = {}) {
@@ -76,6 +82,7 @@ export function createGitReadGate({
   if (!packageRoot) throw new Error("Git read gate requires packageRoot");
 
   const declaredPackageRoot = resolve(packageRoot);
+  const bindingLimits = resolvePathBindingLimits(pathBindingLimits);
   let worktree;
   let canonicalWorktree;
   let canonicalCwd;
@@ -384,6 +391,9 @@ export function createGitReadGate({
     if (stat.isSymbolicLink()) {
       return { blocked: true, reason: "symlinks are not readable during guarded scans" };
     }
+    if (hasMultipleHardLinks(stat)) {
+      return { blocked: true, reason: "files with multiple hard links are not accessible during guarded scans" };
+    }
     const canonicalPath = await fs.realpath(absolutePath);
     return {
       absolutePath,
@@ -404,6 +414,9 @@ export function createGitReadGate({
         const stat = await fs.lstat(existing);
         if (stat.isSymbolicLink()) {
           return { blocked: true, reason: "symlink targets are not writable during guarded scans" };
+        }
+        if (existing === absolutePath && hasMultipleHardLinks(stat)) {
+          return { blocked: true, reason: "files with multiple hard links are not writable during guarded scans" };
         }
         const canonicalExistingPath = await fs.realpath(existing);
         const suffix = relative(existing, absolutePath);
@@ -454,13 +467,38 @@ export function createGitReadGate({
   async function addTraversalEntries(resolvedPath, inventory, exclusions) {
     if (!resolvedPath.stat?.isDirectory()) return;
     const entries = [];
+    const entryPaths = new Set();
     const directories = new Set();
+    const accountedPaths = new Set();
+    let metadataBytes = 0;
+    const accountPath = (displayPath) => {
+      if (accountedPaths.has(displayPath)) return;
+      if (accountedPaths.size >= bindingLimits.maxTraversalEntries) {
+        throw new Error(
+          `traversal admission exceeds ${bindingLimits.maxTraversalEntries} entries`,
+        );
+      }
+      const nextBytes = metadataBytes + Buffer.byteLength(displayPath, "utf8") + 64;
+      if (nextBytes > bindingLimits.maxTraversalSnapshotBytes) {
+        throw new Error(
+          `traversal admission exceeds ${bindingLimits.maxTraversalSnapshotBytes} bytes`,
+        );
+      }
+      accountedPaths.add(displayPath);
+      metadataBytes = nextBytes;
+    };
+    const appendEntry = (entry) => {
+      accountPath(entry.displayPath);
+      if (entryPaths.has(entry.displayPath)) return;
+      entryPaths.add(entry.displayPath);
+      entries.push(entry);
+    };
     for (const candidate of inventory.candidates) {
       const absolutePath = resolve(inventory.worktree, candidate);
       if (absolutePath === resolvedPath.absolutePath) continue;
       try {
         const stat = await fs.lstat(absolutePath);
-        if (stat.isSymbolicLink() || !stat.isFile()) continue;
+        if (stat.isSymbolicLink() || !stat.isFile() || hasMultipleHardLinks(stat)) continue;
         const canonicalPath = await fs.realpath(absolutePath);
         if (
           !isInside(resolvedPath.canonicalPath, canonicalPath) ||
@@ -472,9 +510,10 @@ export function createGitReadGate({
           relative(resolvedPath.canonicalPath, canonicalPath),
         );
         for (let directory = dirname(displayPath); isInside(resolvedPath.absolutePath, directory) && directory !== resolvedPath.absolutePath; directory = dirname(directory)) {
+          accountPath(directory);
           directories.add(directory);
         }
-        entries.push({
+        appendEntry({
           absolutePath,
           canonicalPath,
           displayPath,
@@ -495,7 +534,7 @@ export function createGitReadGate({
         !await traversalDirectoryIsIgnored(canonicalPath, inventory) &&
         !await privacyDecision(canonicalPath, exclusions)
       ) {
-        entries.push({
+        appendEntry({
           absolutePath: displayPath,
           canonicalPath,
           displayPath,
@@ -505,9 +544,16 @@ export function createGitReadGate({
       }
     }
     const pendingDirectories = [resolvedPath.absolutePath];
+    let discoveredDirectoryEntries = 0;
     while (pendingDirectories.length > 0) {
       const parentPath = pendingDirectories.pop();
-      for (const child of await readdir(parentPath, { withFileTypes: true })) {
+      for await (const child of await opendir(parentPath)) {
+        discoveredDirectoryEntries += 1;
+        if (discoveredDirectoryEntries > bindingLimits.maxTraversalEntries) {
+          throw new Error(
+            `traversal discovery exceeds ${bindingLimits.maxTraversalEntries} entries`,
+          );
+        }
         if (!child.isDirectory() || child.isSymbolicLink()) continue;
         const displayPath = resolve(parentPath, child.name);
         const admittedStat = await fs.lstat(displayPath);
@@ -519,16 +565,14 @@ export function createGitReadGate({
           await traversalDirectoryIsIgnored(canonicalPath, inventory) ||
           await privacyDecision(canonicalPath, exclusions)
         ) continue;
+        appendEntry({
+          absolutePath: displayPath,
+          canonicalPath,
+          displayPath,
+          isDirectory: true,
+          identity: fileIdentity(admittedStat),
+        });
         pendingDirectories.push(displayPath);
-        if (!entries.some((entry) => entry.displayPath === displayPath)) {
-          entries.push({
-            absolutePath: displayPath,
-            canonicalPath,
-            displayPath,
-            isDirectory: true,
-            identity: fileIdentity(admittedStat),
-          });
-        }
       }
     }
     resolvedPath.traversalEntries = entries;
@@ -763,7 +807,7 @@ export function createGitReadGate({
     if (disposed) throw new Error("Git read gate is disposed");
     if (!bindingPlans.has(plan)) throw new Error("PICM_PATH_BINDING_INVALID: plan was not issued by this gate");
     bindingPlans.delete(plan);
-    const binding = createPathExecutionBinding(plan);
+    const binding = createPathExecutionBinding(plan, bindingLimits);
     activeBindings.add(binding);
     const release = binding.release.bind(binding);
     binding.release = () => {
