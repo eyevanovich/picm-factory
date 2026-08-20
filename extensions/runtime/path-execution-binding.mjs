@@ -264,9 +264,11 @@ function prepareParent(plan) {
 function globMatches(fileName, pattern) {
   const source = pattern
     .replace(/[.+^${}()|[\]\\]/g, "\\$&")
+    .replaceAll("**/", "\1")
     .replaceAll("**", "\0")
     .replaceAll("*", "[^/]*")
     .replaceAll("?", "[^/]")
+    .replaceAll("\1", "(?:.*/)?")
     .replaceAll("\0", ".*");
   return new RegExp(`^(?:${source})$`).test(fileName);
 }
@@ -337,29 +339,6 @@ export async function executeBoundGrep(binding, params, signal) {
   };
 }
 
-export async function executeBoundFind(binding, params, signal) {
-  if (signal?.aborted) throw new Error("Operation aborted");
-  const pattern = params.pattern ?? "*";
-  const limit = Math.max(1, params.limit ?? 1000);
-  const paths = binding.files
-    .map((file) => relative(binding.absolutePath, file.path).split(sep).join("/"))
-    .filter((path) => globMatches(path, pattern) || globMatches(basename(path), pattern))
-    .slice(0, limit);
-  return { content: [{ type: "text", text: paths.length ? paths.join("\n") : "No files found" }], details: undefined };
-}
-
-export async function executeBoundLs(binding, params, signal) {
-  if (signal?.aborted) throw new Error("Operation aborted");
-  const limit = Math.max(1, params.limit ?? 500);
-  const entries = new Set();
-  for (const file of binding.files) {
-    const path = relative(binding.absolutePath, file.path);
-    const [entry, remainder] = path.split(sep);
-    entries.add(remainder ? `${entry}/` : entry);
-  }
-  return { content: [{ type: "text", text: [...entries].sort().slice(0, limit).join("\n") }], details: undefined };
-}
-
 export function createPathExecutionBinding(plan) {
   if (!plan || !["read", "edit", "write", "grep", "rg", "find", "ls"].includes(plan.toolName)) {
     fail("invalid execution binding plan");
@@ -387,15 +366,26 @@ export function createPathExecutionBinding(plan) {
       );
       if (traversalDirectory) {
         for (const entry of plan.traversalEntries ?? []) {
-          const entryFd = openSync(entry.absolutePath, openFlags("read"));
+          const entryFd = openSync(
+            entry.absolutePath,
+            constants.O_RDONLY | (entry.isDirectory ? (constants.O_DIRECTORY ?? 0) : 0) |
+              (constants.O_NOFOLLOW ?? 0) | (constants.O_BINARY ?? 0),
+          );
           try {
             const stat = fstatSync(entryFd);
-            if (!stat.isFile()) fail("validated traversal target is not a regular file");
+            if (entry.isDirectory ? !stat.isDirectory() : !stat.isFile()) {
+              fail("validated traversal target has an unsupported type");
+            }
             assertIdentity(stat, entry.identity, "validated traversal target");
             assertCurrentPath(entry.absolutePath, entry.canonicalPath, entry.identity, "validated traversal target");
-            retainedFiles.push({ fd: entryFd, path: entry.displayPath ?? entry.absolutePath });
-          } catch (error) {
+            retainedFiles.push({
+              path: entry.displayPath ?? entry.absolutePath,
+              isDirectory: entry.isDirectory,
+              content: entry.isDirectory ? undefined : readAll(entryFd),
+            });
             closeSync(entryFd);
+          } catch (error) {
+            try { closeSync(entryFd); } catch {}
             throw error;
           }
         }
@@ -449,9 +439,6 @@ export function createPathExecutionBinding(plan) {
     for (const directoryFd of [...directoryFds].reverse()) {
       try { closeSync(directoryFd); } catch {}
     }
-    for (const file of retainedFiles) {
-      try { closeSync(file.fd); } catch {}
-    }
     throw error;
   }
 
@@ -465,7 +452,10 @@ export function createPathExecutionBinding(plan) {
     toolName: plan.toolName,
     absolutePath: plan.absolutePath,
     files: traversalDirectory
-      ? retainedFiles.map((file) => ({ path: file.path, readFile: async () => readAll(file.fd) }))
+      ? retainedFiles.filter((file) => !file.isDirectory).map((file) => ({
+          path: file.path,
+          readFile: async () => file.content,
+        }))
       : undefined,
     operations: plan.toolName === "read"
       ? {
@@ -490,20 +480,40 @@ export function createPathExecutionBinding(plan) {
                 writeAll(fd, content);
               },
             }
-          : plan.toolName === "grep"
+          : plan.toolName === "grep" || plan.toolName === "rg"
             ? {
-                isDirectory: async () => false,
-                readFile: async () => readAll(fd),
+                isDirectory: async () => traversalDirectory,
+                readFile: async (path) => {
+                  if (!traversalDirectory) return readAll(fd).toString("utf8");
+                  const file = retainedFiles.find((entry) => entry.path === path && !entry.isDirectory);
+                  if (!file) fail("path is outside the validated traversal snapshot");
+                  return file.content.toString("utf8");
+                },
               }
             : plan.toolName === "ls"
               ? {
                   exists: async () => true,
-                  stat: async () => fstatSync(fd),
-                  readdir: async () => fail("validated ls target is not a directory"),
+                  stat: async (path) => {
+                    if (path === plan.absolutePath) return fstatSync(fd);
+                    const entry = retainedFiles.find((candidate) => candidate.path === path);
+                    if (!entry) fail("path is outside the validated traversal snapshot");
+                    return { isDirectory: () => entry.isDirectory, isFile: () => !entry.isDirectory };
+                  },
+                  readdir: async () => [...new Set(retainedFiles.map((entry) => {
+                    const [name] = relative(plan.absolutePath, entry.path).split(sep);
+                    return name;
+                  }))],
                 }
               : {
                   exists: async () => true,
-                  glob: async () => fail("validated find target is not a directory"),
+                  glob: async (pattern, searchPath, options) => retainedFiles
+                    .filter((entry) => {
+                      const path = relative(searchPath, entry.path).split(sep).join("/");
+                      const candidate = pattern.includes("/") ? path : basename(path);
+                      return path && globMatches(candidate, pattern);
+                    })
+                    .slice(0, options.limit)
+                    .map((entry) => entry.isDirectory ? `${entry.path}${sep}` : entry.path),
                 },
     release() {
       if (released) return;
@@ -536,9 +546,6 @@ export function createPathExecutionBinding(plan) {
         } catch (error) {
           errors.push(error);
         }
-      }
-      for (const file of retainedFiles) {
-        try { closeSync(file.fd); } catch (error) { errors.push(error); }
       }
       if (errors.length > 1) throw new AggregateError(errors, "PiCM path binding cleanup failed");
       if (errors.length === 1) throw errors[0];

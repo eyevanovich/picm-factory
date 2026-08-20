@@ -1,6 +1,6 @@
 import { execFile } from "node:child_process";
 import { realpathSync } from "node:fs";
-import { lstat, mkdtemp, realpath, rm } from "node:fs/promises";
+import { lstat, mkdtemp, readdir, realpath, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -385,9 +385,10 @@ export function createGitReadGate({
     return plan;
   }
 
-  async function addTraversalEntries(resolvedPath, inventory) {
+  async function addTraversalEntries(resolvedPath, inventory, exclusions) {
     if (!resolvedPath.stat?.isDirectory()) return;
     const entries = [];
+    const directories = new Set();
     for (const candidate of inventory.candidates) {
       const absolutePath = resolve(inventory.worktree, candidate);
       if (absolutePath === resolvedPath.canonicalPath || !isInside(resolvedPath.canonicalPath, absolutePath)) continue;
@@ -396,18 +397,56 @@ export function createGitReadGate({
         if (stat.isSymbolicLink() || !stat.isFile()) continue;
         const canonicalPath = await fs.realpath(absolutePath);
         if (!isInside(resolvedPath.canonicalPath, canonicalPath)) continue;
+        const displayPath = resolve(
+          resolvedPath.absolutePath,
+          relative(resolvedPath.canonicalPath, canonicalPath),
+        );
+        for (let directory = dirname(displayPath); isInside(resolvedPath.absolutePath, directory) && directory !== resolvedPath.absolutePath; directory = dirname(directory)) {
+          directories.add(directory);
+        }
         entries.push({
           absolutePath: canonicalPath,
           canonicalPath,
-          displayPath: resolve(
-            resolvedPath.absolutePath,
-            relative(resolvedPath.canonicalPath, canonicalPath),
-          ),
+          displayPath,
+          isDirectory: false,
           identity: fileIdentity(stat),
         });
       } catch (error) {
         if (error?.code !== "ENOENT") throw error;
       }
+    }
+    for (const displayPath of directories) {
+      const canonicalPath = await fs.realpath(displayPath);
+      const stat = await fs.lstat(canonicalPath);
+      if (!stat.isSymbolicLink() && stat.isDirectory()) {
+        entries.push({
+          absolutePath: canonicalPath,
+          canonicalPath,
+          displayPath,
+          isDirectory: true,
+          identity: fileIdentity(stat),
+        });
+      }
+    }
+    for (const child of await readdir(resolvedPath.absolutePath, { withFileTypes: true })) {
+      if (!child.isDirectory() || child.isSymbolicLink()) continue;
+      const displayPath = resolve(resolvedPath.absolutePath, child.name);
+      const canonicalPath = await fs.realpath(displayPath);
+      const gitPath = toGitPath(inventory.worktree, canonicalPath);
+      const ignoredChild = [...inventory.ignored].some((path) => {
+        const normalized = path.replace(/\/$/, "");
+        return gitPath === normalized || gitPath.startsWith(`${normalized}/`);
+      });
+      if (ignoredChild || await privacyDecision(canonicalPath, exclusions)) continue;
+      if (entries.some((entry) => entry.displayPath === displayPath)) continue;
+      const stat = await fs.lstat(canonicalPath);
+      entries.push({
+        absolutePath: canonicalPath,
+        canonicalPath,
+        displayPath,
+        isDirectory: true,
+        identity: fileIdentity(stat),
+      });
     }
     resolvedPath.traversalEntries = entries;
   }
@@ -476,7 +515,7 @@ export function createGitReadGate({
       if (decision.allowed && TRAVERSAL_TOOLS.has(toolName) && resolvedPath.stat?.isDirectory()) {
         await discoverWorktree();
         const inventory = await filterPrivacyInventory(await refreshInventoryUnchecked(), exclusions);
-        await addTraversalEntries(resolvedPath, inventory);
+        await addTraversalEntries(resolvedPath, inventory, exclusions);
       }
       return decision.allowed
         ? allowedPathDecision(decision, toolName, resolvedPath)
@@ -602,7 +641,7 @@ export function createGitReadGate({
     }
 
     if (TRAVERSAL_TOOLS.has(toolName) && resolvedPath.stat?.isDirectory()) {
-      await addTraversalEntries(resolvedPath, inventory);
+      await addTraversalEntries(resolvedPath, inventory, exclusions);
     }
     if (READ_LIKE_TOOLS.has(toolName) && !resolvedPath.stat?.isDirectory() && !inventory.candidates.has(gitPath)) {
       return { allowed: false, protected: true, reason: "path is not in the Git-derived candidate inventory" };

@@ -668,7 +668,7 @@ export function createRuntimeCoordinator({
         };
       }
       const automaticInventory = event.toolName === "picm_scan_control" && event.input?.action === "inventory";
-      if (!automaticInventory && !["read", "grep", "find", "ls"].includes(event.toolName)) {
+      if (!automaticInventory && !["read", "grep", "rg", "find", "ls"].includes(event.toolName)) {
         return { allowed: false, reason: "Scheduled maintenance is advisory and read-only; this tool is blocked" };
       }
       if (automaticInventory) return { allowed: true };

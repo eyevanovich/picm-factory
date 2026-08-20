@@ -352,8 +352,10 @@ test("prospective writes fail closed when the leaf appears after admission", asy
 test("guarded directory grep rg find and ls filter protected descendants", async () => {
   await withFixture(async ({ root }) => {
     write(join(root, "docs", "public.md"), "VISIBLE_MARKER\n");
+    write(join(root, "docs", "root.ts"), "export const visible = true;\n");
+    mkdirSync(join(root, "docs", "empty"));
     write(join(root, "docs", "private", "secret.md"), "PRIVATE_MARKER\n");
-    git(root, "add", "docs/public.md", "docs/private/secret.md");
+    git(root, "add", "docs/public.md", "docs/root.ts", "docs/private/secret.md");
     const h = extensionHarness();
     const ctx = h.context(root, "guarded-directory-filtering");
     const control = h.tools.get("picm_scan_control");
@@ -376,6 +378,21 @@ test("guarded directory grep rg find and ls filter protected descendants", async
       assert.match(text, /public\.md|VISIBLE_MARKER/);
       assert.doesNotMatch(text, /secret\.md|PRIVATE_MARKER|private\//);
     }
+
+    const contractSpecs = [
+      { id: "directory-find-root-glob", toolName: "find", input: { path: "docs", pattern: "**/*.ts" } },
+      { id: "directory-find-limit", toolName: "find", input: { path: "docs", pattern: "**", limit: 1 } },
+      { id: "directory-ls-limit", toolName: "ls", input: { path: "docs", limit: 1 } },
+      { id: "directory-ls-empty", toolName: "ls", input: { path: "docs/empty" } },
+    ].map((spec) => ({ ...spec, tool: h.tools.get(spec.toolName) }));
+    const contractCalls = await preflightParallelToolCalls(h, ctx, contractSpecs);
+    const contractResults = await executePreflightedToolCalls(h, ctx, contractCalls);
+    assert.match(contractResults[0].result.content[0].text, /^root\.ts$/m);
+    assert.equal(contractResults[1].result.details?.resultLimitReached, 1);
+    assert.match(contractResults[1].result.content[0].text, /1 results limit reached/);
+    assert.equal(contractResults[2].result.details?.entryLimitReached, 1);
+    assert.match(contractResults[2].result.content[0].text, /1 entries limit reached/);
+    assert.equal(contractResults[3].result.content[0].text, "(empty directory)");
   });
 });
 

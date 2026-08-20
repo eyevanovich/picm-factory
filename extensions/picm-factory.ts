@@ -20,7 +20,7 @@ import {
   parseMaintenanceDepthArgument,
 } from "./runtime/coding-maintenance-depth.mjs";
 import { packageRootFromImportMeta } from "./runtime/git-read-gate.mjs";
-import { executeBoundFind, executeBoundGrep, executeBoundLs } from "./runtime/path-execution-binding.mjs";
+import { executeBoundGrep } from "./runtime/path-execution-binding.mjs";
 import { createRuntimeCoordinator } from "./runtime/runtime-coordinator.mjs";
 
 type CommandName = "picm-new" | "picm-adopt" | "picm-maintain" | "picm-optimize" | "picm-help";
@@ -120,8 +120,6 @@ export default function picmFactoryExtension(
         if (binding && (toolName === "grep" || toolName === "rg")) {
           return executeBoundGrep(binding, params, signal);
         }
-        if (binding && toolName === "find" && Array.isArray(binding.files)) return executeBoundFind(binding, params, signal);
-        if (binding && toolName === "ls" && Array.isArray(binding.files)) return executeBoundLs(binding, params, signal);
         const tool = createTool(ctx.cwd, binding ? { operations: binding.operations } : undefined);
         return tool.execute(toolCallId, params, signal, onUpdate, ctx);
       },

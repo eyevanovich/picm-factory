@@ -254,6 +254,10 @@ test("TUI automatic cycle resets, dispatches once, and blocks side effects until
   assert.match(blockedIgnoredRead.reason, /ignored by Git/);
   const blockedBash = await h.handlers.get("tool_call")({ toolName: "bash", input: { command: "echo safe" } }, h.context(cwd));
   assert.equal(blockedBash.block, true);
+  const rgEvent = { toolCallId: "automatic-rg", toolName: "rg", input: { path: "safe.txt", pattern: "safe" } };
+  await h.handlers.get("tool_execution_start")({ ...rgEvent, args: rgEvent.input }, ctx);
+  assert.equal(await h.handlers.get("tool_call")(rgEvent, ctx), undefined);
+  await h.handlers.get("tool_execution_end")({ ...rgEvent, result: { content: [] }, isError: false }, ctx);
   assert.equal(await h.handlers.get("tool_call")(
     { toolName: "picm_scan_control", input: { action: "inventory" } },
     ctx,
