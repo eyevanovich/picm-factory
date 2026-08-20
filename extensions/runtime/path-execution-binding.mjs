@@ -270,7 +270,7 @@ function globMatches(fileName, pattern) {
 }
 
 function truncateLine(line, maxLength = 500) {
-  return line.length <= maxLength ? line : `${line.slice(0, maxLength)}…`;
+  return line.length <= maxLength ? line : `${line.slice(0, maxLength)}... [truncated]`;
 }
 
 let ripgrepPathPromise;
@@ -305,13 +305,29 @@ function truncateHead(content, maxBytes = 50 * 1024) {
 }
 
 async function ripgrepMatches(path, args, content, signal, remaining) {
+  if (signal?.aborted) throw new Error("Operation aborted");
   return new Promise((resolvePromise, reject) => {
     const child = spawn(path, args, { stdio: ["pipe", "pipe", "pipe"] });
     const matches = [];
     let stdout = "";
     let stderr = "";
     let limited = false;
-    const abort = () => child.kill();
+    let aborted = false;
+    let settled = false;
+    const settle = (operation) => {
+      if (settled) return;
+      settled = true;
+      signal?.removeEventListener("abort", abort);
+      operation();
+    };
+    const stop = () => {
+      child.stdin.destroy();
+      if (!child.killed) child.kill();
+    };
+    const abort = () => {
+      aborted = true;
+      stop();
+    };
     signal?.addEventListener("abort", abort, { once: true });
     child.stdout.on("data", (chunk) => {
       stdout += chunk.toString();
@@ -324,25 +340,30 @@ async function ripgrepMatches(path, args, content, signal, remaining) {
           matches.push(event.data.line_number);
           if (matches.length >= remaining) {
             limited = true;
-            child.kill();
+            stop();
             break;
           }
         }
       }
     });
     child.stderr.on("data", (chunk) => { stderr += chunk.toString(); });
-    child.on("error", reject);
+    child.stdin.on("error", (error) => {
+      if (limited || aborted) return;
+      settle(() => reject(error));
+    });
+    child.on("error", (error) => settle(() => reject(error)));
     child.on("close", (code) => {
-      signal?.removeEventListener("abort", abort);
-      if (signal?.aborted) return reject(new Error("Operation aborted"));
-      if (!limited && code !== 0 && code !== 1) return reject(new Error(stderr.trim() || `ripgrep exited with code ${code}`));
-      resolvePromise({ matches, limited });
+      if (aborted || signal?.aborted) return settle(() => reject(new Error("Operation aborted")));
+      if (!limited && code !== 0 && code !== 1) {
+        return settle(() => reject(new Error(stderr.trim() || `ripgrep exited with code ${code}`)));
+      }
+      settle(() => resolvePromise({ matches, limited }));
     });
     child.stdin.end(content);
   });
 }
 
-export async function executeBoundGrep(binding, params, signal) {
+export async function executeBoundGrep(binding, params, signal, resolveMatcher = resolveRipgrep) {
   if (signal?.aborted) throw new Error("Operation aborted");
   const {
     pattern,
@@ -355,8 +376,10 @@ export async function executeBoundGrep(binding, params, signal) {
   const files = binding.files ?? [{ path: binding.absolutePath, readFile: binding.operations.readFile }];
   const matches = [];
   const effectiveLimit = Math.max(1, limit);
-  const ripgrepPath = await resolveRipgrep();
+  const ripgrepPath = await resolveMatcher();
+  if (signal?.aborted) throw new Error("Operation aborted");
   for (const file of files) {
+    if (signal?.aborted) throw new Error("Operation aborted");
     const fileName = relative(binding.absolutePath, file.path) || basename(file.path);
     if (glob && !globMatches(fileName, glob) && !globMatches(basename(file.path), glob)) continue;
     const content = (await file.readFile()).toString("utf8");
@@ -376,16 +399,12 @@ export async function executeBoundGrep(binding, params, signal) {
     return { content: [{ type: "text", text: "No matches found" }], details: undefined };
   }
   const output = [];
-  const emitted = new Set();
   let linesTruncated = false;
   const contextSize = Math.max(0, context);
   for (const { fileName, index, lines } of matches) {
     const start = Math.max(0, index - contextSize);
     const end = Math.min(lines.length - 1, index + contextSize);
     for (let current = start; current <= end; current += 1) {
-      const key = `${fileName}\0${current}`;
-      if (emitted.has(key)) continue;
-      emitted.add(key);
       const separator = current === index ? ":" : "-";
       const shortened = truncateLine(lines[current]);
       if (shortened !== lines[current]) linesTruncated = true;

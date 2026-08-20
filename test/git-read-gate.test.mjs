@@ -30,6 +30,7 @@ import {
 } from "@earendil-works/pi-coding-agent";
 import picmFactoryExtension from "../extensions/picm-factory.ts";
 import { createGitReadGate } from "../extensions/runtime/git-read-gate.mjs";
+import { executeBoundGrep } from "../extensions/runtime/path-execution-binding.mjs";
 import { createPolicy } from "../extensions/runtime/maintenance-policy.mjs";
 import { createRuntimeCoordinator } from "../extensions/runtime/runtime-coordinator.mjs";
 
@@ -355,10 +356,11 @@ test("guarded directory grep rg find and ls filter protected descendants", async
     write(join(root, "docs", "root.ts"), "export const visible = true;\n");
     write(join(root, "docs", "a.js"), `marker ${"x".repeat(2100)}\n`);
     write(join(root, "docs", "large.md"), `${Array.from({ length: 120 }, () => `HIT ${"y".repeat(1900)}`).join("\n")}\n`);
+    write(join(root, "docs", "context.md"), "before\nHIT one\nHIT two\nafter\n");
     mkdirSync(join(root, "docs", "empty"));
     mkdirSync(join(root, "docs", "nested", "empty"), { recursive: true });
     write(join(root, "docs", "private", "secret.md"), "PRIVATE_MARKER\n");
-    git(root, "add", "docs/public.md", "docs/root.ts", "docs/a.js", "docs/large.md", "docs/private/secret.md");
+    git(root, "add", "docs/public.md", "docs/root.ts", "docs/a.js", "docs/large.md", "docs/context.md", "docs/private/secret.md");
     const h = extensionHarness();
     const ctx = h.context(root, "guarded-directory-filtering");
     const control = h.tools.get("picm_scan_control");
@@ -388,6 +390,7 @@ test("guarded directory grep rg find and ls filter protected descendants", async
       { id: "directory-find-nested-empty", toolName: "find", input: { path: "docs", pattern: "**" } },
       { id: "directory-grep-ripgrep-regex", toolName: "grep", input: { path: "docs", pattern: "(?i)marker", glob: "[ab].{js,ts}" } },
       { id: "directory-grep-byte-limit", toolName: "grep", input: { path: "docs", pattern: "HIT", glob: "large.md" } },
+      { id: "directory-grep-overlap", toolName: "grep", input: { path: "docs", pattern: "HIT", glob: "context.md", context: 1 } },
       { id: "directory-find-limit", toolName: "find", input: { path: "docs", pattern: "**", limit: 1 } },
       { id: "directory-ls-limit", toolName: "ls", input: { path: "docs", limit: 1 } },
       { id: "directory-ls-empty", toolName: "ls", input: { path: "docs/empty" } },
@@ -399,14 +402,17 @@ test("guarded directory grep rg find and ls filter protected descendants", async
     assert.match(contractResults[1].result.content[0].text, /a\.js|root\.ts/);
     assert.match(contractResults[2].result.content[0].text, /nested\/empty\//);
     assert.equal(contractResults[3].result.details?.linesTruncated, true);
+    assert.match(contractResults[3].result.content[0].text, /\.\.\. \[truncated\]/);
     assert.equal(contractResults[4].result.details?.truncation?.truncated, true);
     assert.match(contractResults[4].result.content[0].text, /50KB limit reached/);
-    assert.equal(contractResults[5].result.details?.resultLimitReached, 1);
-    assert.match(contractResults[5].result.content[0].text, /1 results limit reached/);
-    assert.equal(contractResults[6].result.details?.entryLimitReached, 1);
-    assert.match(contractResults[6].result.content[0].text, /1 entries limit reached/);
-    assert.equal(contractResults[7].result.content[0].text, "(empty directory)");
-    assert.doesNotMatch(contractResults[8].result.content[0].text, /(?:^|\/)\.git\//m);
+    assert.equal((contractResults[5].result.content[0].text.match(/context\.md[:-]2[:-]/g) ?? []).length, 2);
+    assert.equal((contractResults[5].result.content[0].text.match(/context\.md[:-]3[:-]/g) ?? []).length, 2);
+    assert.equal(contractResults[6].result.details?.resultLimitReached, 1);
+    assert.match(contractResults[6].result.content[0].text, /1 results limit reached/);
+    assert.equal(contractResults[7].result.details?.entryLimitReached, 1);
+    assert.match(contractResults[7].result.content[0].text, /1 entries limit reached/);
+    assert.equal(contractResults[8].result.content[0].text, "(empty directory)");
+    assert.doesNotMatch(contractResults[9].result.content[0].text, /(?:^|\/)\.git\//m);
 
     const abortController = new AbortController();
     abortController.abort();
@@ -438,6 +444,20 @@ test("guarded directory bindings reject retained child symlink replacement", asy
     assert.throws(() => gate.bindPath(decision.executionBinding), /changed|symlink|ENOTDIR/);
     await gate.dispose();
   });
+});
+
+test("guarded grep aborts while ripgrep resolution is pending", async () => {
+  const resolution = deferred();
+  const controller = new AbortController();
+  const execution = executeBoundGrep(
+    { absolutePath: "/virtual/file", operations: { readFile: async () => Buffer.from("match\n") } },
+    { pattern: "match" },
+    controller.signal,
+    async () => resolution.promise,
+  );
+  controller.abort();
+  resolution.resolve("rg");
+  await assert.rejects(execution, /Operation aborted/);
 });
 
 test("execution bindings close their stable file descriptors", async () => {
