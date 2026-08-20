@@ -1367,6 +1367,7 @@ test("non-Git workspaces without ignore rules remain scannable without creating 
 
 test("complete waits for sequentially preflighted real project operations to finish", async () => {
   await withFixture(async ({ root }) => {
+    write(join(root, "output", "barrier.txt"), "before\n");
     const entries = [];
     const h = extensionHarness({ entries });
     const ctx = h.context(root, "execution-barrier-builtins");
@@ -1709,6 +1710,7 @@ test("completion fence rejects later siblings without waiting on itself or rejec
 
 test("completion waits through failed and cancelled mutations and releases their leases", async () => {
   await withFixture(async ({ root }) => {
+    write(join(root, "output", "failure.txt"), "before\n");
     const h = extensionHarness();
     const ctx = h.context(root, "execution-barrier-failure");
     const control = h.tools.get("picm_scan_control");
@@ -1754,6 +1756,7 @@ test("completion waits through failed and cancelled mutations and releases their
   });
 
   await withFixture(async ({ root }) => {
+    write(join(root, "output", "cancelled.txt"), "before\n");
     const h = extensionHarness();
     const ctx = h.context(root, "execution-barrier-cancellation");
     const control = h.tools.get("picm_scan_control");
@@ -1815,6 +1818,7 @@ test("completion waits through failed and cancelled mutations and releases their
 
 test("cancelled completion stays nonterminal and releases its own lease", async () => {
   await withFixture(async ({ root }) => {
+    write(join(root, "output", "before-retry.txt"), "before\n");
     const h = extensionHarness();
     const ctx = h.context(root, "execution-barrier-cancelled-complete");
     const control = h.tools.get("picm_scan_control");
