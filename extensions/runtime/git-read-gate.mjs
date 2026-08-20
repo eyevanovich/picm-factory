@@ -556,6 +556,11 @@ export function createGitReadGate({
   }
 
   async function guardedInventoryForPath(canonicalPath, exclusions) {
+    const primaryGitPath = toGitPath(canonicalWorktree, canonicalPath);
+    if (primaryGitPath === ".git" || primaryGitPath.startsWith(".git/")) {
+      return { decision: { allowed: false, protected: true, reason: ".git internals are not readable" } };
+    }
+
     const nestedBoundary = await boundaryForPath(canonicalPath);
     const boundaryRoot = nestedBoundary ?? canonicalWorktree;
     const gitPath = toGitPath(boundaryRoot, canonicalPath);
