@@ -218,7 +218,7 @@ async function promiseSettled(promise) {
   ]);
 }
 
-test("allows Git candidates and blocks ignored, tracked-ignored, internal, and outside reads", async () => {
+test("allows file candidates and rejects non-traversal directories", async () => {
   await withFixture(async ({ root, packageRoot }) => {
     const gate = createGitReadGate({ cwd: root, packageRoot });
 
@@ -226,7 +226,15 @@ test("allows Git candidates and blocks ignored, tracked-ignored, internal, and o
     assert.match((await gate.checkPath("read", ".env")).reason, /ignored by Git/);
     assert.match((await gate.checkPath("read", ".env.tracked")).reason, /ignored by Git/);
     assert.match((await gate.checkPath("read", ".git/config")).reason, /\.git internals/);
-    assert.match((await gate.checkPath("read", "docs")).reason, /candidate inventory/);
+    for (const toolName of ["read", "edit", "write"]) {
+      const scanDecision = await gate.checkPath(toolName, "docs");
+      assert.equal(scanDecision.allowed, false);
+      assert.match(scanDecision.reason, /candidate inventory/);
+
+      const privacyDecision = await gate.checkPrivacyPath(toolName, "docs", ["private"]);
+      assert.equal(privacyDecision.allowed, false);
+      assert.match(privacyDecision.reason, /candidate inventory/);
+    }
 
     const outside = join(dirname(root), `outside-${Date.now()}.txt`);
     write(outside, "outside\n");

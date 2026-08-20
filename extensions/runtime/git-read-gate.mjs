@@ -532,7 +532,14 @@ export function createGitReadGate({
         protected: true,
         reason: "path is outside configured PiCM privacy exclusions",
       };
-      if (decision.allowed && TRAVERSAL_TOOLS.has(toolName) && resolvedPath.stat?.isDirectory()) {
+      if (decision.allowed && resolvedPath.stat?.isDirectory()) {
+        if (!TRAVERSAL_TOOLS.has(toolName)) {
+          return {
+            allowed: false,
+            protected: true,
+            reason: "path is not in the Git-derived candidate inventory",
+          };
+        }
         await discoverWorktree();
         const inventory = await filterPrivacyInventory(await refreshInventoryUnchecked(), exclusions);
         await addTraversalEntries(resolvedPath, inventory, exclusions);
@@ -660,7 +667,14 @@ export function createGitReadGate({
       };
     }
 
-    if (TRAVERSAL_TOOLS.has(toolName) && resolvedPath.stat?.isDirectory()) {
+    if (resolvedPath.stat?.isDirectory()) {
+      if (!TRAVERSAL_TOOLS.has(toolName)) {
+        return {
+          allowed: false,
+          protected: true,
+          reason: "path is not in the Git-derived candidate inventory",
+        };
+      }
       await addTraversalEntries(resolvedPath, inventory, exclusions);
     }
     if (READ_LIKE_TOOLS.has(toolName) && !resolvedPath.stat?.isDirectory() && !inventory.candidates.has(gitPath)) {
