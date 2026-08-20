@@ -15,9 +15,9 @@ import {
 } from "./path-execution-binding.mjs";
 
 const execFileAsync = promisify(execFile);
-const PATH_TOOLS = new Set(["read", "edit", "write", "grep", "find", "ls"]);
-const READ_LIKE_TOOLS = new Set(["read", "edit", "grep", "find", "ls"]);
-const TRAVERSAL_TOOLS = new Set(["grep", "find", "ls"]);
+const PATH_TOOLS = new Set(["read", "edit", "write", "grep", "rg", "find", "ls"]);
+const READ_LIKE_TOOLS = new Set(["read", "edit", "grep", "rg", "find", "ls"]);
+const TRAVERSAL_TOOLS = new Set(["grep", "rg", "find", "ls"]);
 
 function isInside(parent, child) {
   const path = relative(parent, child);
@@ -370,7 +370,7 @@ export function createGitReadGate({
   }
 
   function executionBindingPlan(toolName, resolvedPath) {
-    if (!["read", "edit", "write", "grep", "find", "ls"].includes(toolName)) return undefined;
+    if (!["read", "edit", "write", "grep", "rg", "find", "ls"].includes(toolName)) return undefined;
     const plan = {
       toolName,
       absolutePath: resolvedPath.absolutePath,
@@ -379,9 +379,37 @@ export function createGitReadGate({
       existingPath: resolvedPath.existingPath,
       canonicalExistingPath: resolvedPath.canonicalExistingPath,
       existingIdentity: fileIdentity(resolvedPath.existingStat),
+      traversalEntries: resolvedPath.traversalEntries,
     };
     bindingPlans.add(plan);
     return plan;
+  }
+
+  async function addTraversalEntries(resolvedPath, inventory) {
+    if (!resolvedPath.stat?.isDirectory()) return;
+    const entries = [];
+    for (const candidate of inventory.candidates) {
+      const absolutePath = resolve(inventory.worktree, candidate);
+      if (absolutePath === resolvedPath.canonicalPath || !isInside(resolvedPath.canonicalPath, absolutePath)) continue;
+      try {
+        const stat = await fs.lstat(absolutePath);
+        if (stat.isSymbolicLink() || !stat.isFile()) continue;
+        const canonicalPath = await fs.realpath(absolutePath);
+        if (!isInside(resolvedPath.canonicalPath, canonicalPath)) continue;
+        entries.push({
+          absolutePath: canonicalPath,
+          canonicalPath,
+          displayPath: resolve(
+            resolvedPath.absolutePath,
+            relative(resolvedPath.canonicalPath, canonicalPath),
+          ),
+          identity: fileIdentity(stat),
+        });
+      } catch (error) {
+        if (error?.code !== "ENOENT") throw error;
+      }
+    }
+    resolvedPath.traversalEntries = entries;
   }
 
   function allowedPathDecision(decision, toolName, resolvedPath) {
@@ -445,6 +473,11 @@ export function createGitReadGate({
         protected: true,
         reason: "path is outside configured PiCM privacy exclusions",
       };
+      if (decision.allowed && TRAVERSAL_TOOLS.has(toolName) && resolvedPath.stat?.isDirectory()) {
+        await discoverWorktree();
+        const inventory = await filterPrivacyInventory(await refreshInventoryUnchecked(), exclusions);
+        await addTraversalEntries(resolvedPath, inventory);
+      }
       return decision.allowed
         ? allowedPathDecision(decision, toolName, resolvedPath)
         : decision;
@@ -569,13 +602,9 @@ export function createGitReadGate({
     }
 
     if (TRAVERSAL_TOOLS.has(toolName) && resolvedPath.stat?.isDirectory()) {
-      return {
-        allowed: false,
-        protected: true,
-        reason: `${toolName} directory traversal is blocked; inspect Git-derived candidate files instead`,
-      };
+      await addTraversalEntries(resolvedPath, inventory);
     }
-    if (READ_LIKE_TOOLS.has(toolName) && !inventory.candidates.has(gitPath)) {
+    if (READ_LIKE_TOOLS.has(toolName) && !resolvedPath.stat?.isDirectory() && !inventory.candidates.has(gitPath)) {
       return { allowed: false, protected: true, reason: "path is not in the Git-derived candidate inventory" };
     }
 

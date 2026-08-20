@@ -20,7 +20,7 @@ import {
   parseMaintenanceDepthArgument,
 } from "./runtime/coding-maintenance-depth.mjs";
 import { packageRootFromImportMeta } from "./runtime/git-read-gate.mjs";
-import { executeBoundGrep } from "./runtime/path-execution-binding.mjs";
+import { executeBoundFind, executeBoundGrep, executeBoundLs } from "./runtime/path-execution-binding.mjs";
 import { createRuntimeCoordinator } from "./runtime/runtime-coordinator.mjs";
 
 type CommandName = "picm-new" | "picm-adopt" | "picm-maintain" | "picm-optimize" | "picm-help";
@@ -109,7 +109,7 @@ export default function picmFactoryExtension(
   });
 
   const registerBoundBuiltin = (
-    toolName: "read" | "edit" | "write" | "grep" | "find" | "ls",
+    toolName: "read" | "edit" | "write" | "grep" | "rg" | "find" | "ls",
     createTool: any,
   ) => {
     const definition = createTool(process.cwd());
@@ -117,9 +117,11 @@ export default function picmFactoryExtension(
       ...definition,
       async execute(toolCallId: string, params: any, signal: AbortSignal | undefined, onUpdate: any, ctx: ExtensionContext) {
         const binding = coordinator.beginBoundPathExecution(toolCallId, ctx, toolName);
-        if (binding && toolName === "grep") {
+        if (binding && (toolName === "grep" || toolName === "rg")) {
           return executeBoundGrep(binding, params, signal);
         }
+        if (binding && toolName === "find" && Array.isArray(binding.files)) return executeBoundFind(binding, params, signal);
+        if (binding && toolName === "ls" && Array.isArray(binding.files)) return executeBoundLs(binding, params, signal);
         const tool = createTool(ctx.cwd, binding ? { operations: binding.operations } : undefined);
         return tool.execute(toolCallId, params, signal, onUpdate, ctx);
       },
@@ -130,6 +132,7 @@ export default function picmFactoryExtension(
   registerBoundBuiltin("edit", createEditTool);
   registerBoundBuiltin("write", createWriteTool);
   registerBoundBuiltin("grep", createGrepTool);
+  registerBoundBuiltin("rg", (cwd: string, options?: any) => ({ ...createGrepTool(cwd, options), name: "rg" }));
   registerBoundBuiltin("find", createFindTool);
   registerBoundBuiltin("ls", createLsTool);
 

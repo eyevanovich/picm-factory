@@ -3,6 +3,7 @@ import { execFileSync } from "node:child_process";
 import {
   existsSync,
   fstatSync,
+  linkSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
@@ -326,8 +327,55 @@ test("allows safe prospective writes and blocks ignored prospective writes and t
 
     assert.equal((await gate.checkPath("write", "output/new.md")).allowed, true);
     assert.match((await gate.checkPath("write", "secrets/new.md")).reason, /ignored by Git/);
-    assert.match((await gate.checkPath("grep", ".")).reason, /directory traversal is blocked/);
+    assert.equal((await gate.checkPath("grep", ".")).allowed, true);
     assert.match((await gate.checkPath("find", undefined)).reason, /guarded file path/);
+  });
+});
+
+test("prospective writes fail closed when the leaf appears after admission", async (t) => {
+  if (process.platform !== "linux") {
+    t.skip("descriptor-relative prospective writes are Linux-specific");
+    return;
+  }
+  await withFixture(async ({ root, packageRoot }) => {
+    mkdirSync(join(root, "output"));
+    const gate = createGitReadGate({ cwd: root, packageRoot });
+    const decision = await gate.checkPath("write", "output/raced.txt");
+    assert.equal(decision.allowed, true);
+    linkSync(join(root, ".env"), join(root, "output", "raced.txt"));
+    assert.throws(() => gate.bindPath(decision.executionBinding), /appeared after validation/);
+    assert.equal(readFileSync(join(root, ".env"), "utf8"), "SYNTHETIC_ONLY=ignored\n");
+    await gate.dispose();
+  });
+});
+
+test("guarded directory grep rg find and ls filter protected descendants", async () => {
+  await withFixture(async ({ root }) => {
+    write(join(root, "docs", "public.md"), "VISIBLE_MARKER\n");
+    write(join(root, "docs", "private", "secret.md"), "PRIVATE_MARKER\n");
+    git(root, "add", "docs/public.md", "docs/private/secret.md");
+    const h = extensionHarness();
+    const ctx = h.context(root, "guarded-directory-filtering");
+    const control = h.tools.get("picm_scan_control");
+    await h.commands.get("picm-adopt").handler("coding", ctx);
+    await control.execute("preflight", { action: "preflight" }, undefined, undefined, ctx);
+    await control.execute("privacy", { action: "privacy", excludedPaths: ["docs/private"], persist: false }, undefined, undefined, ctx);
+    await control.execute("begin", { action: "begin" }, undefined, undefined, ctx);
+
+    const specs = [
+      { id: "directory-grep", toolName: "grep", input: { path: "docs", pattern: "MARKER" } },
+      { id: "directory-rg", toolName: "rg", input: { path: "docs", pattern: "MARKER" } },
+      { id: "directory-find", toolName: "find", input: { path: "docs", pattern: "**" } },
+      { id: "directory-ls", toolName: "ls", input: { path: "docs" } },
+    ].map((spec) => ({ ...spec, tool: h.tools.get(spec.toolName) }));
+    const calls = await preflightParallelToolCalls(h, ctx, specs);
+    assert.equal(calls.every((call) => call.blocked === undefined), true);
+    const results = await executePreflightedToolCalls(h, ctx, calls);
+    for (const result of results) {
+      const text = result.result.content.map((part) => part.text ?? "").join("\n");
+      assert.match(text, /public\.md|VISIBLE_MARKER/);
+      assert.doesNotMatch(text, /secret\.md|PRIVATE_MARKER|private\//);
+    }
   });
 });
 

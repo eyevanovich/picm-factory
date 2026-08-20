@@ -285,10 +285,7 @@ export async function executeBoundGrep(binding, params, signal) {
     context = 0,
     limit = 100,
   } = params;
-  const fileName = binding.absolutePath.split(sep).at(-1) ?? binding.absolutePath;
-  if (glob && !globMatches(fileName, glob)) {
-    return { content: [{ type: "text", text: "No matches found" }], details: undefined };
-  }
+  const files = binding.files ?? [{ path: binding.absolutePath, readFile: binding.operations.readFile }];
   let matcher;
   try {
     const expression = literal ? undefined : new RegExp(pattern, ignoreCase ? "i" : "");
@@ -300,27 +297,33 @@ export async function executeBoundGrep(binding, params, signal) {
   } catch (error) {
     throw new Error(`Invalid search pattern: ${error instanceof Error ? error.message : error}`);
   }
-  const lines = (await binding.operations.readFile()).toString("utf8").replace(/\r\n/g, "\n").replace(/\r/g, "\n").split("\n");
-  if (signal?.aborted) throw new Error("Operation aborted");
-  const matchingLines = [];
+  const matches = [];
   const effectiveLimit = Math.max(1, limit);
-  for (let index = 0; index < lines.length; index += 1) {
-    if (!matcher(lines[index])) continue;
-    matchingLines.push(index);
-    if (matchingLines.length >= effectiveLimit) break;
+  for (const file of files) {
+    const fileName = relative(binding.absolutePath, file.path) || basename(file.path);
+    if (glob && !globMatches(fileName, glob) && !globMatches(basename(file.path), glob)) continue;
+    const lines = (await file.readFile()).toString("utf8").replace(/\r\n/g, "\n").replace(/\r/g, "\n").split("\n");
+    for (let index = 0; index < lines.length; index += 1) {
+      if (!matcher(lines[index])) continue;
+      matches.push({ fileName, index, lines });
+      if (matches.length >= effectiveLimit) break;
+    }
+    if (matches.length >= effectiveLimit) break;
   }
-  if (matchingLines.length === 0) {
+  if (signal?.aborted) throw new Error("Operation aborted");
+  if (matches.length === 0) {
     return { content: [{ type: "text", text: "No matches found" }], details: undefined };
   }
   const output = [];
   const emitted = new Set();
   const contextSize = Math.max(0, context);
-  for (const index of matchingLines) {
+  for (const { fileName, index, lines } of matches) {
     const start = Math.max(0, index - contextSize);
     const end = Math.min(lines.length - 1, index + contextSize);
     for (let current = start; current <= end; current += 1) {
-      if (emitted.has(current)) continue;
-      emitted.add(current);
+      const key = `${fileName}\0${current}`;
+      if (emitted.has(key)) continue;
+      emitted.add(key);
       const separator = current === index ? ":" : "-";
       output.push(`${fileName}${separator}${current + 1}${separator} ${truncateLine(lines[current])}`);
     }
@@ -330,12 +333,35 @@ export async function executeBoundGrep(binding, params, signal) {
   const content = truncated ? Buffer.from(text).subarray(0, 50 * 1024).toString("utf8") : text;
   return {
     content: [{ type: "text", text: truncated ? `${content}\n\n[50KB limit reached]` : content }],
-    details: matchingLines.length >= effectiveLimit ? { matchLimitReached: effectiveLimit } : undefined,
+    details: matches.length >= effectiveLimit ? { matchLimitReached: effectiveLimit } : undefined,
   };
 }
 
+export async function executeBoundFind(binding, params, signal) {
+  if (signal?.aborted) throw new Error("Operation aborted");
+  const pattern = params.pattern ?? "*";
+  const limit = Math.max(1, params.limit ?? 1000);
+  const paths = binding.files
+    .map((file) => relative(binding.absolutePath, file.path).split(sep).join("/"))
+    .filter((path) => globMatches(path, pattern) || globMatches(basename(path), pattern))
+    .slice(0, limit);
+  return { content: [{ type: "text", text: paths.length ? paths.join("\n") : "No files found" }], details: undefined };
+}
+
+export async function executeBoundLs(binding, params, signal) {
+  if (signal?.aborted) throw new Error("Operation aborted");
+  const limit = Math.max(1, params.limit ?? 500);
+  const entries = new Set();
+  for (const file of binding.files) {
+    const path = relative(binding.absolutePath, file.path);
+    const [entry, remainder] = path.split(sep);
+    entries.add(remainder ? `${entry}/` : entry);
+  }
+  return { content: [{ type: "text", text: [...entries].sort().slice(0, limit).join("\n") }], details: undefined };
+}
+
 export function createPathExecutionBinding(plan) {
-  if (!plan || !["read", "edit", "write", "grep", "find", "ls"].includes(plan.toolName)) {
+  if (!plan || !["read", "edit", "write", "grep", "rg", "find", "ls"].includes(plan.toolName)) {
     fail("invalid execution binding plan");
   }
 
@@ -344,11 +370,14 @@ export function createPathExecutionBinding(plan) {
   let createdDirectories = [];
   let directoryFds = [];
   let boundPath = plan.absolutePath;
+  const retainedFiles = [];
+  let traversalDirectory = false;
   try {
     if (plan.targetIdentity) {
       fd = openSync(plan.absolutePath, openFlags(plan.toolName));
       const descriptorStat = fstatSync(fd);
-      if (!descriptorStat.isFile()) fail("validated target is not a regular file");
+      traversalDirectory = ["grep", "rg", "find", "ls"].includes(plan.toolName) && descriptorStat.isDirectory();
+      if (!descriptorStat.isFile() && !traversalDirectory) fail("validated target has an unsupported type");
       assertIdentity(descriptorStat, plan.targetIdentity, "validated target");
       assertCurrentPath(
         plan.absolutePath,
@@ -356,6 +385,21 @@ export function createPathExecutionBinding(plan) {
         plan.targetIdentity,
         "validated target",
       );
+      if (traversalDirectory) {
+        for (const entry of plan.traversalEntries ?? []) {
+          const entryFd = openSync(entry.absolutePath, openFlags("read"));
+          try {
+            const stat = fstatSync(entryFd);
+            if (!stat.isFile()) fail("validated traversal target is not a regular file");
+            assertIdentity(stat, entry.identity, "validated traversal target");
+            assertCurrentPath(entry.absolutePath, entry.canonicalPath, entry.identity, "validated traversal target");
+            retainedFiles.push({ fd: entryFd, path: entry.displayPath ?? entry.absolutePath });
+          } catch (error) {
+            closeSync(entryFd);
+            throw error;
+          }
+        }
+      }
     } else {
       if (plan.toolName !== "write") fail("only writes may bind a missing target");
       const prepared = prepareParent(plan);
@@ -374,8 +418,8 @@ export function createPathExecutionBinding(plan) {
         );
         created = true;
       } catch (error) {
-        if (error?.code !== "EEXIST") throw error;
-        fd = openSync(boundPath, openFlags("write"));
+        if (error?.code === "EEXIST") fail("prospective write target appeared after validation");
+        throw error;
       }
       const descriptorStat = fstatSync(fd);
       if (!descriptorStat.isFile()) fail("prospective write target is not a regular file");
@@ -405,6 +449,9 @@ export function createPathExecutionBinding(plan) {
     for (const directoryFd of [...directoryFds].reverse()) {
       try { closeSync(directoryFd); } catch {}
     }
+    for (const file of retainedFiles) {
+      try { closeSync(file.fd); } catch {}
+    }
     throw error;
   }
 
@@ -417,6 +464,9 @@ export function createPathExecutionBinding(plan) {
     fd,
     toolName: plan.toolName,
     absolutePath: plan.absolutePath,
+    files: traversalDirectory
+      ? retainedFiles.map((file) => ({ path: file.path, readFile: async () => readAll(file.fd) }))
+      : undefined,
     operations: plan.toolName === "read"
       ? {
           access: async () => {},
@@ -486,6 +536,9 @@ export function createPathExecutionBinding(plan) {
         } catch (error) {
           errors.push(error);
         }
+      }
+      for (const file of retainedFiles) {
+        try { closeSync(file.fd); } catch (error) { errors.push(error); }
       }
       if (errors.length > 1) throw new AggregateError(errors, "PiCM path binding cleanup failed");
       if (errors.length === 1) throw errors[0];

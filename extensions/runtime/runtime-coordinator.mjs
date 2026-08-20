@@ -5,7 +5,7 @@ import { createMaintenanceController } from "./maintenance-controller.mjs";
 import { mergePrivacyExcludedPaths } from "./privacy-policy.mjs";
 
 const EXPLICIT_SCAN_COMMANDS = new Set(["picm-new", "picm-adopt", "picm-maintain", "picm-optimize"]);
-const GUARDED_PATH_TOOLS = new Set(["read", "edit", "write", "grep", "find", "ls"]);
+const GUARDED_PATH_TOOLS = new Set(["read", "edit", "write", "grep", "rg", "find", "ls"]);
 
 export function createRuntimeCoordinator({
   packageRoot,
