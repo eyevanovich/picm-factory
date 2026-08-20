@@ -19,6 +19,14 @@ const execFileAsync = promisify(execFile);
 const PATH_TOOLS = new Set(["read", "edit", "write", "grep", "rg", "find", "ls"]);
 const READ_LIKE_TOOLS = new Set(["read", "edit", "grep", "rg", "find", "ls"]);
 const TRAVERSAL_TOOLS = new Set(["grep", "rg", "find", "ls"]);
+const UNREGISTERED_NESTED_GIT_BOUNDARY = "PICM_UNREGISTERED_NESTED_GIT_BOUNDARY";
+
+function unregisteredNestedGitBoundary(message, boundaryRoot) {
+  return Object.assign(new Error(message), {
+    code: UNREGISTERED_NESTED_GIT_BOUNDARY,
+    boundaryRoot,
+  });
+}
 
 function isInside(parent, child) {
   const path = relative(parent, child);
@@ -285,9 +293,24 @@ export function createGitReadGate({
     };
   }
 
-  async function boundaryForPath(resolvedPath) {
-    if (usingIsolatedGit) return undefined;
+  async function nestedGitMarker(startPath) {
+    for (
+      let candidate = startPath;
+      isInside(canonicalWorktree, candidate);
+      candidate = dirname(candidate)
+    ) {
+      try {
+        await fs.lstat(join(candidate, ".git"));
+        return candidate;
+      } catch (error) {
+        if (error?.code !== "ENOENT") throw error;
+      }
+      if (candidate === canonicalWorktree) break;
+    }
+    return undefined;
+  }
 
+  async function boundaryForPath(resolvedPath) {
     const intendedDirectory = resolvedPath.stat?.isDirectory()
       ? resolvedPath.canonicalPath
       : dirname(resolvedPath.canonicalPath);
@@ -305,6 +328,44 @@ export function createGitReadGate({
       !isInside(canonicalWorktree, discoveryCwd)
     ) {
       throw new Error("Git boundary discovery path is outside the canonical worktree");
+    }
+
+    if (usingIsolatedGit) {
+      const result = await runGit(discoveryCwd, ["rev-parse", "--show-toplevel"]);
+      if (result.code !== 0) {
+        const boundaryRoot = await nestedGitMarker(intendedDirectory);
+        if (boundaryRoot) {
+          throw unregisteredNestedGitBoundary(
+            "Nested Git worktree is not registered as a parent gitlink",
+            boundaryRoot,
+          );
+        }
+        if (/fatal:\s+not a git repository\b/i.test(result.stderr)) return undefined;
+        throw new Error(
+          `Nested Git worktree discovery failed: ${result.stderr.trim() || `exit ${result.code}`}`,
+        );
+      }
+      if (!result.stdout.trim()) {
+        throw new Error("Nested Git worktree discovery returned an empty root");
+      }
+      const nestedRoot = await fs.realpath(resolve(result.stdout.trim()));
+      if (nestedRoot === canonicalWorktree) {
+        const boundaryRoot = await nestedGitMarker(intendedDirectory);
+        if (boundaryRoot && boundaryRoot !== canonicalWorktree) {
+          throw unregisteredNestedGitBoundary(
+            "Nested Git worktree is not registered as a parent gitlink",
+            boundaryRoot,
+          );
+        }
+        return undefined;
+      }
+      if (!isInside(canonicalWorktree, nestedRoot)) {
+        throw new Error("Nested Git worktree discovery resolved outside the canonical worktree");
+      }
+      throw unregisteredNestedGitBoundary(
+        "Nested Git worktree is not registered as a parent gitlink",
+        nestedRoot,
+      );
     }
 
     let parentGitlinkBoundary;
@@ -329,15 +390,37 @@ export function createGitReadGate({
       if (parentGitlinkBoundary) {
         throw new Error(`Nested Git worktree discovery failed: ${result.stderr.trim() || `exit ${result.code}`}`);
       }
+      const boundaryRoot = await nestedGitMarker(intendedDirectory);
+      if (boundaryRoot && boundaryRoot !== canonicalWorktree) {
+        throw unregisteredNestedGitBoundary(
+          "Nested Git worktree is not registered as a parent gitlink",
+          boundaryRoot,
+        );
+      }
       if (/fatal:\s+not a git repository\b/i.test(result.stderr)) return undefined;
       throw new Error(`Nested Git worktree discovery failed: ${result.stderr.trim() || `exit ${result.code}`}`);
     }
     if (!result.stdout.trim()) throw new Error("Nested Git worktree discovery returned an empty root");
     const nestedRoot = await fs.realpath(resolve(result.stdout.trim()));
     if (parentGitlinkBoundary && nestedRoot !== parentGitlinkBoundary) {
+      if (isInside(parentGitlinkBoundary, nestedRoot)) {
+        throw unregisteredNestedGitBoundary(
+          "Nested Git worktree discovery did not resolve the parent gitlink boundary",
+          nestedRoot,
+        );
+      }
       throw new Error("Nested Git worktree discovery did not resolve the parent gitlink boundary");
     }
-    if (nestedRoot === canonicalWorktree) return undefined;
+    if (nestedRoot === canonicalWorktree) {
+      const boundaryRoot = await nestedGitMarker(intendedDirectory);
+      if (boundaryRoot && boundaryRoot !== canonicalWorktree) {
+        throw unregisteredNestedGitBoundary(
+          "Nested Git worktree is not registered as a parent gitlink",
+          boundaryRoot,
+        );
+      }
+      return undefined;
+    }
     if (!isInside(canonicalWorktree, nestedRoot)) {
       throw new Error("Nested Git worktree discovery resolved outside the canonical worktree");
     }
@@ -348,7 +431,10 @@ export function createGitReadGate({
       throw new Error(`Parent Gitlink query failed: ${gitlink.stderr.trim() || `exit ${gitlink.code}`}`);
     }
     if (!hasGitlinkEntry(gitlink.stdout, parentPath)) {
-      throw new Error("Nested Git worktree is not registered as a parent gitlink");
+      throw unregisteredNestedGitBoundary(
+        "Nested Git worktree is not registered as a parent gitlink",
+        nestedRoot,
+      );
     }
     return nestedRoot;
   }
@@ -470,7 +556,44 @@ export function createGitReadGate({
     const entryPaths = new Set();
     const directories = new Set();
     const accountedPaths = new Set();
+    const canonicalInventoryRoot = await fs.realpath(inventory.worktree);
+    const boundaryCache = new Map();
+    const blockedBoundaryRoots = [];
     let metadataBytes = 0;
+
+    const traversalBoundaryDisposition = async (absolutePath, canonicalPath, stat) => {
+      const directory = stat.isDirectory() ? canonicalPath : dirname(canonicalPath);
+      if (blockedBoundaryRoots.some((boundaryRoot) => isInside(boundaryRoot, directory))) {
+        return { admitted: false, recurse: false };
+      }
+      let result = boundaryCache.get(directory);
+      if (!result) {
+        try {
+          const boundary = await boundaryForPath({
+            absolutePath,
+            canonicalPath,
+            stat,
+            existingPath: absolutePath,
+            canonicalExistingPath: canonicalPath,
+            existingStat: stat,
+          });
+          result = { boundary };
+        } catch (error) {
+          if (error?.code !== UNREGISTERED_NESTED_GIT_BOUNDARY) throw error;
+          if (typeof error.boundaryRoot === "string") {
+            blockedBoundaryRoots.push(error.boundaryRoot);
+          }
+          result = { blocked: true };
+        }
+        boundaryCache.set(directory, result);
+      }
+      if (result.blocked) return { admitted: false, recurse: false };
+      if (!result.boundary || result.boundary === canonicalInventoryRoot) {
+        return { admitted: true, recurse: true };
+      }
+      const boundaryRoot = stat.isDirectory() && canonicalPath === result.boundary;
+      return { admitted: boundaryRoot, recurse: false };
+    };
     const accountPath = (displayPath) => {
       if (accountedPaths.has(displayPath)) return;
       if (accountedPaths.size >= bindingLimits.maxTraversalEntries) {
@@ -505,6 +628,8 @@ export function createGitReadGate({
           !isInside(canonicalWorktree, canonicalPath) ||
           await privacyDecision(canonicalPath, exclusions)
         ) continue;
+        const boundary = await traversalBoundaryDisposition(absolutePath, canonicalPath, stat);
+        if (!boundary.admitted) continue;
         const displayPath = resolve(
           resolvedPath.absolutePath,
           relative(resolvedPath.canonicalPath, canonicalPath),
@@ -534,6 +659,12 @@ export function createGitReadGate({
         !await traversalDirectoryIsIgnored(canonicalPath, inventory) &&
         !await privacyDecision(canonicalPath, exclusions)
       ) {
+        const boundary = await traversalBoundaryDisposition(
+          displayPath,
+          canonicalPath,
+          admittedStat,
+        );
+        if (!boundary.admitted) continue;
         appendEntry({
           absolutePath: displayPath,
           canonicalPath,
@@ -565,6 +696,12 @@ export function createGitReadGate({
           await traversalDirectoryIsIgnored(canonicalPath, inventory) ||
           await privacyDecision(canonicalPath, exclusions)
         ) continue;
+        const boundary = await traversalBoundaryDisposition(
+          displayPath,
+          canonicalPath,
+          admittedStat,
+        );
+        if (!boundary.admitted) continue;
         appendEntry({
           absolutePath: displayPath,
           canonicalPath,
@@ -572,7 +709,7 @@ export function createGitReadGate({
           isDirectory: true,
           identity: fileIdentity(admittedStat),
         });
-        pendingDirectories.push(displayPath);
+        if (boundary.recurse) pendingDirectories.push(displayPath);
       }
     }
     resolvedPath.traversalEntries = entries;

@@ -21,7 +21,7 @@ import {
   writeFile as writeFileAsync,
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { dirname, join, resolve } from "node:path";
+import { dirname, join, resolve, sep } from "node:path";
 import { PassThrough } from "node:stream";
 import test from "node:test";
 
@@ -208,14 +208,30 @@ function fakeRipgrepSpawn({
   };
 }
 
-function assertRipgrepListenersCleared(child) {
-  assert.equal(child.listenerCount("error"), 0);
+function assertRipgrepListenersSettledSafely(child) {
+  assert.equal(child.listenerCount("error"), 1);
   assert.equal(child.listenerCount("close"), 0);
-  assert.equal(child.stdin.listenerCount("error"), 0);
+  assert.equal(child.stdin.listenerCount("error"), 1);
   assert.equal(child.stdout.listenerCount("data"), 0);
-  assert.equal(child.stdout.listenerCount("error"), 0);
+  assert.equal(child.stdout.listenerCount("error"), 1);
   assert.equal(child.stderr.listenerCount("data"), 0);
-  assert.equal(child.stderr.listenerCount("error"), 0);
+  assert.equal(child.stderr.listenerCount("error"), 1);
+}
+
+async function assertLateRipgrepErrorsAreInert(child) {
+  await new Promise((resolvePromise, reject) => {
+    setImmediate(() => {
+      try {
+        child.emit("error", new Error("late child error"));
+        child.stdin.emit("error", new Error("late stdin error"));
+        child.stdout.emit("error", new Error("late stdout error"));
+        child.stderr.emit("error", new Error("late stderr error"));
+        resolvePromise();
+      } catch (error) {
+        reject(error);
+      }
+    });
+  });
 }
 
 async function preflightParallelToolCalls(h, ctx, calls) {
@@ -632,6 +648,88 @@ test("guarded directory grep rg find and ls filter protected descendants", async
   });
 });
 
+test("guarded find and ls stop at unregistered nested Git descendants", async () => {
+  await withFixture(async ({ root }) => {
+    const nestedRoot = join(root, "docs", "nested-repository");
+    mkdirSync(nestedRoot);
+    write(join(nestedRoot, "outer-tracked.txt"), "NESTED_TRACKED\n");
+    git(root, "add", "docs/nested-repository/outer-tracked.txt");
+    git(nestedRoot, "init", "-q");
+    write(join(nestedRoot, ".gitignore"), "private/\n");
+    write(join(nestedRoot, "private", "secret.txt"), "NESTED_PRIVATE\n");
+    write(join(nestedRoot, "visible", "public.txt"), "NESTED_PUBLIC\n");
+
+    const h = extensionHarness();
+    const ctx = h.context(root, "guarded-nested-git-descendants");
+    const control = h.tools.get("picm_scan_control");
+    await h.commands.get("picm-adopt").handler("coding", ctx);
+    await control.execute("preflight", { action: "preflight" }, undefined, undefined, ctx);
+    await control.execute(
+      "privacy",
+      { action: "privacy", excludedPaths: [], persist: false },
+      undefined,
+      undefined,
+      ctx,
+    );
+    await control.execute("begin", { action: "begin" }, undefined, undefined, ctx);
+
+    const verifyNestedBoundary = async (prefix) => {
+      const calls = await preflightParallelToolCalls(h, ctx, [
+        {
+          id: `${prefix}-ancestor-find-nested-git`,
+          toolName: "find",
+          input: { path: "docs", pattern: "**" },
+          tool: h.tools.get("find"),
+        },
+        {
+          id: `${prefix}-ancestor-ls-nested-git`,
+          toolName: "ls",
+          input: { path: "docs" },
+          tool: h.tools.get("ls"),
+        },
+        {
+          id: `${prefix}-ancestor-grep-nested-git`,
+          toolName: "grep",
+          input: { path: "docs", pattern: "NESTED" },
+          tool: h.tools.get("grep"),
+        },
+        {
+          id: `${prefix}-ancestor-rg-nested-git`,
+          toolName: "rg",
+          input: { path: "docs", pattern: "NESTED" },
+          tool: h.tools.get("rg"),
+        },
+        {
+          id: `${prefix}-direct-find-nested-git`,
+          toolName: "find",
+          input: { path: "docs/nested-repository", pattern: "**" },
+          tool: h.tools.get("find"),
+        },
+      ]);
+      assert.equal(calls.slice(0, 4).every((call) => call.blocked === undefined), true);
+      assert.ok(calls[4].blocked);
+      assert.match(calls[4].blocked.reason, /not registered as a parent gitlink/);
+
+      const results = await Promise.all(executePreflightedToolCalls(h, ctx, calls.slice(0, 4)));
+      for (const [index, result] of results.entries()) {
+        assert.equal(result.isError, false);
+        const text = result.result.content.map((part) => part.text ?? "").join("\n");
+        if (index < 2) assert.match(text, /guide\.md/);
+        else assert.equal(text, "No matches found");
+        assert.doesNotMatch(
+          text,
+          /nested-repository|NESTED_TRACKED|NESTED_PRIVATE|NESTED_PUBLIC|(?:^|\/)\.git(?:\/|$)/m,
+        );
+      }
+    };
+
+    await verifyNestedBoundary("valid");
+    rmSync(join(nestedRoot, ".git"), { recursive: true, force: true });
+    mkdirSync(join(nestedRoot, ".git"));
+    await verifyNestedBoundary("broken");
+  });
+});
+
 test("guarded grep and rg enforce per-file and aggregate snapshot ceilings", async () => {
   await withFixture(async ({ root, packageRoot }) => {
     write(join(root, "resource", "large.txt"), `${"x".repeat(700)}\n`);
@@ -811,7 +909,7 @@ test("guarded grep reports deterministic subprocess termination failures", async
     ),
     /PICM_GREP_TERMINATION_FAILED: ripgrep termination request returned false/,
   );
-  assertRipgrepListenersCleared(falseKillChild);
+  assertRipgrepListenersSettledSafely(falseKillChild);
 
   let thrownKillChild;
   const controller = new AbortController();
@@ -830,7 +928,7 @@ test("guarded grep reports deterministic subprocess termination failures", async
     cancellation,
     /PICM_GREP_TERMINATION_FAILED: ripgrep termination request failed: synthetic kill failure/,
   );
-  assertRipgrepListenersCleared(thrownKillChild);
+  assertRipgrepListenersSettledSafely(thrownKillChild);
 
   let timedOutChild;
   await assertRejectsWithin(
@@ -845,7 +943,80 @@ test("guarded grep reports deterministic subprocess termination failures", async
     ),
     /PICM_GREP_TERMINATION_TIMEOUT: ripgrep did not close within 20ms/,
   );
-  assertRipgrepListenersCleared(timedOutChild);
+  assertRipgrepListenersSettledSafely(timedOutChild);
+});
+
+test("guarded grep keeps late child and stream errors inert after bounded termination", async () => {
+  const binding = {
+    absolutePath: "/virtual/file.txt",
+    operations: { readFile: async () => Buffer.from("match\n") },
+  };
+  const validMatch = `${JSON.stringify({ type: "match", data: { line_number: 1 } })}\n`;
+  const execute = (spawnMatcher, resourceLimits, signal) => executeBoundGrep(
+    binding,
+    { pattern: "match" },
+    signal,
+    {
+      resolveMatcher: async () => "synthetic-rg",
+      spawnMatcher,
+      resourceLimits: {
+        maxRipgrepTerminationWaitMs: 20,
+        ...resourceLimits,
+      },
+    },
+  );
+
+  let falseKillChild;
+  await assertRejectsWithin(
+    execute(
+      fakeRipgrepSpawn({
+        stdout: [validMatch],
+        hold: true,
+        killResult: false,
+        onChild: (child) => { falseKillChild = child; },
+      }),
+      { maxGrepMatches: 1 },
+    ),
+    /PICM_GREP_TERMINATION_FAILED: ripgrep termination request returned false/,
+  );
+  await assertLateRipgrepErrorsAreInert(falseKillChild);
+  assertRipgrepListenersSettledSafely(falseKillChild);
+
+  let thrownKillChild;
+  const controller = new AbortController();
+  const cancellation = execute(
+    fakeRipgrepSpawn({
+      hold: true,
+      killError: new Error("synthetic kill failure"),
+      onChild: (child) => { thrownKillChild = child; },
+    }),
+    undefined,
+    controller.signal,
+  );
+  await new Promise((resolvePromise) => setImmediate(resolvePromise));
+  controller.abort();
+  await assertRejectsWithin(
+    cancellation,
+    /PICM_GREP_TERMINATION_FAILED: ripgrep termination request failed: synthetic kill failure/,
+  );
+  await assertLateRipgrepErrorsAreInert(thrownKillChild);
+  assertRipgrepListenersSettledSafely(thrownKillChild);
+
+  let timedOutChild;
+  await assertRejectsWithin(
+    execute(
+      fakeRipgrepSpawn({
+        stdout: ["x".repeat(65)],
+        hold: true,
+        closeOnKill: false,
+        onChild: (child) => { timedOutChild = child; },
+      }),
+      { maxRipgrepRecordBytes: 128, maxRipgrepStdoutBytes: 32 },
+    ),
+    /PICM_GREP_TERMINATION_TIMEOUT: ripgrep did not close within 20ms/,
+  );
+  await assertLateRipgrepErrorsAreInert(timedOutChild);
+  assertRipgrepListenersSettledSafely(timedOutChild);
 });
 
 test("guarded grep rejects malformed subprocess output failures and resource overruns", async () => {
@@ -1322,7 +1493,8 @@ test("uses isolated Git metadata to honor gitignore without modifying a non-Git 
   write(join(root, "nested", "drop.log"));
   write(join(root, "nested", "keep.log"));
   write(join(root, "config-private.txt"));
-  const gate = createGitReadGate({ cwd: root, packageRoot: root });
+  const canonicalRoot = await realpathFile(root);
+  const gate = createGitReadGate({ cwd: canonicalRoot, packageRoot: canonicalRoot });
   t.after(() => gate.dispose());
 
   const inventory = await gate.refreshInventory(undefined, ["config-private.txt"]);
@@ -1335,6 +1507,44 @@ test("uses isolated Git metadata to honor gitignore without modifying a non-Git 
   assert.equal((await gate.checkPath("write", "new-parent/nested/new.txt")).allowed, true);
   assert.match((await gate.checkPath("read", "ignored.txt")).reason, /ignored by Git/);
   assert.match((await gate.checkPath("read", "nested/drop.log")).reason, /ignored by Git/);
+
+  const nestedRepository = join(root, "nested-repository");
+  mkdirSync(nestedRepository);
+  git(nestedRepository, "init", "-q");
+  write(join(nestedRepository, ".gitignore"), "private/\n");
+  write(join(nestedRepository, "private", "secret.txt"), "NESTED_PRIVATE\n");
+  write(join(nestedRepository, "visible.txt"), "NESTED_PUBLIC\n");
+  for (const toolName of ["grep", "rg", "find", "ls"]) {
+    const decision = await gate.checkPath(toolName, ".");
+    assert.equal(decision.allowed, true, decision.reason);
+    assert.equal(
+      decision.executionBinding.traversalEntries.some(
+        (entry) => entry.displayPath.includes("nested-repository"),
+      ),
+      false,
+    );
+  }
+  assert.match(
+    (await gate.checkPath("find", "nested-repository")).reason,
+    /not registered as a parent gitlink/,
+  );
+
+  rmSync(join(nestedRepository, ".git"), { recursive: true, force: true });
+  mkdirSync(join(nestedRepository, ".git"));
+  for (const toolName of ["grep", "rg", "find", "ls"]) {
+    const decision = await gate.checkPath(toolName, ".");
+    assert.equal(decision.allowed, true, decision.reason);
+    assert.equal(
+      decision.executionBinding.traversalEntries.some(
+        (entry) => entry.displayPath.includes("nested-repository"),
+      ),
+      false,
+    );
+  }
+  assert.match(
+    (await gate.checkPath("find", "nested-repository")).reason,
+    /not registered as a parent gitlink/,
+  );
   assert.equal(existsSync(join(root, ".git")), false);
 });
 
@@ -1357,6 +1567,22 @@ test("treats present submodules as separate guarded worktrees", async (t) => {
   const gate = createGitReadGate({ cwd: root, packageRoot: root });
   t.after(() => gate.dispose());
   mkdirSync(join(root, "vendor", "lib", "ignored-empty"));
+
+  const parentTraversal = await gate.checkPath("find", ".");
+  assert.equal(parentTraversal.allowed, true);
+  const submoduleRoot = join(root, "vendor", "lib");
+  assert.equal(
+    parentTraversal.executionBinding.traversalEntries.some(
+      (entry) => entry.absolutePath === submoduleRoot && entry.isDirectory,
+    ),
+    true,
+  );
+  assert.equal(
+    parentTraversal.executionBinding.traversalEntries.some(
+      (entry) => entry.absolutePath.startsWith(`${submoduleRoot}${sep}`),
+    ),
+    false,
+  );
 
   assert.equal((await gate.checkPath("read", "vendor/lib/safe.txt")).allowed, true);
   assert.match((await gate.checkPath("read", "vendor/lib/secret.txt")).reason, /ignored by Git/);
@@ -1389,6 +1615,9 @@ test("treats present submodules as separate guarded worktrees", async (t) => {
   const absentPrivacyTraversal = await gate.checkPrivacyPath("grep", "vendor/lib", ["unrelated-private"]);
   assert.equal(absentPrivacyTraversal.allowed, false);
   assert.match(absentPrivacyTraversal.reason, /did not resolve the parent gitlink boundary/);
+  const absentAncestorTraversal = await gate.checkPath("find", ".");
+  assert.equal(absentAncestorTraversal.allowed, false);
+  assert.match(absentAncestorTraversal.reason, /did not resolve the parent gitlink boundary/);
   writeFileSync(nestedGitFile, nestedGitMetadata);
 
   assert.equal(

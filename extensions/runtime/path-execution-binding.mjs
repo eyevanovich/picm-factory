@@ -45,6 +45,12 @@ function fail(message) {
   throw new Error(`PICM_PATH_BINDING_FAILED: ${message}`);
 }
 
+function ignoreLateSubprocessError() {}
+
+function retainLateErrorSink(emitter) {
+  emitter?.on?.("error", ignoreLateSubprocessError);
+}
+
 export function fileIdentity(stat) {
   return { dev: stat.dev, ino: stat.ino };
 }
@@ -381,6 +387,10 @@ async function ripgrepMatches(
       child.stderr?.off("data", onStderr);
       child.off("close", onClose);
       if (termination) {
+        retainLateErrorSink(child);
+        retainLateErrorSink(child.stdin);
+        retainLateErrorSink(child.stdout);
+        retainLateErrorSink(child.stderr);
         try { child.stdin?.destroy(); } catch {}
         try { child.stdout?.destroy(); } catch {}
         try { child.stderr?.destroy(); } catch {}
