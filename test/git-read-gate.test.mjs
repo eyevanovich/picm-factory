@@ -742,6 +742,15 @@ test("treats present submodules as separate guarded worktrees", async (t) => {
   assert.match(brokenPrivacyTraversal.reason, /Nested Git worktree discovery failed/);
   writeFileSync(nestedGitFile, nestedGitMetadata);
 
+  rmSync(nestedGitFile);
+  const absentActiveTraversal = await gate.checkPath("ls", "vendor/lib");
+  assert.equal(absentActiveTraversal.allowed, false);
+  assert.match(absentActiveTraversal.reason, /did not resolve the parent gitlink boundary/);
+  const absentPrivacyTraversal = await gate.checkPrivacyPath("grep", "vendor/lib", ["unrelated-private"]);
+  assert.equal(absentPrivacyTraversal.allowed, false);
+  assert.match(absentPrivacyTraversal.reason, /did not resolve the parent gitlink boundary/);
+  writeFileSync(nestedGitFile, nestedGitMetadata);
+
   const queryFailureGate = createGitReadGate({
     cwd: root,
     packageRoot: root,

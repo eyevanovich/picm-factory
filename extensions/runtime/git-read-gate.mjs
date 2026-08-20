@@ -313,6 +313,9 @@ export function createGitReadGate({
     }
     if (!result.stdout.trim()) throw new Error("Nested Git worktree discovery returned an empty root");
     const nestedRoot = await fs.realpath(resolve(result.stdout.trim()));
+    if (parentGitlinkBoundary && nestedRoot !== parentGitlinkBoundary) {
+      throw new Error("Nested Git worktree discovery did not resolve the parent gitlink boundary");
+    }
     if (nestedRoot === canonicalWorktree || !isInside(canonicalWorktree, nestedRoot)) return undefined;
     const parentPath = toGitPath(canonicalWorktree, nestedRoot);
     const gitlink = await runGit(canonicalWorktree, ["ls-files", "--stage", "-z", "--", parentPath]);
