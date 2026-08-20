@@ -278,18 +278,31 @@ export function createGitReadGate({
     };
   }
 
-  async function boundaryForPath(canonicalPath) {
+  async function boundaryForPath(resolvedPath) {
     if (usingIsolatedGit) return undefined;
-    let discoveryCwd = dirname(canonicalPath);
-    try {
-      const stat = await fs.lstat(canonicalPath);
-      if (stat.isDirectory()) discoveryCwd = canonicalPath;
-    } catch (error) {
-      if (error?.code !== "ENOENT") throw error;
+
+    const intendedDirectory = resolvedPath.stat?.isDirectory()
+      ? resolvedPath.canonicalPath
+      : dirname(resolvedPath.canonicalPath);
+    let discoveryCwd;
+    if (resolvedPath.stat) {
+      discoveryCwd = intendedDirectory;
+    } else {
+      if (!resolvedPath.existingStat?.isDirectory()) {
+        throw new Error("prospective write parent is not a directory");
+      }
+      discoveryCwd = resolvedPath.canonicalExistingPath;
     }
+    if (
+      !isInside(canonicalWorktree, intendedDirectory) ||
+      !isInside(canonicalWorktree, discoveryCwd)
+    ) {
+      throw new Error("Git boundary discovery path is outside the canonical worktree");
+    }
+
     let parentGitlinkBoundary;
     for (
-      let candidate = discoveryCwd;
+      let candidate = intendedDirectory;
       candidate !== canonicalWorktree && isInside(canonicalWorktree, candidate);
       candidate = dirname(candidate)
     ) {
@@ -303,6 +316,7 @@ export function createGitReadGate({
         break;
       }
     }
+
     const result = await runGit(discoveryCwd, ["rev-parse", "--show-toplevel"]);
     if (result.code !== 0) {
       if (parentGitlinkBoundary) {
@@ -316,13 +330,19 @@ export function createGitReadGate({
     if (parentGitlinkBoundary && nestedRoot !== parentGitlinkBoundary) {
       throw new Error("Nested Git worktree discovery did not resolve the parent gitlink boundary");
     }
-    if (nestedRoot === canonicalWorktree || !isInside(canonicalWorktree, nestedRoot)) return undefined;
+    if (nestedRoot === canonicalWorktree) return undefined;
+    if (!isInside(canonicalWorktree, nestedRoot)) {
+      throw new Error("Nested Git worktree discovery resolved outside the canonical worktree");
+    }
+
     const parentPath = toGitPath(canonicalWorktree, nestedRoot);
     const gitlink = await runGit(canonicalWorktree, ["ls-files", "--stage", "-z", "--", parentPath]);
     if (gitlink.code !== 0) {
       throw new Error(`Parent Gitlink query failed: ${gitlink.stderr.trim() || `exit ${gitlink.code}`}`);
     }
-    if (!hasGitlinkEntry(gitlink.stdout, parentPath)) return undefined;
+    if (!hasGitlinkEntry(gitlink.stdout, parentPath)) {
+      throw new Error("Nested Git worktree is not registered as a parent gitlink");
+    }
     return nestedRoot;
   }
 
@@ -555,13 +575,14 @@ export function createGitReadGate({
     };
   }
 
-  async function guardedInventoryForPath(canonicalPath, exclusions) {
+  async function guardedInventoryForPath(resolvedPath, exclusions) {
+    const { canonicalPath } = resolvedPath;
     const primaryGitPath = toGitPath(canonicalWorktree, canonicalPath);
     if (primaryGitPath === ".git" || primaryGitPath.startsWith(".git/")) {
       return { decision: { allowed: false, protected: true, reason: ".git internals are not readable" } };
     }
 
-    const nestedBoundary = await boundaryForPath(canonicalPath);
+    const nestedBoundary = await boundaryForPath(resolvedPath);
     const boundaryRoot = nestedBoundary ?? canonicalWorktree;
     const gitPath = toGitPath(boundaryRoot, canonicalPath);
     if (gitPath === ".git" || gitPath.startsWith(".git/")) {
@@ -644,7 +665,7 @@ export function createGitReadGate({
           };
         }
         await discoverWorktree();
-        const boundary = await guardedInventoryForPath(resolvedPath.canonicalPath, exclusions);
+        const boundary = await guardedInventoryForPath(resolvedPath, exclusions);
         if (boundary.decision) return boundary.decision;
         const { inventory } = boundary;
         await addTraversalEntries(resolvedPath, inventory, exclusions);
@@ -712,7 +733,7 @@ export function createGitReadGate({
     const privatePath = await privacyDecision(resolvedPath.canonicalPath, exclusions);
     if (privatePath) return privatePath;
 
-    const boundary = await guardedInventoryForPath(resolvedPath.canonicalPath, exclusions);
+    const boundary = await guardedInventoryForPath(resolvedPath, exclusions);
     if (boundary.decision) return boundary.decision;
     const { inventory, gitPath } = boundary;
 
@@ -814,7 +835,7 @@ export function createGitReadGate({
       const expected = resolve(canonicalCwd, relative(resolve(cwd), resolved.absolutePath));
       if (resolved.canonicalPath !== expected) throw new Error("inventory path traverses a symlink");
       if (resolved.canonicalPath === canonicalWorktree) return primary;
-      const nestedBoundary = await boundaryForPath(resolved.canonicalPath);
+      const nestedBoundary = await boundaryForPath(resolved);
       if (nestedBoundary !== resolved.canonicalPath) {
         throw new Error("inventory path is not an initialized submodule worktree root");
       }

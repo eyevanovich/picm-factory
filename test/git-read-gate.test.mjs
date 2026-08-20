@@ -334,7 +334,14 @@ test("allows safe prospective writes and blocks ignored prospective writes and t
   await withFixture(async ({ root, packageRoot }) => {
     const gate = createGitReadGate({ cwd: root, packageRoot });
 
+    assert.equal((await gate.checkPath("write", "docs/new.md")).allowed, true);
     assert.equal((await gate.checkPath("write", "output/new.md")).allowed, true);
+    assert.equal((await gate.checkPath("write", "new-parent/nested/new.md")).allowed, true);
+    write(join(root, "not-a-directory.txt"), "file\n");
+    assert.match(
+      (await gate.checkPath("write", "not-a-directory.txt/child.md")).reason,
+      /not a directory/,
+    );
     assert.match((await gate.checkPath("write", "secrets/new.md")).reason, /ignored by Git/);
     assert.equal((await gate.checkPath("grep", ".")).allowed, true);
     assert.match((await gate.checkPath("find", undefined)).reason, /guarded file path/);
@@ -693,6 +700,7 @@ test("uses isolated Git metadata to honor gitignore without modifying a non-Git 
   assert.equal(inventory.candidates.has("config-private.txt"), false);
   assert.equal((await gate.checkPath("read", "safe.txt")).allowed, true);
   assert.equal((await gate.checkPath("read", "nested/keep.log")).allowed, true);
+  assert.equal((await gate.checkPath("write", "new-parent/nested/new.txt")).allowed, true);
   assert.match((await gate.checkPath("read", "ignored.txt")).reason, /ignored by Git/);
   assert.match((await gate.checkPath("read", "nested/drop.log")).reason, /ignored by Git/);
   assert.equal(existsSync(join(root, ".git")), false);
@@ -751,11 +759,35 @@ test("treats present submodules as separate guarded worktrees", async (t) => {
   assert.match(absentPrivacyTraversal.reason, /did not resolve the parent gitlink boundary/);
   writeFileSync(nestedGitFile, nestedGitMetadata);
 
+  assert.equal(
+    (await gate.checkPath("write", "vendor/lib/new-parent/nested/new.txt")).allowed,
+    true,
+  );
+  assert.match(
+    (await gate.checkPath("write", "vendor/lib/ignored-empty/new.txt")).reason,
+    /ignored by Git/,
+  );
+
+  const nestedRepository = join(root, "nested-repository");
+  mkdirSync(nestedRepository);
+  git(nestedRepository, "init", "-q");
+  write(join(nestedRepository, ".gitignore"), "private.txt\n");
+  write(join(nestedRepository, "public.txt"), "public\n");
+  assert.match(
+    (await gate.checkPath("find", "nested-repository")).reason,
+    /not registered as a parent gitlink/,
+  );
+  assert.match(
+    (await gate.checkPrivacyPath("rg", "nested-repository", ["unrelated-private"])).reason,
+    /not registered as a parent gitlink/,
+  );
+
+  const canonicalRoot = await realpathFile(root);
   const queryFailureGate = createGitReadGate({
     cwd: root,
     packageRoot: root,
     runGit: async (gitCwd, args) => {
-      if (gitCwd === root && args[0] === "ls-files" && args.includes("--stage")) {
+      if (gitCwd === canonicalRoot && args[0] === "ls-files" && args.includes("--stage")) {
         return { code: 2, stdout: "", stderr: "synthetic gitlink query failure" };
       }
       try {

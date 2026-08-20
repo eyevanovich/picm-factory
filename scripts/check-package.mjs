@@ -530,7 +530,6 @@ for (const signal of [
 }
 for (const signal of [
   'execFileAsync("git", ["-C", cwd, ...args]',
-  '"check-ignore",\n      "--no-index"',
   '"ls-files"',
   '"init", "--bare", "--quiet"',
   '"--work-tree"',
@@ -542,6 +541,10 @@ for (const signal of [
     console.error(`PiCM Git read gate missing signal: ${signal}`);
     process.exit(1);
   }
+}
+if (!/"check-ignore",\s*"--no-index"/.test(gitReadGate)) {
+  console.error('PiCM Git read gate missing signal: "check-ignore", "--no-index"');
+  process.exit(1);
 }
 const privacyPolicy = readFileSync(join(root, "extensions/runtime/privacy-policy.mjs"), "utf8");
 for (const signal of ["normalizePrivacyExcludedPaths", "privacyPathMatches", "validatePrivacyPolicy"]) {
