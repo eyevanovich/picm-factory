@@ -731,6 +731,43 @@ test("treats present submodules as separate guarded worktrees", async (t) => {
     privacyTraversal.executionBinding.traversalEntries.some((entry) => entry.displayPath.endsWith("ignored-empty")),
     false,
   );
+  const nestedGitFile = join(root, "vendor", "lib", ".git");
+  const nestedGitMetadata = readFileSync(nestedGitFile, "utf8");
+  writeFileSync(nestedGitFile, "gitdir: missing-git-metadata\n");
+  const brokenActiveTraversal = await gate.checkPath("find", "vendor/lib");
+  assert.equal(brokenActiveTraversal.allowed, false);
+  assert.match(brokenActiveTraversal.reason, /Nested Git worktree discovery failed/);
+  const brokenPrivacyTraversal = await gate.checkPrivacyPath("rg", "vendor/lib", ["unrelated-private"]);
+  assert.equal(brokenPrivacyTraversal.allowed, false);
+  assert.match(brokenPrivacyTraversal.reason, /Nested Git worktree discovery failed/);
+  writeFileSync(nestedGitFile, nestedGitMetadata);
+
+  const queryFailureGate = createGitReadGate({
+    cwd: root,
+    packageRoot: root,
+    runGit: async (gitCwd, args) => {
+      if (gitCwd === root && args[0] === "ls-files" && args.includes("--stage")) {
+        return { code: 2, stdout: "", stderr: "synthetic gitlink query failure" };
+      }
+      try {
+        return {
+          code: 0,
+          stdout: execFileSync("git", ["-C", gitCwd, ...args], { encoding: "utf8" }),
+          stderr: "",
+        };
+      } catch (error) {
+        return {
+          code: error.status ?? 1,
+          stdout: typeof error.stdout === "string" ? error.stdout : "",
+          stderr: typeof error.stderr === "string" ? error.stderr : "",
+        };
+      }
+    },
+  });
+  t.after(() => queryFailureGate.dispose());
+  const queryFailure = await queryFailureGate.checkPath("ls", "vendor/lib");
+  assert.equal(queryFailure.allowed, false);
+  assert.match(queryFailure.reason, /synthetic gitlink query failure/);
   write(join(root, ".gitignore"), "vendor/lib/\n");
   assert.match((await gate.checkPath("read", "vendor/lib/safe.txt")).reason, /ignored by parent/);
 });

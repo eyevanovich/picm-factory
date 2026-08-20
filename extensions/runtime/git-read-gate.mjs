@@ -36,6 +36,12 @@ function stripAtPrefix(path) {
   return path.startsWith("@") ? path.slice(1) : path;
 }
 
+function hasGitlinkEntry(output, gitPath) {
+  return output.split("\0").some((entry) => (
+    /^160000\s/.test(entry) && entry.endsWith(`\t${gitPath}`)
+  ));
+}
+
 async function defaultRunGit(cwd, args) {
   try {
     const result = await execFileAsync("git", ["-C", cwd, ...args], {
@@ -281,13 +287,39 @@ export function createGitReadGate({
     } catch (error) {
       if (error?.code !== "ENOENT") throw error;
     }
+    let parentGitlinkBoundary;
+    for (
+      let candidate = discoveryCwd;
+      candidate !== canonicalWorktree && isInside(canonicalWorktree, candidate);
+      candidate = dirname(candidate)
+    ) {
+      const parentPath = toGitPath(canonicalWorktree, candidate);
+      const gitlink = await runGit(canonicalWorktree, ["ls-files", "--stage", "-z", "--", parentPath]);
+      if (gitlink.code !== 0) {
+        throw new Error(`Parent Gitlink query failed: ${gitlink.stderr.trim() || `exit ${gitlink.code}`}`);
+      }
+      if (hasGitlinkEntry(gitlink.stdout, parentPath)) {
+        parentGitlinkBoundary = candidate;
+        break;
+      }
+    }
     const result = await runGit(discoveryCwd, ["rev-parse", "--show-toplevel"]);
-    if (result.code !== 0) return undefined;
+    if (result.code !== 0) {
+      if (parentGitlinkBoundary) {
+        throw new Error(`Nested Git worktree discovery failed: ${result.stderr.trim() || `exit ${result.code}`}`);
+      }
+      if (/fatal:\s+not a git repository\b/i.test(result.stderr)) return undefined;
+      throw new Error(`Nested Git worktree discovery failed: ${result.stderr.trim() || `exit ${result.code}`}`);
+    }
+    if (!result.stdout.trim()) throw new Error("Nested Git worktree discovery returned an empty root");
     const nestedRoot = await fs.realpath(resolve(result.stdout.trim()));
     if (nestedRoot === canonicalWorktree || !isInside(canonicalWorktree, nestedRoot)) return undefined;
     const parentPath = toGitPath(canonicalWorktree, nestedRoot);
-    const gitlink = await runGit(canonicalWorktree, ["ls-files", "--stage", "--", parentPath]);
-    if (gitlink.code !== 0 || !/^160000\s/m.test(gitlink.stdout)) return undefined;
+    const gitlink = await runGit(canonicalWorktree, ["ls-files", "--stage", "-z", "--", parentPath]);
+    if (gitlink.code !== 0) {
+      throw new Error(`Parent Gitlink query failed: ${gitlink.stderr.trim() || `exit ${gitlink.code}`}`);
+    }
+    if (!hasGitlinkEntry(gitlink.stdout, parentPath)) return undefined;
     return nestedRoot;
   }
 
