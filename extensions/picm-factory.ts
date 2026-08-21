@@ -89,10 +89,6 @@ function buildPrompt(
   return `Use the picm-factory skill. Load its SKILL.md before proceeding.\n\n${commandContext}${previewGuidance}`;
 }
 
-function scheduledMaintenancePrompt(): string {
-  return `${buildPrompt("picm-maintain", "scheduled read-only advisory cycle", false)}\n\nThis is an automatic due-cycle advisory. Do not edit or write files, run Bash, create a report, repair anything, commit, send data, or cause external side effects. Report findings in chat only.`;
-}
-
 type PicmFactoryExtensionOptions = {
   createCoordinator?: typeof createRuntimeCoordinator;
   grepExecutionOptions?: Parameters<typeof executeBoundGrep>[3];
@@ -157,7 +153,6 @@ export default function picmFactoryExtension(
       "After an explicit command, call picm_scan_control preflight before any scan, ask the privacy question, then call privacy with every exact project-relative excluded path before begin.",
       "Use picm_scan_control privacy with persist true only when the user requests durable exclusions. First present and obtain acceptance of the complete concise .picm/config.json summary, marking the safety/configuration change as mandatory exact review; then use the action's exact TUI patch confirmation as the mandatory exact review and separate write approval.",
       "Use picm_scan_control inventory only after begin, end after each scan phase, and complete when the PiCM workflow finishes.",
-      "An active automatic advisory session may use only picm_scan_control inventory; it does not authorize begin, end, complete, status, Bash, or writes.",
     ],
     parameters: Type.Object({
       action: StringEnum(["preflight", "privacy", "begin", "inventory", "end", "complete", "status"] as const),
@@ -208,6 +203,15 @@ export default function picmFactoryExtension(
             completed: true,
             excludedPaths: result.excludedPaths,
           });
+          if (ctx.hasUI) {
+            ctx.ui.setWidget("picm-maintenance-reminder", undefined);
+          }
+          if (result.maintenanceReset && !result.maintenanceReset.ok && ctx.hasUI) {
+            ctx.ui.notify(
+              `[picm-factory] Maintenance cycle was not reset: ${result.maintenanceReset.message}`,
+              "warning",
+            );
+          }
         } else {
           recordClearedWorkflow(ctx);
         }
@@ -270,12 +274,44 @@ export default function picmFactoryExtension(
     coordinator.endToolExecution(event, ctx);
   });
 
+  async function executeMaintain(ctx: ExtensionContext, args = "") {
+    await ctx.waitForIdle();
+    const parsed = parseMaintenanceDepthArgument(args);
+    let depth = parsed.depth;
+    const promptArgs = parsed.remainingArgs;
+    if (!depth && ctx.mode === "tui") {
+      const selected = await ctx.ui.select(
+        "Choose maintenance depth for this run (stored preset will not change)",
+        MAINTENANCE_DEPTH_CHOICES,
+      );
+      if (!selected) {
+        ctx.ui.notify("PiCM maintenance cancelled before scan authorization.", "info");
+        return;
+      }
+      depth = selected === BALANCED_MAINTENANCE_GUIDANCE ? "balanced" : "strict";
+    }
+    depth ??= "strict";
+    const maintenanceDepthContext = `\n\nMaintenance run depth: ${depth}. Apply this depth to this run only. Do not mutate \`capabilities.codebaseMap.maintenancePreset\`.`;
+    const authorization = coordinator.authorizeWorkflow(ctx, "picm-maintain");
+    pi.appendEntry(scanWorkflowEntryType, { status: "authorized", ...authorization });
+    try {
+      pi.sendUserMessage(`${buildPrompt(
+        "picm-maintain",
+        promptArgs,
+        ctx.mode === "tui",
+      )}${maintenanceDepthContext}`);
+    } catch (error) {
+      coordinator.clearWorkflow(ctx);
+      recordClearedWorkflow(ctx);
+      throw error;
+    }
+  }
+
   pi.on("session_start", async (_event, ctx) => {
     restoreScanWorkflow(ctx);
     await coordinator.startup(ctx, {
       appendEntry: pi.appendEntry.bind(pi),
-      sendUserMessage: pi.sendUserMessage.bind(pi),
-      scheduledPrompt: scheduledMaintenancePrompt(),
+      promptMaintenanceWorkflow: () => executeMaintain(ctx, ""),
     });
   });
 
@@ -288,6 +324,9 @@ export default function picmFactoryExtension(
   });
 
   pi.on("session_shutdown", async (_event, ctx) => {
+    if (ctx.hasUI) {
+      ctx.ui.setWidget("picm-maintenance-reminder", undefined);
+    }
     const completed = coordinator.isWorkflowCompleted(ctx);
     let cleanupError: unknown;
     let cleanupFailed = false;
@@ -329,27 +368,12 @@ export default function picmFactoryExtension(
         },
       } : {}),
       handler: async (args, ctx) => {
+        if (command === "picm-maintain") {
+          await executeMaintain(ctx, args);
+          return;
+        }
         await ctx.waitForIdle();
         let promptArgs = args;
-        let maintenanceDepthContext = "";
-        if (command === "picm-maintain") {
-          const parsed = parseMaintenanceDepthArgument(args);
-          let depth = parsed.depth;
-          promptArgs = parsed.remainingArgs;
-          if (!depth && ctx.mode === "tui") {
-            const selected = await ctx.ui.select(
-              "Choose maintenance depth for this run (stored preset will not change)",
-              MAINTENANCE_DEPTH_CHOICES,
-            );
-            if (!selected) {
-              ctx.ui.notify("PiCM maintenance cancelled before scan authorization.", "info");
-              return;
-            }
-            depth = selected === BALANCED_MAINTENANCE_GUIDANCE ? "balanced" : "strict";
-          }
-          depth ??= "strict";
-          maintenanceDepthContext = `\n\nMaintenance run depth: ${depth}. Apply this depth to this run only. Do not mutate \`capabilities.codebaseMap.maintenancePreset\`.`;
-        }
         if (command !== "picm-help") {
           const authorization = coordinator.authorizeWorkflow(ctx, command);
           pi.appendEntry(scanWorkflowEntryType, { status: "authorized", ...authorization });
@@ -361,8 +385,8 @@ export default function picmFactoryExtension(
             command,
             promptArgs,
             command === "picm-adopt" || command === "picm-optimize" ||
-              ((command === "picm-new" || command === "picm-maintain") && ctx.mode === "tui"),
-          )}${maintenanceDepthContext}`);
+              (command === "picm-new" && ctx.mode === "tui"),
+          )}`);
         } catch (error) {
           if (command !== "picm-help") {
             coordinator.clearWorkflow(ctx);

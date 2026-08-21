@@ -2,14 +2,13 @@
 
 Use this guide inside an explicitly invoked `/picm-maintain` workflow when `.picm/config.json` identifies `profile: "coding-repository"`, when `capabilities.codebaseMap` is enabled, or when visible routing points to `CONTEXT-MAP.md`.
 
-Apply the general `maintenance-rubric.md` posture, severity labels, repair tiers, preview requirements, scheduled-maintenance read-only boundary, and report format. This guide adds coding-specific checks; it does not create a deterministic validator or automatic rewrite system. Even an opted-in automatic TUI cycle is advisory only and cannot update maps or reports.
+Apply the general `maintenance-rubric.md` posture, severity labels, repair tiers, preview requirements, scheduled-maintenance read-only boundary, and report format. This guide adds coding-specific checks; it does not create a deterministic validator or automatic rewrite system. Even scheduled maintenance is advisory only and cannot update maps or reports.
 
 ## Security before maintenance
 
 Apply the coding adoption guide's **excluded means unreadable** boundary before any scan:
 
-- for an ordinary invocation, call `preflight`, ask the privacy question, record exact exclusions with `privacy`, and call `begin` before inventory or content inspection;
-- scheduled automatic cycles load persisted privacy exclusions themselves and remain inventory-only;
+- call `preflight`, ask the privacy question, record exact exclusions with `privacy`, and call `begin` before inventory or content inspection;
 - derive candidates through protected inventory, using the real Git repository when present or isolated transient Git metadata only after privacy review when `.git` is absent;
 - honor root/nested `.gitignore`, `.git/info/exclude`, global Git excludes, persisted `privacy.excludedPaths`, and session additions as cumulative rules;
 - skip matching paths even if tracked;
@@ -27,7 +26,7 @@ Strict (recommended): broader systematic coverage across declared roots and mapp
 
 Balanced: representative coverage of major boundaries and one coding path; lower cost.
 
-Stored presets remain backward compatible. Explicit `light`, `balanced`, and `strict` values are readable and honored by scheduled automatic or other legacy preset-driven maintenance. A historically missing value falls back to Balanced. Light is compatibility-only: never offer it in a new-user selector or use it for new adoption.
+Stored presets remain backward compatible. Explicit `light`, `balanced`, and `strict` values are readable and honored by preset-driven scheduled maintenance. A historically missing value falls back to Balanced. Light is compatibility-only: never offer it in a new-user selector or use it for new adoption.
 
 ### Light (compatibility only)
 
