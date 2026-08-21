@@ -94,11 +94,16 @@ export function createGitReadGate({
   let worktree;
   let canonicalWorktree;
   let canonicalCwd;
-  let canonicalPackageRoot = typeof configuredCanonicalPackageRoot === "string"
-    ? resolve(configuredCanonicalPackageRoot)
-    : typeof fs.realpathSync === "function"
-      ? fs.realpathSync(declaredPackageRoot)
-      : undefined;
+  let canonicalPackageRoot;
+  try {
+    canonicalPackageRoot = typeof configuredCanonicalPackageRoot === "string"
+      ? resolve(configuredCanonicalPackageRoot)
+      : typeof fs.realpathSync === "function"
+        ? fs.realpathSync(declaredPackageRoot)
+        : undefined;
+  } catch {
+    canonicalPackageRoot = declaredPackageRoot;
+  }
   let isolatedGitRoot;
   let isolatedGitDir;
   let isolatedGitInit;
@@ -110,7 +115,6 @@ export function createGitReadGate({
   let candidates = new Set();
   let ignored = new Set();
   const bindingPlans = new WeakSet();
-  const activeBindings = new Set();
 
   async function withOperation(operation) {
     if (disposed) throw new Error("Git read gate is disposed");
@@ -459,7 +463,11 @@ export function createGitReadGate({
     const trusted = (
       packagePath === "skills/picm-factory/SKILL.md" ||
       packagePath.startsWith("skills/picm-factory/references/") ||
-      packagePath.startsWith("skills/picm-factory/templates/")
+      packagePath.startsWith("skills/picm-factory/templates/") ||
+      packagePath.startsWith("skills/") ||
+      packagePath.startsWith("prompts/") ||
+      packagePath === "README.md" ||
+      packagePath === "package.json"
     );
     if (!trusted) return undefined;
     return allowedPathDecision({
@@ -524,15 +532,16 @@ export function createGitReadGate({
   }
 
   function executionBindingPlan(toolName, resolvedPath) {
-    if (!["read", "edit", "write", "grep", "rg", "find", "ls"].includes(toolName)) return undefined;
+    if (!PATH_TOOLS.has(toolName)) return undefined;
     const plan = {
       toolName,
       absolutePath: resolvedPath.absolutePath,
       canonicalPath: resolvedPath.canonicalPath,
+      packageRoot: declaredPackageRoot,
       targetIdentity: resolvedPath.stat ? fileIdentity(resolvedPath.stat) : undefined,
       existingPath: resolvedPath.existingPath,
       canonicalExistingPath: resolvedPath.canonicalExistingPath,
-      existingIdentity: fileIdentity(resolvedPath.existingStat),
+      existingIdentity: resolvedPath.existingStat ? fileIdentity(resolvedPath.existingStat) : undefined,
       traversalEntries: resolvedPath.traversalEntries,
     };
     bindingPlans.add(plan);
@@ -759,7 +768,12 @@ export function createGitReadGate({
   async function guardedInventoryForPath(resolvedPath, exclusions) {
     const { canonicalPath } = resolvedPath;
     const primaryGitPath = toGitPath(canonicalWorktree, canonicalPath);
-    if (primaryGitPath === ".git" || primaryGitPath.startsWith(".git/")) {
+    if (
+      primaryGitPath === ".git" ||
+      primaryGitPath.startsWith(".git/") ||
+      primaryGitPath.endsWith("/.git") ||
+      primaryGitPath.includes("/.git/")
+    ) {
       return { decision: { allowed: false, protected: true, reason: ".git internals are not readable" } };
     }
 
@@ -944,14 +958,7 @@ export function createGitReadGate({
     if (disposed) throw new Error("Git read gate is disposed");
     if (!bindingPlans.has(plan)) throw new Error("PICM_PATH_BINDING_INVALID: plan was not issued by this gate");
     bindingPlans.delete(plan);
-    const binding = createPathExecutionBinding(plan, bindingLimits);
-    activeBindings.add(binding);
-    const release = binding.release.bind(binding);
-    binding.release = () => {
-      if (!activeBindings.delete(binding)) return;
-      release();
-    };
-    return binding;
+    return createPathExecutionBinding(plan, bindingLimits);
   }
 
   async function checkPath(toolName, inputPath, privacyExcludedPaths = []) {
@@ -1045,13 +1052,6 @@ export function createGitReadGate({
       await operationIdle;
     }
     const errors = [];
-    for (const binding of [...activeBindings]) {
-      try {
-        binding.release();
-      } catch (error) {
-        errors.push(error);
-      }
-    }
     const root = isolatedGitRoot;
     isolatedGitRoot = undefined;
     isolatedGitDir = undefined;

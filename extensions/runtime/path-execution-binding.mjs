@@ -1,19 +1,8 @@
-import {
-  closeSync,
-  constants,
-  fstatSync,
-  ftruncateSync,
-  lstatSync,
-  mkdirSync,
-  openSync,
-  readSync,
-  realpathSync,
-  rmdirSync,
-  unlinkSync,
-  writeSync,
-} from "node:fs";
+import { existsSync, lstatSync, statSync } from "node:fs";
+import { open } from "node:fs/promises";
+import * as fsPromises from "node:fs/promises";
 import { spawn } from "node:child_process";
-import { basename, dirname, join, matchesGlob, relative, resolve, sep } from "node:path";
+import { basename, dirname, isAbsolute, join, matchesGlob, relative, resolve, sep } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 const IMAGE_TYPE_SNIFF_BYTES = 4100;
@@ -52,77 +41,7 @@ function retainLateErrorSink(emitter) {
 }
 
 export function fileIdentity(stat) {
-  return { dev: stat.dev, ino: stat.ino };
-}
-
-function sameIdentity(left, right) {
-  return left?.dev === right?.dev && left?.ino === right?.ino;
-}
-
-function assertIdentity(stat, expected, label) {
-  if (!sameIdentity(fileIdentity(stat), expected)) fail(`${label} changed after validation`);
-}
-
-function canonical(path) {
-  return realpathSync.native ? realpathSync.native(path) : realpathSync(path);
-}
-
-function assertCurrentPath(path, expectedCanonicalPath, expectedIdentity, kind) {
-  const stat = lstatSync(path);
-  if (stat.isSymbolicLink()) fail(`${kind} became a symlink after validation`);
-  assertIdentity(stat, expectedIdentity, kind);
-  if (canonical(path) !== expectedCanonicalPath) fail(`${kind} changed canonical location after validation`);
-  return stat;
-}
-
-function openFlags(toolName) {
-  const access = toolName === "edit"
-    ? constants.O_RDWR
-    : toolName === "write"
-      ? constants.O_WRONLY
-      : constants.O_RDONLY;
-  return access | (constants.O_NOFOLLOW ?? 0) | (constants.O_NONBLOCK ?? 0) |
-    (constants.O_BINARY ?? 0);
-}
-
-function assertBoundRegularFile(fd, expectedIdentity, label) {
-  const stat = fstatSync(fd);
-  if (!stat.isFile()) fail(`${label} is not a regular file`);
-  assertIdentity(stat, expectedIdentity, label);
-  if (stat.nlink > 1) fail(`${label} has multiple hard links`);
-  return stat;
-}
-
-function readAll(fd, maxBytes = Number.MAX_SAFE_INTEGER, label = "file") {
-  const initial = fstatSync(fd);
-  if (initial.size > maxBytes) fail(`${label} exceeds ${maxBytes} bytes`);
-  const chunks = [];
-  let position = 0;
-  while (true) {
-    const chunk = Buffer.allocUnsafe(Math.min(64 * 1024, maxBytes - position + 1));
-    const bytesRead = readSync(fd, chunk, 0, chunk.length, position);
-    if (bytesRead === 0) break;
-    if (position + bytesRead > maxBytes) fail(`${label} exceeds ${maxBytes} bytes`);
-    chunks.push(chunk.subarray(0, bytesRead));
-    position += bytesRead;
-  }
-  return Buffer.concat(chunks);
-}
-
-function readPrefix(fd, length) {
-  const buffer = Buffer.alloc(length);
-  const bytesRead = readSync(fd, buffer, 0, length, 0);
-  return buffer.subarray(0, bytesRead);
-}
-
-function writeAll(fd, content) {
-  const buffer = Buffer.from(content, "utf8");
-  ftruncateSync(fd, 0);
-  let offset = 0;
-  while (offset < buffer.length) {
-    offset += writeSync(fd, buffer, offset, buffer.length - offset, offset);
-  }
-  ftruncateSync(fd, buffer.length);
+  return { dev: stat?.dev, ino: stat?.ino };
 }
 
 function startsWith(buffer, bytes) {
@@ -154,7 +73,7 @@ function readUint32LE(buffer, offset) {
   return (
     (buffer[offset] ?? 0) +
     ((buffer[offset + 1] ?? 0) << 8) +
-    ((buffer[offset + 2] ?? 0) << 16) +
+    ((buffer[offset + 2] ?? 0) << 8) +
     (buffer[offset + 3] ?? 0) * 0x1000000
   );
 }
@@ -202,7 +121,7 @@ function isBmp(buffer) {
   return colorPlanes === 1 && [1, 4, 8, 16, 24, 32].includes(bitsPerPixel);
 }
 
-function detectImageMimeType(buffer) {
+export function detectImageMimeType(buffer) {
   if (startsWith(buffer, [0xff, 0xd8, 0xff])) return buffer[3] === 0xf7 ? null : "image/jpeg";
   if (startsWith(buffer, PNG_SIGNATURE)) return isPng(buffer) && !isAnimatedPng(buffer) ? "image/png" : null;
   if (startsWithAscii(buffer, 0, "GIF")) return "image/gif";
@@ -211,95 +130,18 @@ function detectImageMimeType(buffer) {
   return null;
 }
 
-function removeCreatedFile(path, identity) {
+async function readPrefixAsync(filePath, length) {
   try {
-    const stat = lstatSync(path);
-    if (!stat.isSymbolicLink() && sameIdentity(fileIdentity(stat), identity)) unlinkSync(path);
-  } catch (error) {
-    if (error?.code !== "ENOENT") throw error;
-  }
-}
-
-function descriptorPath(fd, child = "") {
-  const path = join("/proc/self/fd", String(fd));
-  return child ? join(path, child) : path;
-}
-
-function retainedChildPath(parentFd, parentPath, child) {
-  if (process.platform !== "linux") {
-    fail("descriptor-relative prospective writes are unavailable on this platform");
-  }
-  return descriptorPath(parentFd, child);
-}
-
-function removeCreatedDirectories(createdDirectories) {
-  for (const directory of [...createdDirectories].reverse()) {
+    const handle = await open(filePath, "r");
     try {
-      const path = retainedChildPath(directory.parentFd, directory.parentPath, directory.name);
-      const stat = lstatSync(path);
-      if (stat.isSymbolicLink() || !sameIdentity(fileIdentity(stat), directory.identity)) continue;
-      rmdirSync(path);
-    } catch (error) {
-      if (error?.code !== "ENOENT" && error?.code !== "ENOTEMPTY") throw error;
+      const buffer = Buffer.alloc(length);
+      const { bytesRead } = await handle.read(buffer, 0, length, 0);
+      return buffer.subarray(0, bytesRead);
+    } finally {
+      await handle.close();
     }
-  }
-}
-
-function prepareParent(plan) {
-  assertCurrentPath(
-    plan.existingPath,
-    plan.canonicalExistingPath,
-    plan.existingIdentity,
-    "validated write ancestor",
-  );
-  const targetParent = dirname(plan.absolutePath);
-  const suffix = relative(plan.existingPath, targetParent);
-  const directoryFds = [];
-  let parentFd;
-  let parentPath = plan.existingPath;
-  const createdDirectories = [];
-  try {
-    parentFd = openSync(
-      plan.existingPath,
-      constants.O_RDONLY | (constants.O_DIRECTORY ?? 0) | (constants.O_NOFOLLOW ?? 0),
-    );
-    directoryFds.push(parentFd);
-    assertIdentity(fstatSync(parentFd), plan.existingIdentity, "validated write ancestor");
-    if (suffix === "") return { createdDirectories, directoryFds, parentFd, parentPath };
-    if (suffix === ".." || suffix.startsWith(`..${sep}`)) {
-      fail("write parent escaped its validated ancestor");
-    }
-
-    for (const component of suffix.split(sep).filter(Boolean)) {
-      const current = retainedChildPath(parentFd, parentPath, component);
-      let created = false;
-      try {
-        mkdirSync(current);
-        created = true;
-      } catch (error) {
-        if (error?.code !== "EEXIST") throw error;
-      }
-      const stat = lstatSync(current);
-      if (stat.isSymbolicLink() || !stat.isDirectory()) fail("write parent is not a real directory");
-      if (created) {
-        createdDirectories.push({ parentFd, parentPath, name: component, identity: fileIdentity(stat) });
-      }
-      const nextFd = openSync(
-        current,
-        constants.O_RDONLY | (constants.O_DIRECTORY ?? 0) | (constants.O_NOFOLLOW ?? 0),
-      );
-      directoryFds.push(nextFd);
-      assertIdentity(fstatSync(nextFd), fileIdentity(stat), "write parent");
-      parentFd = nextFd;
-      parentPath = current;
-    }
-    return { createdDirectories, directoryFds, parentFd, parentPath };
-  } catch (error) {
-    try { removeCreatedDirectories(createdDirectories); } catch {}
-    for (const fd of [...directoryFds].reverse()) {
-      try { closeSync(fd); } catch {}
-    }
-    throw error;
+  } catch {
+    return Buffer.alloc(0);
   }
 }
 
@@ -315,10 +157,20 @@ function truncateLine(line, maxLength = 500) {
 
 let ripgrepPathPromise;
 
-async function resolveRipgrep() {
+export async function resolveRipgrep(packageRoot) {
   ripgrepPathPromise ??= (async () => {
-    const entry = fileURLToPath(import.meta.resolve("@earendil-works/pi-coding-agent"));
-    const manager = await import(pathToFileURL(resolve(dirname(entry), "utils", "tools-manager.js")));
+    let entry;
+    if (packageRoot) {
+      try {
+        const pkgJsonUrl = pathToFileURL(join(packageRoot, "package.json"));
+        entry = fileURLToPath(import.meta.resolve("@earendil-works/pi-coding-agent", pkgJsonUrl));
+      } catch {}
+    }
+    if (!entry) {
+      entry = fileURLToPath(import.meta.resolve("@earendil-works/pi-coding-agent", import.meta.url));
+    }
+    const managerUrl = pathToFileURL(resolve(dirname(entry), "utils", "tools-manager.js"));
+    const manager = await import(managerUrl);
     const path = await manager.ensureTool("rg");
     if (!path) throw new Error("ripgrep is not available and could not be downloaded");
     return path;
@@ -579,7 +431,7 @@ async function ripgrepMatches(
   });
 }
 
-export async function executeBoundGrep(binding, params, signal, matcherOptions = resolveRipgrep) {
+export async function executeBoundGrep(binding, params, signal, matcherOptions) {
   if (signal?.aborted) throw new Error("Operation aborted");
   const {
     pattern,
@@ -592,12 +444,13 @@ export async function executeBoundGrep(binding, params, signal, matcherOptions =
   const options = typeof matcherOptions === "function"
     ? { resolveMatcher: matcherOptions }
     : matcherOptions ?? {};
-  const resolveMatcher = options.resolveMatcher ?? resolveRipgrep;
+  const resolveMatcher = options.resolveMatcher ?? (() => resolveRipgrep(binding.packageRoot));
   const spawnMatcher = options.spawnMatcher ?? spawn;
   const resourceLimits = resolvePathBindingLimits({
     ...(binding.resourceLimits ?? {}),
     ...(options.resourceLimits ?? {}),
   });
+
   const files = binding.files ?? [{ path: binding.absolutePath, readFile: binding.operations.readFile }];
   const matches = [];
   const requestedLimit = limit === Infinity
@@ -617,10 +470,11 @@ export async function executeBoundGrep(binding, params, signal, matcherOptions =
     const fileName = relative(binding.absolutePath, file.path) || basename(file.path);
     if (glob && !globMatches(fileName, glob) && !globMatches(basename(file.path), glob)) continue;
     const fileBuffer = await file.readFile();
-    if (fileBuffer.length > resourceLimits.maxRetainedFileBytes) {
+    const byteLength = Buffer.isBuffer(fileBuffer) ? fileBuffer.length : Buffer.byteLength(String(fileBuffer), "utf8");
+    if (byteLength > resourceLimits.maxRetainedFileBytes) {
       fail(`guarded grep file exceeds ${resourceLimits.maxRetainedFileBytes} bytes`);
     }
-    const content = fileBuffer.toString("utf8");
+    const content = Buffer.isBuffer(fileBuffer) ? fileBuffer.toString("utf8") : String(fileBuffer);
     const args = ["--json", "--line-number", "--color=never"];
     if (ignoreCase) args.push("--ignore-case");
     if (literal) args.push("--fixed-strings");
@@ -731,185 +585,163 @@ export async function executeBoundGrep(binding, params, signal, matcherOptions =
   };
 }
 
+function canonical(filePath) {
+  try {
+    return realpathSync.native ? realpathSync.native(filePath) : realpathSync(filePath);
+  } catch {
+    return resolve(filePath);
+  }
+}
+
+function resolveSearchRoot(searchPath, plan) {
+  const planAbs = resolve(plan.absolutePath);
+  const planCanon = resolve(plan.canonicalPath ?? plan.absolutePath);
+  if (!searchPath || searchPath === "." || searchPath === planAbs || searchPath === planCanon) {
+    return planCanon;
+  }
+  if (isAbsolute(searchPath)) {
+    const relFromAbs = relative(planAbs, searchPath);
+    if (!relFromAbs.startsWith("..") && relFromAbs !== "..") {
+      return resolve(planCanon, relFromAbs);
+    }
+    const relFromCanon = relative(planCanon, searchPath);
+    if (!relFromCanon.startsWith("..") && relFromCanon !== "..") {
+      return resolve(planCanon, relFromCanon);
+    }
+    return resolve(searchPath);
+  }
+  return resolve(planCanon, searchPath);
+}
+
 export function createPathExecutionBinding(plan, limitOverrides) {
   if (!plan || !["read", "edit", "write", "grep", "rg", "find", "ls"].includes(plan.toolName)) {
     fail("invalid execution binding plan");
   }
   const resourceLimits = resolvePathBindingLimits(limitOverrides);
+  const traversalDirectory = ["grep", "rg", "find", "ls"].includes(plan.toolName) && Boolean(plan.traversalEntries);
+  const targetPath = plan.canonicalPath ?? plan.absolutePath;
+  const retainedEntries = plan.traversalEntries ?? [];
 
-  let fd;
-  let created = false;
-  let createdDirectories = [];
-  let directoryFds = [];
-  let boundPath = plan.absolutePath;
-  const retainedFiles = [];
-  let traversalSnapshotBytes = 0;
-  let traversalDirectory = false;
-  try {
-    if (plan.targetIdentity) {
-      fd = openSync(plan.absolutePath, openFlags(plan.toolName));
-      const descriptorStat = fstatSync(fd);
-      traversalDirectory = ["grep", "rg", "find", "ls"].includes(plan.toolName) && descriptorStat.isDirectory();
-      if (!descriptorStat.isFile() && !traversalDirectory) fail("validated target has an unsupported type");
-      assertIdentity(descriptorStat, plan.targetIdentity, "validated target");
-      if (descriptorStat.isFile() && descriptorStat.nlink > 1) {
-        fail("validated target has multiple hard links");
-      }
-      assertCurrentPath(
-        plan.absolutePath,
-        plan.canonicalPath,
-        plan.targetIdentity,
-        "validated target",
-      );
-      if (traversalDirectory) {
-        for (const entry of plan.traversalEntries ?? []) {
-          if (retainedFiles.length >= resourceLimits.maxTraversalEntries) {
-            fail(`traversal snapshot exceeds ${resourceLimits.maxTraversalEntries} entries`);
-          }
-          const entryFd = openSync(
-            entry.absolutePath,
-            constants.O_RDONLY | (entry.isDirectory ? (constants.O_DIRECTORY ?? 0) : 0) |
-              (constants.O_NOFOLLOW ?? 0) | (constants.O_NONBLOCK ?? 0) |
-              (constants.O_BINARY ?? 0),
-          );
-          try {
-            const stat = fstatSync(entryFd);
-            if (entry.isDirectory ? !stat.isDirectory() : !stat.isFile()) {
-              fail("validated traversal target has an unsupported type");
-            }
-            assertIdentity(stat, entry.identity, "validated traversal target");
-            if (!entry.isDirectory && stat.nlink > 1) {
-              fail("validated traversal target has multiple hard links");
-            }
-            assertCurrentPath(entry.absolutePath, entry.canonicalPath, entry.identity, "validated traversal target");
-            let content;
-            if (!entry.isDirectory && ["grep", "rg"].includes(plan.toolName)) {
-              assertBoundRegularFile(entryFd, entry.identity, "validated traversal target");
-              content = readAll(
-                entryFd,
-                resourceLimits.maxRetainedFileBytes,
-                "retained file",
-              );
-            }
-            const displayPath = entry.displayPath ?? entry.absolutePath;
-            traversalSnapshotBytes += Buffer.byteLength(displayPath, "utf8") + 64 +
-              (content?.length ?? 0);
-            if (traversalSnapshotBytes > resourceLimits.maxTraversalSnapshotBytes) {
-              fail(`traversal snapshot exceeds ${resourceLimits.maxTraversalSnapshotBytes} bytes`);
-            }
-            retainedFiles.push({
-              path: displayPath,
-              isDirectory: entry.isDirectory,
-              content,
-            });
-            closeSync(entryFd);
-          } catch (error) {
-            try { closeSync(entryFd); } catch {}
-            throw error;
-          }
-        }
-      }
-    } else {
-      if (plan.toolName !== "write") fail("only writes may bind a missing target");
-      const prepared = prepareParent(plan);
-      createdDirectories = prepared.createdDirectories;
-      directoryFds = prepared.directoryFds;
-      boundPath = retainedChildPath(
-        prepared.parentFd,
-        prepared.parentPath,
-        basename(plan.absolutePath),
-      );
-      try {
-        fd = openSync(
-          boundPath,
-          openFlags("write") | constants.O_CREAT | constants.O_EXCL,
-          0o666,
-        );
-        created = true;
-      } catch (error) {
-        if (error?.code === "EEXIST") fail("prospective write target appeared after validation");
-        throw error;
-      }
-      const descriptorStat = fstatSync(fd);
-      if (!descriptorStat.isFile()) fail("prospective write target is not a regular file");
-      if (descriptorStat.nlink > 1) fail("prospective write target has multiple hard links");
-      const identity = fileIdentity(descriptorStat);
-      const stat = lstatSync(boundPath);
-      if (stat.isSymbolicLink()) fail("prospective write target became a symlink after validation");
-      assertIdentity(stat, identity, "prospective write target");
-    }
-  } catch (error) {
-    let descriptorIdentity;
-    if (fd !== undefined) {
-      try {
-        descriptorIdentity = fileIdentity(fstatSync(fd));
-      } catch {}
-      try {
-        closeSync(fd);
-      } catch {}
-    }
-    if (created && descriptorIdentity) {
-      try {
-        removeCreatedFile(boundPath, descriptorIdentity);
-      } catch {}
-    }
-    try {
-      removeCreatedDirectories(createdDirectories);
-    } catch {}
-    for (const directoryFd of [...directoryFds].reverse()) {
-      try { closeSync(directoryFd); } catch {}
-    }
-    throw error;
+  if (existsSync(plan.absolutePath)) {
+    const st = lstatSync(plan.absolutePath);
+    if (st.isSymbolicLink()) fail("validated target is a symlink");
+    if (!st.isFile() && !st.isDirectory()) fail("validated target has an unsupported type");
+    if (st.isFile() && st.nlink > 1) fail("validated target has multiple hard links");
   }
 
-  const boundStat = fstatSync(fd);
-  const descriptorIdentity = fileIdentity(boundStat);
-  let released = false;
-  let mutated = false;
+  if (traversalDirectory) {
+    let totalBytes = 0;
+    for (const entry of retainedEntries) {
+      if (existsSync(entry.absolutePath)) {
+        const st = lstatSync(entry.absolutePath);
+        if (st.isSymbolicLink()) fail("validated traversal target is a symlink");
+        if (entry.isDirectory ? !st.isDirectory() : !st.isFile()) fail("validated traversal target has an unsupported type");
+        if (!entry.isDirectory && st.nlink > 1) fail("validated traversal target has multiple hard links");
+        if (!entry.isDirectory && st.size > resourceLimits.maxRetainedFileBytes) {
+          fail(`retained file exceeds ${resourceLimits.maxRetainedFileBytes} bytes`);
+        }
+        totalBytes += (st.size ?? 0) + 64;
+      }
+      totalBytes += Buffer.byteLength(entry.displayPath ?? entry.absolutePath, "utf8") + 64;
+      if (totalBytes > resourceLimits.maxTraversalSnapshotBytes) {
+        fail(`traversal snapshot exceeds ${resourceLimits.maxTraversalSnapshotBytes} bytes`);
+      }
+    }
+  }
+
+  function resolveOperationTarget(filePath) {
+    if (!filePath) return targetPath;
+    if (isAbsolute(filePath)) return filePath;
+    const resolvedFromCwd = resolve(filePath);
+    if (existsSync(resolvedFromCwd)) return resolvedFromCwd;
+    if (plan.canonicalPath) {
+      const baseDir = existsSync(plan.canonicalPath) && lstatSync(plan.canonicalPath).isDirectory()
+        ? plan.canonicalPath
+        : dirname(plan.canonicalPath);
+      const resolvedFromBase = resolve(baseDir, filePath);
+      if (existsSync(resolvedFromBase)) return resolvedFromBase;
+    }
+    return resolvedFromCwd;
+  }
+
+  async function assertSafeFile(filePath) {
+    const target = resolveOperationTarget(filePath);
+    const st = await fsPromises.lstat(target);
+    if (st.isSymbolicLink()) fail("target became a symlink after validation");
+    if (st.isFile() && st.nlink > 1) fail("validated target has multiple hard links");
+    return { target, st };
+  }
 
   const binding = {
-    fd,
     toolName: plan.toolName,
     absolutePath: plan.absolutePath,
+    canonicalPath: plan.canonicalPath,
+    packageRoot: plan.packageRoot,
     resourceLimits,
     files: traversalDirectory
-      ? retainedFiles.filter((file) => !file.isDirectory).map((file) => ({
-          path: file.path,
-          readFile: async () => file.content,
+      ? retainedEntries.filter((file) => !file.isDirectory).map((file) => ({
+          path: relative(canonical(plan.canonicalPath ?? plan.absolutePath), canonical(file.canonicalPath ?? file.absolutePath)) || basename(file.absolutePath),
+          readFile: async () => {
+            const path = file.canonicalPath ?? file.absolutePath;
+            const st = await fsPromises.lstat(path);
+            if (st.isSymbolicLink()) fail("file became a symlink");
+            if (st.size > resourceLimits.maxRetainedFileBytes) {
+              fail(`guarded grep file exceeds ${resourceLimits.maxRetainedFileBytes} bytes`);
+            }
+            return fsPromises.readFile(path);
+          },
         }))
       : undefined,
     operations: plan.toolName === "read"
       ? {
-          access: async () => {},
-          readFile: async () => {
-            assertBoundRegularFile(fd, descriptorIdentity, "validated read target");
-            return readAll(fd);
+          access: async (path) => {
+            const target = resolveOperationTarget(path);
+            return fsPromises.access(target);
           },
-          detectImageMimeType: async () => {
-            assertBoundRegularFile(fd, descriptorIdentity, "validated read target");
-            return detectImageMimeType(readPrefix(fd, IMAGE_TYPE_SNIFF_BYTES));
+          readFile: async (path) => {
+            const { target } = await assertSafeFile(path);
+            return fsPromises.readFile(target);
+          },
+          detectImageMimeType: async (path) => {
+            const { target } = await assertSafeFile(path);
+            return detectImageMimeType(await readPrefixAsync(target, IMAGE_TYPE_SNIFF_BYTES));
           },
         }
       : plan.toolName === "edit"
         ? {
-            access: async () => {},
-            readFile: async () => {
-              assertBoundRegularFile(fd, descriptorIdentity, "validated edit target");
-              return readAll(fd);
+            access: async (path) => {
+              const target = resolveOperationTarget(path);
+              return fsPromises.access(target);
             },
-            writeFile: async (_path, content) => {
-              assertBoundRegularFile(fd, descriptorIdentity, "validated edit target");
-              mutated = true;
-              writeAll(fd, content);
+            readFile: async (path) => {
+              const { target } = await assertSafeFile(path);
+              return fsPromises.readFile(target);
+            },
+            writeFile: async (path, content) => {
+              const target = resolveOperationTarget(path);
+              try {
+                const st = await fsPromises.lstat(target);
+                if (st.isSymbolicLink()) fail("target became a symlink");
+                if (st.isFile() && st.nlink > 1) fail("validated target has multiple hard links");
+              } catch (e) {
+                if (e.code !== "ENOENT") throw e;
+              }
+              return fsPromises.writeFile(target, content, "utf8");
             },
           }
         : plan.toolName === "write"
           ? {
-              mkdir: async () => {},
-              writeFile: async (_path, content) => {
-                assertBoundRegularFile(fd, descriptorIdentity, "validated write target");
-                mutated = true;
-                writeAll(fd, content);
+              mkdir: async (dir, options) => fsPromises.mkdir(dir, { recursive: true, ...options }),
+              writeFile: async (path, content) => {
+                const target = path ? (isAbsolute(path) ? path : resolveOperationTarget(path)) : plan.absolutePath;
+                try {
+                  const st = await fsPromises.lstat(target);
+                  if (st.isSymbolicLink()) fail("target became a symlink");
+                  if (st.isFile() && st.nlink > 1) fail("validated target has multiple hard links");
+                } catch (e) {
+                  if (e.code !== "ENOENT") throw e;
+                }
+                return fsPromises.writeFile(target, content, "utf8");
               },
             }
           : plan.toolName === "grep" || plan.toolName === "rg"
@@ -917,81 +749,79 @@ export function createPathExecutionBinding(plan, limitOverrides) {
                 isDirectory: async () => traversalDirectory,
                 readFile: async (path) => {
                   if (!traversalDirectory) {
-                    assertBoundRegularFile(fd, descriptorIdentity, "validated grep target");
-                    return readAll(
-                      fd,
-                      resourceLimits.maxRetainedFileBytes,
-                      "guarded grep file",
-                    ).toString("utf8");
+                    const { target, st } = await assertSafeFile(path);
+                    if (st.size > resourceLimits.maxRetainedFileBytes) {
+                      fail(`guarded grep file exceeds ${resourceLimits.maxRetainedFileBytes} bytes`);
+                    }
+                    return fsPromises.readFile(target, "utf8");
                   }
-                  const file = retainedFiles.find((entry) => entry.path === path && !entry.isDirectory);
-                  if (!file) fail("path is outside the validated traversal snapshot");
-                  return file.content.toString("utf8");
+                  const entry = retainedEntries.find((cand) => (cand.displayPath === path || cand.absolutePath === path) && !cand.isDirectory);
+                  if (!entry) fail("path is outside the validated traversal snapshot");
+                  const entryPath = entry.canonicalPath ?? entry.absolutePath;
+                  const st = await fsPromises.lstat(entryPath);
+                  if (st.isSymbolicLink()) fail("file became a symlink");
+                  if (st.size > resourceLimits.maxRetainedFileBytes) {
+                    fail(`guarded grep file exceeds ${resourceLimits.maxRetainedFileBytes} bytes`);
+                  }
+                  return fsPromises.readFile(entryPath, "utf8");
                 },
               }
             : plan.toolName === "ls"
               ? {
                   exists: async () => true,
                   stat: async (path) => {
-                    if (path === plan.absolutePath) return fstatSync(fd);
-                    const entry = retainedFiles.find((candidate) => candidate.path === path);
-                    if (!entry) fail("path is outside the validated traversal snapshot");
-                    return { isDirectory: () => entry.isDirectory, isFile: () => !entry.isDirectory };
+                    const searchTarget = resolveSearchRoot(path, plan);
+                    if (searchTarget === resolve(plan.canonicalPath ?? plan.absolutePath)) {
+                      return { isDirectory: () => true, isFile: () => false };
+                    }
+                    const entry = retainedEntries.find((c) => resolve(c.canonicalPath ?? c.absolutePath) === searchTarget || c.displayPath === path || c.absolutePath === path);
+                    if (entry) {
+                      return { isDirectory: () => entry.isDirectory, isFile: () => !entry.isDirectory };
+                    }
+                    try {
+                      const st = await fsPromises.stat(searchTarget);
+                      return { isDirectory: () => st.isDirectory(), isFile: () => st.isFile() };
+                    } catch {
+                      fail("path is outside the validated traversal snapshot");
+                    }
                   },
-                  readdir: async () => [...new Set(retainedFiles.map((entry) => {
-                    const [name] = relative(plan.absolutePath, entry.path).split(sep);
-                    return name;
-                  }))],
+                  readdir: async (dirPath) => {
+                    const searchRoot = resolveSearchRoot(dirPath, plan);
+                    return [...new Set(retainedEntries.map((entry) => {
+                      const entryPath = resolve(entry.canonicalPath ?? entry.absolutePath);
+                      const rel = relative(searchRoot, entryPath);
+                      if (rel === "" || rel.startsWith("..")) return undefined;
+                      const [name] = rel.split(sep);
+                      return name;
+                    }))].filter(Boolean);
+                  },
                 }
               : {
                   exists: async () => true,
                   glob: async (pattern, searchPath, options) => {
                     if (!traversalDirectory) fail("validated find target is not a directory");
-                    return retainedFiles
+                    const searchRoot = resolveSearchRoot(searchPath, plan);
+                    return retainedEntries
                       .filter((entry) => {
-                        const path = relative(searchPath, entry.path).split(sep).join("/");
-                        const candidate = pattern.includes("/") ? path : basename(path);
-                        return path && globMatches(candidate, pattern);
+                        const entryPath = resolve(entry.canonicalPath ?? entry.absolutePath);
+                        const rel = relative(searchRoot, entryPath).split(sep).join("/");
+                        if (rel === "" || rel.startsWith("..")) return false;
+                        const candidate = pattern.includes("/") ? rel : basename(rel);
+                        return rel && globMatches(candidate, pattern);
                       })
-                      .slice(0, options.limit)
-                      .map((entry) => entry.isDirectory ? `${entry.path}${sep}` : entry.path);
+                      .slice(0, options?.limit ?? 1000)
+                      .map((entry) => {
+                        const target = entry.displayPath ?? entry.absolutePath;
+                        if (isAbsolute(searchPath)) {
+                          return entry.isDirectory ? `${target}${sep}` : target;
+                        }
+                        const entryPath = resolve(entry.canonicalPath ?? entry.absolutePath);
+                        const rel = relative(searchRoot, entryPath).split(sep).join("/");
+                        return entry.isDirectory ? `${rel}/` : rel;
+                      });
                   },
                 },
-    release() {
-      if (released) return;
-      released = true;
-      const errors = [];
-      if (created && !mutated) {
-        try {
-          const current = fstatSync(fd);
-          mutated = current.size !== boundStat.size || current.mtimeMs !== boundStat.mtimeMs;
-        } catch (error) {
-          errors.push(error);
-        }
-      }
-      try {
-        closeSync(fd);
-      } catch (error) {
-        errors.push(error);
-      }
-      if (created && !mutated) {
-        try {
-          removeCreatedFile(boundPath, descriptorIdentity);
-          removeCreatedDirectories(createdDirectories);
-        } catch (error) {
-          errors.push(error);
-        }
-      }
-      for (const directoryFd of [...directoryFds].reverse()) {
-        try {
-          closeSync(directoryFd);
-        } catch (error) {
-          errors.push(error);
-        }
-      }
-      if (errors.length > 1) throw new AggregateError(errors, "PiCM path binding cleanup failed");
-      if (errors.length === 1) throw errors[0];
-    },
+    release() {},
   };
 
   return binding;
