@@ -305,7 +305,7 @@ function executePreflightedToolCalls(h, ctx, calls, timeline = []) {
 async function promiseSettled(promise) {
   return Promise.race([
     promise.then(() => true, () => true),
-    new Promise((resolvePromise) => setImmediate(() => resolvePromise(false))),
+    new Promise((resolvePromise) => setTimeout(() => resolvePromise(false), 25)),
   ]);
 }
 

@@ -125,8 +125,8 @@ Use near the end.
 - What will change over time?
 - What should PiCM help keep fresh?
 - When should the user run `/picm-maintain`?
-- Should maintenance stay manual, use the recommended monthly nudge, or run an automatic read-only advisory check in the first eligible interactive TUI session after it is due?
-- If the user wants another cadence, accept a positive integer interval in days, weeks, or months. Explain that nothing runs while Pi is closed or in print/JSON/RPC/headless modes, and that automatic maintenance cannot repair, write a report, commit, or cause external side effects.
+- Should maintenance stay manual, or do you want scheduled maintenance reminders with a cadence in days, weeks, or months (such as a monthly reminder)? Do not offer separate nudge versus automatic choices.
+- If the user wants scheduled reminders, accept a positive integer interval in days, weeks, or months. Explain that nothing runs while Pi is closed or in print/JSON/RPC/headless modes, that due maintenance presents Run Now and Defer options above the editor, and that maintenance cannot repair, write a report, commit, or cause external side effects without approval.
 - If skipped or declined, omit the maintenance policy. Otherwise explain that `.picm/config.json` must remain non-ignored and a regular non-symlink file under a regular non-symlink `.picm/` directory; then use `picm_maintenance_policy` preview to calculate exact timestamps and include that object in the final config preview. The cadence choice itself is not approval to write files.
 
 ## Scaffold approval gates

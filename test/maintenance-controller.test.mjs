@@ -46,7 +46,8 @@ test("startup probe handles absent, manual, not-due, nudge, automatic, and dedup
   const seen = new Set();
   const nudgeController = createMaintenanceController({ store: memoryStore(dueNudge), now });
   const nudge = await nudgeController.startupProbe({ mode: "tui", seenKeys: seen });
-  assert.equal(nudge.action, "notify");
+  assert.equal(nudge.action, "due");
+  seen.add(nudge.dueKey);
   assert.equal((await nudgeController.startupProbe({ mode: "tui", seenKeys: seen })).reason, "already-seen");
 
   const future = createPolicy({ mode: "nudge", intervalValue: 2, intervalUnit: "days", now: "2026-01-01T00:00:00.000Z" });
@@ -55,26 +56,9 @@ test("startup probe handles absent, manual, not-due, nudge, automatic, and dedup
   const automatic = createPolicy({ mode: "automatic", intervalValue: 1, intervalUnit: "days", now: "2026-01-01T00:00:00.000Z" });
   const autoStore = memoryStore(automatic);
   const auto = await createMaintenanceController({ store: autoStore, now }).startupProbe({ mode: "tui", seenKeys: new Set() });
-  assert.equal(auto.action, "dispatch");
-  assert.equal(autoStore.current().maintenance.lastCycleAt, "2026-01-02T00:00:00.000Z");
-  assert.equal(autoStore.current().maintenance.nextDueAt, "2026-01-03T00:00:00.000Z");
-});
-
-test("automatic claim rollback is conditional on the claimed replacement", async () => {
-  const previous = createPolicy({ mode: "automatic", intervalValue: 1, intervalUnit: "days", now: "2026-01-01T00:00:00.000Z" });
-  const store = memoryStore(previous);
-  const controller = createMaintenanceController({ store, now: () => new Date("2026-01-02T00:00:00.000Z") });
-  const claim = await controller.claimAutomaticCycle(previous);
-  assert.equal(claim.claimed, true);
-  assert.equal((await controller.rollbackAutomaticClaim(claim)).rolledBack, true);
-  assert.deepEqual(store.current().maintenance, previous);
-
-  const secondClaim = await controller.claimAutomaticCycle(previous);
-  assert.equal(secondClaim.claimed, true);
-  await store.updateMaintenance(createPolicy({ mode: "automatic", intervalValue: 2, intervalUnit: "days", now: "2026-01-02T00:00:00.000Z" }));
-  const conflicted = await controller.rollbackAutomaticClaim(secondClaim);
-  assert.equal(conflicted.rolledBack, false);
-  assert.equal(conflicted.code, "MAINTENANCE_ROLLBACK_CONFLICT");
+  assert.equal(auto.action, "due");
+  assert.equal(autoStore.current().maintenance.lastCycleAt, "2026-01-01T00:00:00.000Z");
+  assert.equal(autoStore.current().maintenance.nextDueAt, "2026-01-02T00:00:00.000Z");
 });
 
 test("explicit cycle reset affects scheduled modes but not manual", async () => {

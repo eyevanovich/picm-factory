@@ -162,9 +162,9 @@ test("revalidates Git ignore authorization under the lock", async (t) => {
   assert.equal(await fs.readFile(path, "utf8"), original);
 });
 
-test("two concurrent startup probes atomically produce one automatic dispatch", async (t) => {
+test("two concurrent cycle resets atomically allow one update", async (t) => {
   const { cwd, gate } = await repository(t);
-  const due = createPolicy({ mode: "automatic", intervalValue: 1, intervalUnit: "days", now: "2026-01-01T00:00:00.000Z" });
+  const due = createPolicy({ mode: "nudge", intervalValue: 1, intervalUnit: "days", now: "2026-01-01T00:00:00.000Z" });
   await fs.mkdir(join(cwd, ".picm"));
   await fs.writeFile(join(cwd, ".picm/config.json"), `${JSON.stringify({ version: 1, maintenance: due }, null, 2)}\n`);
 
@@ -188,11 +188,10 @@ test("two concurrent startup probes atomically produce one automatic dispatch", 
     now: () => new Date("2026-01-02T00:00:00.000Z"),
   }));
 
-  const decisions = await Promise.all(controllers.map((controller) => controller.startupProbe({ mode: "tui" })));
-  assert.equal(decisions.filter((decision) => decision.action === "dispatch").length, 1);
-  const loser = decisions.find((decision) => decision.action === "none");
-  assert.equal(loser.reason, "already-claimed");
-  assert.equal(loser.code, "MAINTENANCE_ALREADY_CLAIMED");
+  const decisions = await Promise.all(controllers.map((controller) => controller.resetExistingCycle()));
+  assert.equal(decisions.filter((decision) => decision.ok && decision.changed).length, 1);
+  const loser = decisions.find((decision) => decision.ok && !decision.changed);
+  assert.equal(loser.conflict, true);
 });
 
 test("post-rename directory sync failure reports a committed change", async (t) => {
