@@ -382,6 +382,60 @@ test("Maintenance failure or cancellation before complete leaves maintenance due
   assert.equal(readFileSync(join(cwd, ".picm/config.json"), "utf8"), before);
 });
 
+test("completion requires the ordinary privacy-reviewed scan flow", async (t) => {
+  const cwd = fixture(t, oldDue("nudge"));
+  const h = harness();
+  const ctx = h.context(cwd);
+  const before = readFileSync(join(cwd, ".picm/config.json"), "utf8");
+
+  await h.commands.get("picm-maintain").handler("strict", ctx);
+  await assert.rejects(
+    h.scanControl.execute("id", { action: "complete" }, undefined, undefined, ctx),
+    /PICM_PREFLIGHT_INCOMPLETE/,
+  );
+  await h.scanControl.execute("id", { action: "preflight" }, undefined, undefined, ctx);
+  await assert.rejects(
+    h.scanControl.execute("id", { action: "complete" }, undefined, undefined, ctx),
+    /PICM_PRIVACY_NOT_REVIEWED/,
+  );
+  await h.scanControl.execute("id", { action: "privacy", excludedPaths: [], persist: false }, undefined, undefined, ctx);
+  await assert.rejects(
+    h.scanControl.execute("id", { action: "complete" }, undefined, undefined, ctx),
+    /PICM_SCAN_NOT_STARTED/,
+  );
+
+  assert.equal(readFileSync(join(cwd, ".picm/config.json"), "utf8"), before);
+  assert.equal(h.entries.some((entry) => entry.data.status === "completed"), false);
+});
+
+test("a maintenance reset conflict leaves the losing workflow incomplete", async (t) => {
+  const cwd = fixture(t, oldDue("nudge"));
+  const h = harness();
+  const first = h.context(cwd, "tui", "first-maintenance-session");
+  const second = h.context(cwd, "tui", "second-maintenance-session");
+
+  for (const ctx of [first, second]) {
+    await h.commands.get("picm-maintain").handler("strict", ctx);
+    await h.scanControl.execute("id", { action: "preflight" }, undefined, undefined, ctx);
+    await h.scanControl.execute("id", { action: "privacy", excludedPaths: [], persist: false }, undefined, undefined, ctx);
+    await h.scanControl.execute("id", { action: "begin" }, undefined, undefined, ctx);
+    await h.scanControl.execute("id", { action: "end" }, undefined, undefined, ctx);
+  }
+
+  const results = await Promise.allSettled([
+    h.scanControl.execute("first", { action: "complete" }, undefined, undefined, first),
+    h.scanControl.execute("second", { action: "complete" }, undefined, undefined, second),
+  ]);
+  assert.equal(results.filter(({ status }) => status === "fulfilled").length, 1);
+  assert.equal(results.filter(({ status }) => status === "rejected").length, 1);
+  assert.match(results.find(({ status }) => status === "rejected").reason.message, /MAINTENANCE_POLICY_CONFLICT/);
+
+  const incomplete = results[0].status === "rejected" ? first : second;
+  const status = await h.scanControl.execute("status", { action: "status" }, undefined, undefined, incomplete);
+  assert.equal(status.details.completed, false);
+  assert.equal(status.details.maintenanceResetAttempted, false);
+});
+
 test("Legacy automatic and nudge modes both present the reminder selector rather than auto-dispatching", async (t) => {
   for (const mode of ["automatic", "nudge"]) {
     const cwd = fixture(t, oldDue(mode));
