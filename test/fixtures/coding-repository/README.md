@@ -8,4 +8,6 @@ These synthetic repositories exercise the Coding Repository profile and composab
 - `existing-doc-duplication/` — pre-adoption conflicting documentation for Curated proposal QA.
 - `ignored-secrets-existing/` — pre-adoption Git-ignore boundary fixture; create only clearly synthetic ignored files in a disposable copy as documented in `docs/layout-fixture-qa.md`.
 
+The three adopted fixtures model new Strict-first adoption and therefore store `capabilities.codebaseMap.maintenancePreset: "strict"`. Focused compatibility tests separately cover historical explicit `light`, `balanced`, and `strict` values plus the missing-value Balanced fallback.
+
 Fixtures are recommendations and test surfaces, not canonical repository schemas. Interactive `/picm-*` QA must use disposable Git copies and must not write without an exact preview and explicit approval.

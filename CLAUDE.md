@@ -1,3 +1,2 @@
-# Project Instructions
-
-Read `AGENTS.md` for canonical project instructions.
+<!-- Points Claude at AGENTS.md via import; edit AGENTS.md, not this file. -->
+@AGENTS.md

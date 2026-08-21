@@ -94,8 +94,9 @@ Then ask for:
 
 1. root map, distributed map, or scan and recommend;
 2. additive or curated adoption;
-3. Light, Balanced, or Strict maintenance (Balanced default);
-4. optional user hints about meaningful boundaries and hidden constraints.
+3. optional user hints about meaningful boundaries and hidden constraints.
+
+Do not ask for maintenance depth. Initial coding adoption automatically performs the Strict examination and the exact config preview stores `capabilities.codebaseMap.maintenancePreset: "strict"`. Strict (recommended): broader systematic coverage across declared roots and mapped contexts; higher cost.
 
 Root/distributed describes the resulting map. Scan and recommend is only the analysis path. Coding and workflow scopes may overlap.
 
@@ -148,9 +149,8 @@ Classify routing quality:
 Suggested `CLAUDE.md` shim:
 
 ```markdown
-# Project Instructions
-
-Read `AGENTS.md` for canonical project instructions. This file exists for Claude Code compatibility.
+<!-- Points Claude at AGENTS.md via import; edit AGENTS.md, not this file. -->
+@AGENTS.md
 ```
 
 ## Routing proposal options
@@ -230,7 +230,7 @@ Scanned-only example:
 
 Keep `scanSummary` brief. Put detailed findings in `.picm/adoption-report.md`.
 
-When coding mapping is enabled, preserve one primary `profile` and add a minimal optional `capabilities.codebaseMap` object with the resulting `shape` (`root` or `distributed`), approved `roots`, map/equivalent path, selected local contexts, and maintenance preset. A Coding Repository profile implies this capability; a hybrid retains its workflow profile and adds the same capability. Roots may overlap workflow folders. Approved durable scan exclusions live separately under `privacy.excludedPaths` and remain effective even when `.gitignore` is absent or later changes.
+When coding mapping is enabled, preserve one primary `profile` and add a minimal optional `capabilities.codebaseMap` object with the resulting `shape` (`root` or `distributed`), approved `roots`, map/equivalent path, selected local contexts, and `maintenancePreset: "strict"`. A Coding Repository profile implies this capability; a hybrid retains its workflow profile and adds the same capability. Roots may overlap workflow folders. Approved durable scan exclusions live separately under `privacy.excludedPaths` and remain effective even when `.gitignore` is absent or later changes.
 
 Even `.picm/` writes use `preview-review-protocol.md`: a complete concise summary, any mandatory exact review, and separate explicit approval for the current proposal. Do not treat “choose option 3 scanned only” as approval to write. The deterministic exact TUI confirmation for persisted privacy exclusions remains intact and does not authorize other writes.
 
@@ -282,7 +282,7 @@ Use this structure:
 ## Coding adoption
 - Mapping approach and resulting shape
 - Approved code roots and local-context boundaries
-- Maintenance preset
+- Automatic Strict examination and stored `maintenancePreset: "strict"`
 - Evidence, confidence, and unknowns
 
 ## Documentation consolidation proposal

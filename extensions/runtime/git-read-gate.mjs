@@ -1,5 +1,6 @@
 import { execFile } from "node:child_process";
-import { lstat, mkdtemp, realpath, rm } from "node:fs/promises";
+import { realpathSync } from "node:fs";
+import { lstat, mkdtemp, opendir, realpath, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -8,11 +9,24 @@ import {
   normalizePrivacyExcludedPaths,
   privacyPathMatches,
 } from "./privacy-policy.mjs";
+import {
+  createPathExecutionBinding,
+  fileIdentity,
+  resolvePathBindingLimits,
+} from "./path-execution-binding.mjs";
 
 const execFileAsync = promisify(execFile);
-const PATH_TOOLS = new Set(["read", "edit", "write", "grep", "find", "ls"]);
-const READ_LIKE_TOOLS = new Set(["read", "edit", "grep", "find", "ls"]);
-const TRAVERSAL_TOOLS = new Set(["grep", "find", "ls"]);
+const PATH_TOOLS = new Set(["read", "edit", "write", "grep", "rg", "find", "ls"]);
+const READ_LIKE_TOOLS = new Set(["read", "edit", "grep", "rg", "find", "ls"]);
+const TRAVERSAL_TOOLS = new Set(["grep", "rg", "find", "ls"]);
+const UNREGISTERED_NESTED_GIT_BOUNDARY = "PICM_UNREGISTERED_NESTED_GIT_BOUNDARY";
+
+function unregisteredNestedGitBoundary(message, boundaryRoot) {
+  return Object.assign(new Error(message), {
+    code: UNREGISTERED_NESTED_GIT_BOUNDARY,
+    boundaryRoot,
+  });
+}
 
 function isInside(parent, child) {
   const path = relative(parent, child);
@@ -29,6 +43,16 @@ function parseNullList(output) {
 
 function stripAtPrefix(path) {
   return path.startsWith("@") ? path.slice(1) : path;
+}
+
+function hasGitlinkEntry(output, gitPath) {
+  return output.split("\0").some((entry) => (
+    /^160000\s/.test(entry) && entry.endsWith(`\t${gitPath}`)
+  ));
+}
+
+function hasMultipleHardLinks(stat) {
+  return stat?.isFile?.() === true && typeof stat.nlink === "number" && stat.nlink > 1;
 }
 
 async function defaultRunGit(cwd, args) {
@@ -57,16 +81,24 @@ export function packageRootFromImportMeta(importMetaUrl) {
 export function createGitReadGate({
   cwd,
   packageRoot,
+  canonicalPackageRoot: configuredCanonicalPackageRoot,
+  pathBindingLimits,
   runGit = defaultRunGit,
-  fs = { lstat, realpath, mkdtemp, rm },
+  fs = { lstat, realpath, realpathSync, mkdtemp, rm },
 } = {}) {
   if (!cwd) throw new Error("Git read gate requires cwd");
   if (!packageRoot) throw new Error("Git read gate requires packageRoot");
 
+  const declaredPackageRoot = resolve(packageRoot);
+  const bindingLimits = resolvePathBindingLimits(pathBindingLimits);
   let worktree;
   let canonicalWorktree;
   let canonicalCwd;
-  let canonicalPackageRoot;
+  let canonicalPackageRoot = typeof configuredCanonicalPackageRoot === "string"
+    ? resolve(configuredCanonicalPackageRoot)
+    : typeof fs.realpathSync === "function"
+      ? fs.realpathSync(declaredPackageRoot)
+      : undefined;
   let isolatedGitRoot;
   let isolatedGitDir;
   let isolatedGitInit;
@@ -77,6 +109,8 @@ export function createGitReadGate({
   let resolveOperationIdle;
   let candidates = new Set();
   let ignored = new Set();
+  const bindingPlans = new WeakSet();
+  const activeBindings = new Set();
 
   async function withOperation(operation) {
     if (disposed) throw new Error("Git read gate is disposed");
@@ -259,43 +293,181 @@ export function createGitReadGate({
     };
   }
 
-  async function boundaryForPath(canonicalPath) {
-    if (usingIsolatedGit) return undefined;
-    let discoveryCwd = dirname(canonicalPath);
-    try {
-      const stat = await fs.lstat(canonicalPath);
-      if (stat.isDirectory()) discoveryCwd = canonicalPath;
-    } catch (error) {
-      if (error?.code !== "ENOENT") throw error;
+  async function nestedGitMarker(startPath) {
+    for (
+      let candidate = startPath;
+      isInside(canonicalWorktree, candidate);
+      candidate = dirname(candidate)
+    ) {
+      try {
+        await fs.lstat(join(candidate, ".git"));
+        return candidate;
+      } catch (error) {
+        if (error?.code !== "ENOENT") throw error;
+      }
+      if (candidate === canonicalWorktree) break;
     }
+    return undefined;
+  }
+
+  async function boundaryForPath(resolvedPath) {
+    const intendedDirectory = resolvedPath.stat?.isDirectory()
+      ? resolvedPath.canonicalPath
+      : dirname(resolvedPath.canonicalPath);
+    let discoveryCwd;
+    if (resolvedPath.stat) {
+      discoveryCwd = intendedDirectory;
+    } else {
+      if (!resolvedPath.existingStat?.isDirectory()) {
+        throw new Error("prospective write parent is not a directory");
+      }
+      discoveryCwd = resolvedPath.canonicalExistingPath;
+    }
+    if (
+      !isInside(canonicalWorktree, intendedDirectory) ||
+      !isInside(canonicalWorktree, discoveryCwd)
+    ) {
+      throw new Error("Git boundary discovery path is outside the canonical worktree");
+    }
+
+    if (usingIsolatedGit) {
+      const result = await runGit(discoveryCwd, ["rev-parse", "--show-toplevel"]);
+      if (result.code !== 0) {
+        const boundaryRoot = await nestedGitMarker(intendedDirectory);
+        if (boundaryRoot) {
+          throw unregisteredNestedGitBoundary(
+            "Nested Git worktree is not registered as a parent gitlink",
+            boundaryRoot,
+          );
+        }
+        if (/fatal:\s+not a git repository\b/i.test(result.stderr)) return undefined;
+        throw new Error(
+          `Nested Git worktree discovery failed: ${result.stderr.trim() || `exit ${result.code}`}`,
+        );
+      }
+      if (!result.stdout.trim()) {
+        throw new Error("Nested Git worktree discovery returned an empty root");
+      }
+      const nestedRoot = await fs.realpath(resolve(result.stdout.trim()));
+      if (nestedRoot === canonicalWorktree) {
+        const boundaryRoot = await nestedGitMarker(intendedDirectory);
+        if (boundaryRoot && boundaryRoot !== canonicalWorktree) {
+          throw unregisteredNestedGitBoundary(
+            "Nested Git worktree is not registered as a parent gitlink",
+            boundaryRoot,
+          );
+        }
+        return undefined;
+      }
+      if (!isInside(canonicalWorktree, nestedRoot)) {
+        throw new Error("Nested Git worktree discovery resolved outside the canonical worktree");
+      }
+      throw unregisteredNestedGitBoundary(
+        "Nested Git worktree is not registered as a parent gitlink",
+        nestedRoot,
+      );
+    }
+
+    let parentGitlinkBoundary;
+    for (
+      let candidate = intendedDirectory;
+      candidate !== canonicalWorktree && isInside(canonicalWorktree, candidate);
+      candidate = dirname(candidate)
+    ) {
+      const parentPath = toGitPath(canonicalWorktree, candidate);
+      const gitlink = await runGit(canonicalWorktree, ["ls-files", "--stage", "-z", "--", parentPath]);
+      if (gitlink.code !== 0) {
+        throw new Error(`Parent Gitlink query failed: ${gitlink.stderr.trim() || `exit ${gitlink.code}`}`);
+      }
+      if (hasGitlinkEntry(gitlink.stdout, parentPath)) {
+        parentGitlinkBoundary = candidate;
+        break;
+      }
+    }
+
     const result = await runGit(discoveryCwd, ["rev-parse", "--show-toplevel"]);
-    if (result.code !== 0) return undefined;
+    if (result.code !== 0) {
+      if (parentGitlinkBoundary) {
+        throw new Error(`Nested Git worktree discovery failed: ${result.stderr.trim() || `exit ${result.code}`}`);
+      }
+      const boundaryRoot = await nestedGitMarker(intendedDirectory);
+      if (boundaryRoot && boundaryRoot !== canonicalWorktree) {
+        throw unregisteredNestedGitBoundary(
+          "Nested Git worktree is not registered as a parent gitlink",
+          boundaryRoot,
+        );
+      }
+      if (/fatal:\s+not a git repository\b/i.test(result.stderr)) return undefined;
+      throw new Error(`Nested Git worktree discovery failed: ${result.stderr.trim() || `exit ${result.code}`}`);
+    }
+    if (!result.stdout.trim()) throw new Error("Nested Git worktree discovery returned an empty root");
     const nestedRoot = await fs.realpath(resolve(result.stdout.trim()));
-    if (nestedRoot === canonicalWorktree || !isInside(canonicalWorktree, nestedRoot)) return undefined;
+    if (parentGitlinkBoundary && nestedRoot !== parentGitlinkBoundary) {
+      if (isInside(parentGitlinkBoundary, nestedRoot)) {
+        throw unregisteredNestedGitBoundary(
+          "Nested Git worktree discovery did not resolve the parent gitlink boundary",
+          nestedRoot,
+        );
+      }
+      throw new Error("Nested Git worktree discovery did not resolve the parent gitlink boundary");
+    }
+    if (nestedRoot === canonicalWorktree) {
+      const boundaryRoot = await nestedGitMarker(intendedDirectory);
+      if (boundaryRoot && boundaryRoot !== canonicalWorktree) {
+        throw unregisteredNestedGitBoundary(
+          "Nested Git worktree is not registered as a parent gitlink",
+          boundaryRoot,
+        );
+      }
+      return undefined;
+    }
+    if (!isInside(canonicalWorktree, nestedRoot)) {
+      throw new Error("Nested Git worktree discovery resolved outside the canonical worktree");
+    }
+
     const parentPath = toGitPath(canonicalWorktree, nestedRoot);
-    const gitlink = await runGit(canonicalWorktree, ["ls-files", "--stage", "--", parentPath]);
-    if (gitlink.code !== 0 || !/^160000\s/m.test(gitlink.stdout)) return undefined;
+    const gitlink = await runGit(canonicalWorktree, ["ls-files", "--stage", "-z", "--", parentPath]);
+    if (gitlink.code !== 0) {
+      throw new Error(`Parent Gitlink query failed: ${gitlink.stderr.trim() || `exit ${gitlink.code}`}`);
+    }
+    if (!hasGitlinkEntry(gitlink.stdout, parentPath)) {
+      throw unregisteredNestedGitBoundary(
+        "Nested Git worktree is not registered as a parent gitlink",
+        nestedRoot,
+      );
+    }
     return nestedRoot;
   }
 
-  async function isTrustedPackageRead(path, toolName) {
-    if (toolName !== "read") return false;
-    canonicalPackageRoot ??= await fs.realpath(packageRoot);
+  async function trustedPackageReadDecision(resolvedPath, toolName) {
+    if (toolName !== "read") return undefined;
+    canonicalPackageRoot ??= await fs.realpath(declaredPackageRoot);
 
-    let canonicalPath;
-    try {
-      canonicalPath = await fs.realpath(path);
-    } catch {
-      return false;
+    let packageRelativePath;
+    if (isInside(declaredPackageRoot, resolvedPath.absolutePath)) {
+      packageRelativePath = relative(declaredPackageRoot, resolvedPath.absolutePath);
+    } else if (isInside(canonicalPackageRoot, resolvedPath.absolutePath)) {
+      packageRelativePath = relative(canonicalPackageRoot, resolvedPath.absolutePath);
+    } else {
+      return undefined;
     }
-    if (!isInside(canonicalPackageRoot, canonicalPath)) return false;
 
-    const packagePath = toGitPath(canonicalPackageRoot, canonicalPath);
-    return (
+    const expectedCanonicalPath = resolve(canonicalPackageRoot, packageRelativePath);
+    if (resolvedPath.canonicalPath !== expectedCanonicalPath) return undefined;
+
+    const packagePath = packageRelativePath.split(sep).join("/") || ".";
+    const trusted = (
       packagePath === "skills/picm-factory/SKILL.md" ||
       packagePath.startsWith("skills/picm-factory/references/") ||
       packagePath.startsWith("skills/picm-factory/templates/")
     );
+    if (!trusted) return undefined;
+    return allowedPathDecision({
+      allowed: true,
+      protected: true,
+      reason: "trusted packaged PiCM resource",
+      canonicalPath: resolvedPath.canonicalPath,
+    }, toolName, resolvedPath);
   }
 
   async function resolveExistingPath(inputPath, stripToolPrefix) {
@@ -305,8 +477,18 @@ export function createGitReadGate({
     if (stat.isSymbolicLink()) {
       return { blocked: true, reason: "symlinks are not readable during guarded scans" };
     }
+    if (hasMultipleHardLinks(stat)) {
+      return { blocked: true, reason: "files with multiple hard links are not accessible during guarded scans" };
+    }
     const canonicalPath = await fs.realpath(absolutePath);
-    return { absolutePath, canonicalPath, stat };
+    return {
+      absolutePath,
+      canonicalPath,
+      stat,
+      existingPath: absolutePath,
+      canonicalExistingPath: canonicalPath,
+      existingStat: stat,
+    };
   }
 
   async function resolveProspectivePath(inputPath, stripToolPrefix) {
@@ -319,12 +501,18 @@ export function createGitReadGate({
         if (stat.isSymbolicLink()) {
           return { blocked: true, reason: "symlink targets are not writable during guarded scans" };
         }
-        const canonicalExisting = await fs.realpath(existing);
+        if (existing === absolutePath && hasMultipleHardLinks(stat)) {
+          return { blocked: true, reason: "files with multiple hard links are not writable during guarded scans" };
+        }
+        const canonicalExistingPath = await fs.realpath(existing);
         const suffix = relative(existing, absolutePath);
         return {
           absolutePath,
-          canonicalPath: resolve(canonicalExisting, suffix),
+          canonicalPath: resolve(canonicalExistingPath, suffix),
           stat: existing === absolutePath ? stat : undefined,
+          existingPath: existing,
+          canonicalExistingPath,
+          existingStat: stat,
         };
       } catch (error) {
         if (error?.code !== "ENOENT") throw error;
@@ -333,6 +521,203 @@ export function createGitReadGate({
         existing = parent;
       }
     }
+  }
+
+  function executionBindingPlan(toolName, resolvedPath) {
+    if (!["read", "edit", "write", "grep", "rg", "find", "ls"].includes(toolName)) return undefined;
+    const plan = {
+      toolName,
+      absolutePath: resolvedPath.absolutePath,
+      canonicalPath: resolvedPath.canonicalPath,
+      targetIdentity: resolvedPath.stat ? fileIdentity(resolvedPath.stat) : undefined,
+      existingPath: resolvedPath.existingPath,
+      canonicalExistingPath: resolvedPath.canonicalExistingPath,
+      existingIdentity: fileIdentity(resolvedPath.existingStat),
+      traversalEntries: resolvedPath.traversalEntries,
+    };
+    bindingPlans.add(plan);
+    return plan;
+  }
+
+  async function traversalDirectoryIsIgnored(canonicalPath, inventory) {
+    const gitPath = toGitPath(inventory.worktree, canonicalPath);
+    if (gitPath === ".git" || gitPath.startsWith(".git/")) return true;
+    const result = inventory.isolated || inventory.worktree === worktree
+      ? await runWorkspaceGit(["check-ignore", "--no-index", "-q", "--", gitPath])
+      : await runGit(inventory.worktree, ["check-ignore", "--no-index", "-q", "--", gitPath]);
+    if (result.code === 0) return true;
+    if (result.code === 1) return false;
+    throw new Error(`Git ignore check was unresolved: ${result.stderr.trim() || `exit ${result.code}`}`);
+  }
+
+  async function addTraversalEntries(resolvedPath, inventory, exclusions) {
+    if (!resolvedPath.stat?.isDirectory()) return;
+    const entries = [];
+    const entryPaths = new Set();
+    const directories = new Set();
+    const accountedPaths = new Set();
+    const canonicalInventoryRoot = await fs.realpath(inventory.worktree);
+    const boundaryCache = new Map();
+    const blockedBoundaryRoots = [];
+    let metadataBytes = 0;
+
+    const traversalBoundaryDisposition = async (absolutePath, canonicalPath, stat) => {
+      const directory = stat.isDirectory() ? canonicalPath : dirname(canonicalPath);
+      if (blockedBoundaryRoots.some((boundaryRoot) => isInside(boundaryRoot, directory))) {
+        return { admitted: false, recurse: false };
+      }
+      let result = boundaryCache.get(directory);
+      if (!result) {
+        try {
+          const boundary = await boundaryForPath({
+            absolutePath,
+            canonicalPath,
+            stat,
+            existingPath: absolutePath,
+            canonicalExistingPath: canonicalPath,
+            existingStat: stat,
+          });
+          result = { boundary };
+        } catch (error) {
+          if (error?.code !== UNREGISTERED_NESTED_GIT_BOUNDARY) throw error;
+          if (typeof error.boundaryRoot === "string") {
+            blockedBoundaryRoots.push(error.boundaryRoot);
+          }
+          result = { blocked: true };
+        }
+        boundaryCache.set(directory, result);
+      }
+      if (result.blocked) return { admitted: false, recurse: false };
+      if (!result.boundary || result.boundary === canonicalInventoryRoot) {
+        return { admitted: true, recurse: true };
+      }
+      const boundaryRoot = stat.isDirectory() && canonicalPath === result.boundary;
+      return { admitted: boundaryRoot, recurse: false };
+    };
+    const accountPath = (displayPath) => {
+      if (accountedPaths.has(displayPath)) return;
+      if (accountedPaths.size >= bindingLimits.maxTraversalEntries) {
+        throw new Error(
+          `traversal admission exceeds ${bindingLimits.maxTraversalEntries} entries`,
+        );
+      }
+      const nextBytes = metadataBytes + Buffer.byteLength(displayPath, "utf8") + 64;
+      if (nextBytes > bindingLimits.maxTraversalSnapshotBytes) {
+        throw new Error(
+          `traversal admission exceeds ${bindingLimits.maxTraversalSnapshotBytes} bytes`,
+        );
+      }
+      accountedPaths.add(displayPath);
+      metadataBytes = nextBytes;
+    };
+    const appendEntry = (entry) => {
+      accountPath(entry.displayPath);
+      if (entryPaths.has(entry.displayPath)) return;
+      entryPaths.add(entry.displayPath);
+      entries.push(entry);
+    };
+    for (const candidate of inventory.candidates) {
+      const absolutePath = resolve(inventory.worktree, candidate);
+      if (absolutePath === resolvedPath.absolutePath) continue;
+      try {
+        const stat = await fs.lstat(absolutePath);
+        if (stat.isSymbolicLink() || !stat.isFile() || hasMultipleHardLinks(stat)) continue;
+        const canonicalPath = await fs.realpath(absolutePath);
+        if (
+          !isInside(resolvedPath.canonicalPath, canonicalPath) ||
+          !isInside(canonicalWorktree, canonicalPath) ||
+          await privacyDecision(canonicalPath, exclusions)
+        ) continue;
+        const boundary = await traversalBoundaryDisposition(absolutePath, canonicalPath, stat);
+        if (!boundary.admitted) continue;
+        const displayPath = resolve(
+          resolvedPath.absolutePath,
+          relative(resolvedPath.canonicalPath, canonicalPath),
+        );
+        for (let directory = dirname(displayPath); isInside(resolvedPath.absolutePath, directory) && directory !== resolvedPath.absolutePath; directory = dirname(directory)) {
+          accountPath(directory);
+          directories.add(directory);
+        }
+        appendEntry({
+          absolutePath,
+          canonicalPath,
+          displayPath,
+          isDirectory: false,
+          identity: fileIdentity(stat),
+        });
+      } catch (error) {
+        if (error?.code !== "ENOENT") throw error;
+      }
+    }
+    for (const displayPath of directories) {
+      const admittedStat = await fs.lstat(displayPath);
+      if (admittedStat.isSymbolicLink() || !admittedStat.isDirectory()) continue;
+      const canonicalPath = await fs.realpath(displayPath);
+      if (
+        isInside(resolvedPath.canonicalPath, canonicalPath) &&
+        isInside(canonicalWorktree, canonicalPath) &&
+        !await traversalDirectoryIsIgnored(canonicalPath, inventory) &&
+        !await privacyDecision(canonicalPath, exclusions)
+      ) {
+        const boundary = await traversalBoundaryDisposition(
+          displayPath,
+          canonicalPath,
+          admittedStat,
+        );
+        if (!boundary.admitted) continue;
+        appendEntry({
+          absolutePath: displayPath,
+          canonicalPath,
+          displayPath,
+          isDirectory: true,
+          identity: fileIdentity(admittedStat),
+        });
+      }
+    }
+    const pendingDirectories = [resolvedPath.absolutePath];
+    let discoveredDirectoryEntries = 0;
+    while (pendingDirectories.length > 0) {
+      const parentPath = pendingDirectories.pop();
+      for await (const child of await opendir(parentPath)) {
+        discoveredDirectoryEntries += 1;
+        if (discoveredDirectoryEntries > bindingLimits.maxTraversalEntries) {
+          throw new Error(
+            `traversal discovery exceeds ${bindingLimits.maxTraversalEntries} entries`,
+          );
+        }
+        if (!child.isDirectory() || child.isSymbolicLink()) continue;
+        const displayPath = resolve(parentPath, child.name);
+        const admittedStat = await fs.lstat(displayPath);
+        if (admittedStat.isSymbolicLink() || !admittedStat.isDirectory()) continue;
+        const canonicalPath = await fs.realpath(displayPath);
+        if (
+          !isInside(resolvedPath.canonicalPath, canonicalPath) ||
+          !isInside(canonicalWorktree, canonicalPath) ||
+          await traversalDirectoryIsIgnored(canonicalPath, inventory) ||
+          await privacyDecision(canonicalPath, exclusions)
+        ) continue;
+        const boundary = await traversalBoundaryDisposition(
+          displayPath,
+          canonicalPath,
+          admittedStat,
+        );
+        if (!boundary.admitted) continue;
+        appendEntry({
+          absolutePath: displayPath,
+          canonicalPath,
+          displayPath,
+          isDirectory: true,
+          identity: fileIdentity(admittedStat),
+        });
+        if (boundary.recurse) pendingDirectories.push(displayPath);
+      }
+    }
+    resolvedPath.traversalEntries = entries;
+  }
+
+  function allowedPathDecision(decision, toolName, resolvedPath) {
+    const executionBinding = executionBindingPlan(toolName, resolvedPath);
+    return executionBinding ? { ...decision, executionBinding } : decision;
   }
 
   async function privacyPathFor(canonicalPath) {
@@ -371,6 +756,67 @@ export function createGitReadGate({
     };
   }
 
+  async function guardedInventoryForPath(resolvedPath, exclusions) {
+    const { canonicalPath } = resolvedPath;
+    const primaryGitPath = toGitPath(canonicalWorktree, canonicalPath);
+    if (primaryGitPath === ".git" || primaryGitPath.startsWith(".git/")) {
+      return { decision: { allowed: false, protected: true, reason: ".git internals are not readable" } };
+    }
+
+    const nestedBoundary = await boundaryForPath(resolvedPath);
+    const boundaryRoot = nestedBoundary ?? canonicalWorktree;
+    const gitPath = toGitPath(boundaryRoot, canonicalPath);
+    if (gitPath === ".git" || gitPath.startsWith(".git/")) {
+      return { decision: { allowed: false, protected: true, reason: ".git internals are not readable" } };
+    }
+
+    if (nestedBoundary) {
+      const parentBoundaryPath = toGitPath(canonicalWorktree, nestedBoundary);
+      const parentIgnore = await runWorkspaceGit([
+        "check-ignore",
+        "--no-index",
+        "-q",
+        "--",
+        parentBoundaryPath,
+      ]);
+      if (parentIgnore.code === 0) {
+        return { decision: { allowed: false, protected: true, reason: "submodule boundary is ignored by parent Git worktree" } };
+      }
+      if (parentIgnore.code !== 1) {
+        return {
+          decision: {
+            allowed: false,
+            protected: true,
+            reason: `Parent Git ignore check was unresolved: ${parentIgnore.stderr.trim() || `exit ${parentIgnore.code}`}`,
+          },
+        };
+      }
+    }
+
+    const inventory = await filterPrivacyInventory(
+      nestedBoundary
+        ? await inventoryForBoundary(nestedBoundary)
+        : await refreshInventoryUnchecked(),
+      exclusions,
+    );
+    const ignoreResult = nestedBoundary
+      ? await runGit(nestedBoundary, ["check-ignore", "--no-index", "-q", "--", gitPath])
+      : await runWorkspaceGit(["check-ignore", "--no-index", "-q", "--", gitPath]);
+    if (ignoreResult.code === 0) {
+      return { decision: { allowed: false, protected: true, reason: "path is ignored by Git" } };
+    }
+    if (ignoreResult.code !== 1) {
+      return {
+        decision: {
+          allowed: false,
+          protected: true,
+          reason: `Git ignore check was unresolved: ${ignoreResult.stderr.trim() || `exit ${ignoreResult.code}`}`,
+        },
+      };
+    }
+    return { inventory, gitPath };
+  }
+
   async function checkPrivacyPath(toolName, inputPath, privacyExcludedPaths = []) {
     if (!PATH_TOOLS.has(toolName) || privacyExcludedPaths.length === 0) {
       return { allowed: true, protected: false };
@@ -386,11 +832,28 @@ export function createGitReadGate({
       if (resolvedPath.blocked) {
         return { allowed: false, protected: true, reason: resolvedPath.reason };
       }
-      return await privacyDecision(resolvedPath.canonicalPath, exclusions) ?? {
+      const decision = await privacyDecision(resolvedPath.canonicalPath, exclusions) ?? {
         allowed: true,
         protected: true,
         reason: "path is outside configured PiCM privacy exclusions",
       };
+      if (decision.allowed && resolvedPath.stat?.isDirectory()) {
+        if (!TRAVERSAL_TOOLS.has(toolName)) {
+          return {
+            allowed: false,
+            protected: true,
+            reason: "path is not in the Git-derived candidate inventory",
+          };
+        }
+        await discoverWorktree();
+        const boundary = await guardedInventoryForPath(resolvedPath, exclusions);
+        if (boundary.decision) return boundary.decision;
+        const { inventory } = boundary;
+        await addTraversalEntries(resolvedPath, inventory, exclusions);
+      }
+      return decision.allowed
+        ? allowedPathDecision(decision, toolName, resolvedPath)
+        : decision;
     } catch (error) {
       return {
         allowed: false,
@@ -432,9 +895,8 @@ export function createGitReadGate({
       return { allowed: false, protected: true, reason: resolvedPath.reason };
     }
 
-    if (await isTrustedPackageRead(resolvedPath.canonicalPath, toolName)) {
-      return { allowed: true, protected: true, reason: "trusted packaged PiCM resource" };
-    }
+    const trustedPackageRead = await trustedPackageReadDecision(resolvedPath, toolName);
+    if (trustedPackageRead) return trustedPackageRead;
 
     if (!isInside(canonicalWorktree, resolvedPath.canonicalPath)) {
       return { allowed: false, protected: true, reason: "path is outside the canonical Git worktree" };
@@ -452,83 +914,44 @@ export function createGitReadGate({
     const privatePath = await privacyDecision(resolvedPath.canonicalPath, exclusions);
     if (privatePath) return privatePath;
 
-    const nestedBoundary = await boundaryForPath(resolvedPath.canonicalPath);
-    const boundaryRoot = nestedBoundary ?? canonicalWorktree;
-    const gitPath = toGitPath(boundaryRoot, resolvedPath.canonicalPath);
-    if (gitPath === ".git" || gitPath.startsWith(".git/")) {
-      return { allowed: false, protected: true, reason: ".git internals are not readable" };
-    }
+    const boundary = await guardedInventoryForPath(resolvedPath, exclusions);
+    if (boundary.decision) return boundary.decision;
+    const { inventory, gitPath } = boundary;
 
-    if (nestedBoundary) {
-      const parentBoundaryPath = toGitPath(canonicalWorktree, nestedBoundary);
-      const parentIgnore = await runWorkspaceGit([
-        "check-ignore",
-        "--no-index",
-        "-q",
-        "--",
-        parentBoundaryPath,
-      ]);
-      if (parentIgnore.code === 0) {
-        return { allowed: false, protected: true, reason: "submodule boundary is ignored by parent Git worktree" };
-      }
-      if (parentIgnore.code !== 1) {
+    if (resolvedPath.stat?.isDirectory()) {
+      if (!TRAVERSAL_TOOLS.has(toolName)) {
         return {
           allowed: false,
           protected: true,
-          reason: `Parent Git ignore check was unresolved: ${parentIgnore.stderr.trim() || `exit ${parentIgnore.code}`}`,
+          reason: "path is not in the Git-derived candidate inventory",
         };
       }
+      await addTraversalEntries(resolvedPath, inventory, exclusions);
     }
-
-    const inventory = await filterPrivacyInventory(
-      nestedBoundary
-        ? await inventoryForBoundary(nestedBoundary)
-        : await refreshInventoryUnchecked(),
-      exclusions,
-    );
-    const ignoreResult = nestedBoundary
-      ? await runGit(nestedBoundary, [
-        "check-ignore",
-        "--no-index",
-        "-q",
-        "--",
-        gitPath,
-      ])
-      : await runWorkspaceGit([
-      "check-ignore",
-      "--no-index",
-      "-q",
-      "--",
-      gitPath,
-      ]);
-    if (ignoreResult.code === 0) {
-      return { allowed: false, protected: true, reason: "path is ignored by Git" };
-    }
-    if (ignoreResult.code !== 1) {
-      return {
-        allowed: false,
-        protected: true,
-        reason: `Git ignore check was unresolved: ${ignoreResult.stderr.trim() || `exit ${ignoreResult.code}`}`,
-      };
-    }
-
-    if (TRAVERSAL_TOOLS.has(toolName) && resolvedPath.stat?.isDirectory()) {
-      return {
-        allowed: false,
-        protected: true,
-        reason: `${toolName} directory traversal is blocked; inspect Git-derived candidate files instead`,
-      };
-    }
-    if (READ_LIKE_TOOLS.has(toolName) && !inventory.candidates.has(gitPath)) {
+    if (READ_LIKE_TOOLS.has(toolName) && !resolvedPath.stat?.isDirectory() && !inventory.candidates.has(gitPath)) {
       return { allowed: false, protected: true, reason: "path is not in the Git-derived candidate inventory" };
     }
 
-    return {
+    return allowedPathDecision({
       allowed: true,
       protected: true,
       reason: prospectiveWrite ? "prospective non-ignored write" : "Git candidate",
       inventory,
+    }, toolName, resolvedPath);
+  }
+
+  function bindPath(plan) {
+    if (disposed) throw new Error("Git read gate is disposed");
+    if (!bindingPlans.has(plan)) throw new Error("PICM_PATH_BINDING_INVALID: plan was not issued by this gate");
+    bindingPlans.delete(plan);
+    const binding = createPathExecutionBinding(plan, bindingLimits);
+    activeBindings.add(binding);
+    const release = binding.release.bind(binding);
+    binding.release = () => {
+      if (!activeBindings.delete(binding)) return;
+      release();
     };
+    return binding;
   }
 
   async function checkPath(toolName, inputPath, privacyExcludedPaths = []) {
@@ -553,10 +976,14 @@ export function createGitReadGate({
     }
     try {
       const resolvedPath = await resolveExistingPath(inputPath, true);
-      if (!resolvedPath.blocked && await isTrustedPackageRead(resolvedPath.canonicalPath, toolName)) {
-        return { allowed: true, protected: true, reason: "trusted packaged PiCM resource" };
-      }
-      return { allowed: false, protected: true, reason: "only canonical packaged PiCM reads are allowed before scan begin" };
+      const trustedPackageRead = !resolvedPath.blocked
+        ? await trustedPackageReadDecision(resolvedPath, toolName)
+        : undefined;
+      return trustedPackageRead ?? {
+        allowed: false,
+        protected: true,
+        reason: "only canonical packaged PiCM reads are allowed before scan begin",
+      };
     } catch (error) {
       return {
         allowed: false,
@@ -589,7 +1016,7 @@ export function createGitReadGate({
       const expected = resolve(canonicalCwd, relative(resolve(cwd), resolved.absolutePath));
       if (resolved.canonicalPath !== expected) throw new Error("inventory path traverses a symlink");
       if (resolved.canonicalPath === canonicalWorktree) return primary;
-      const nestedBoundary = await boundaryForPath(resolved.canonicalPath);
+      const nestedBoundary = await boundaryForPath(resolved);
       if (nestedBoundary !== resolved.canonicalPath) {
         throw new Error("inventory path is not an initialized submodule worktree root");
       }
@@ -617,14 +1044,31 @@ export function createGitReadGate({
       });
       await operationIdle;
     }
+    const errors = [];
+    for (const binding of [...activeBindings]) {
+      try {
+        binding.release();
+      } catch (error) {
+        errors.push(error);
+      }
+    }
     const root = isolatedGitRoot;
     isolatedGitRoot = undefined;
     isolatedGitDir = undefined;
     isolatedGitInit = undefined;
-    if (root) await fs.rm(root, { recursive: true, force: true });
+    if (root) {
+      try {
+        await fs.rm(root, { recursive: true, force: true });
+      } catch (error) {
+        errors.push(error);
+      }
+    }
+    if (errors.length > 1) throw new AggregateError(errors, "Git read gate cleanup failed");
+    if (errors.length === 1) throw errors[0];
   }
 
   return {
+    bindPath,
     checkBash,
     checkPath,
     checkTrustedPackageRead,

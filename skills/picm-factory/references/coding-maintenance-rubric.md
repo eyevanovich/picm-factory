@@ -19,13 +19,19 @@ Apply the coding adoption guide's **excluded means unreadable** boundary before 
 
 Never quote sensitive findings into a maintenance report. Record generic risk descriptions and safe paths only when path disclosure itself is acceptable.
 
-## Preset selection
+## Maintenance depth
 
-Use `capabilities.codebaseMap.maintenancePreset` when present. If absent, ask once or recommend **Balanced**. A one-run user instruction may request another preset without silently changing config.
+For every later interactive `/picm-maintain` run, use the one-run depth supplied by the command prompt. A bare interactive command presents Strict and Balanced with Strict preselected; `/picm-maintain strict` and `/picm-maintain balanced` bypass that selector. The choice applies only to the current run and must not silently mutate `capabilities.codebaseMap.maintenancePreset`.
 
-### Light
+Strict (recommended): broader systematic coverage across declared roots and mapped contexts; higher cost.
 
-Use for stable repositories or low-cost frequent checks.
+Balanced: representative coverage of major boundaries and one coding path; lower cost.
+
+Stored presets remain backward compatible. Explicit `light`, `balanced`, and `strict` values are readable and honored by scheduled automatic or other legacy preset-driven maintenance. A historically missing value falls back to Balanced. Light is compatibility-only: never offer it in a new-user selector or use it for new adoption.
+
+### Light (compatibility only)
+
+Honor an existing explicit Light preset in a preset-driven compatibility run.
 
 Check:
 
@@ -40,7 +46,7 @@ Do not search broadly for new components.
 
 ### Balanced
 
-Recommended default. Run all Light checks, plus:
+Run all Light checks, plus:
 
 - compare visible workspace/manifests with mapped major boundaries;
 - identify likely new or removed meaningful components;
@@ -54,7 +60,7 @@ Keep discovery manifest/documentation-level. Do not build a full semantic depend
 
 ### Strict
 
-Use for fast-moving or high-risk repositories when the user accepts higher token cost. Run all Balanced checks, plus:
+Run all Balanced checks, plus:
 
 - inventory meaningful boundaries across all declared roots;
 - check context coverage for independently operated apps/services/packages;
@@ -168,7 +174,7 @@ In the normal maintenance report Summary, state:
 - primary profile;
 - whether codebase mapping is primary or composable;
 - map shape and roots inspected;
-- maintenance preset;
+- one-run maintenance depth (or stored preset for a scheduled compatibility run);
 - areas deliberately not inspected.
 
 Coding findings should include evidence and confidence when they rely on inferred boundaries. Keep map presence, map correctness, and human approval separate. When comparing context efficiency, report purposeful files opened, searches performed, missed dependencies, and task correctness; report exact token savings only when the runtime exposes a reliable measurement.

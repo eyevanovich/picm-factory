@@ -24,7 +24,7 @@ Protected inventory combines these sources as a union:
 - `.picm/config.json` `privacy.excludedPaths`;
 - current-session privacy exclusions.
 
-A match from any source blocks the path. Git's `--exclude-standard` inventory and immediate `git check-ignore --no-index` check honor Git sources, including tracked matches. PiCM filters config/session exclusions from inventory and checks them immediately before every guarded path-tool execution. During active scans it blocks every agent Bash command and unrecognized agent tool; confirmed privacy paths remain blocked between scan phases and after same-session resume. Time-of-check/time-of-use filesystem races remain a limitation, so this is a deterministic PiCM tool boundary rather than an OS sandbox. Never use another worktree or any other route to bypass it.
+A match from any source blocks the path. Git's `--exclude-standard` inventory and immediate `git check-ignore --no-index` check honor Git sources, including tracked matches. PiCM filters config/session exclusions from inventory and checks them immediately before every guarded path-tool execution. Unguarded recursive traversal is blocked; identity-bound, protected-descendant-filtered directory traversal is authorized only for `grep`, `find`, `ls`, and automatic `rg`. Each admitted ordinary `read`, `edit`, `write`, `grep`, `find`, `ls`, or `rg` call then retains a no-follow descriptor and validated identity through built-in execution and settlement, so replacing the leaf or retargeting a parent symlink cannot redirect the operation. Regular files with multiple hard-link names are rejected at admission, binding, and immediately before guarded access or mutation. Guarded `grep` and automatic `rg` bound traversal discovery/entries, retained files and aggregate snapshots, match/context rendering work, rendered output, and subprocess records/stdout/stderr. Another process creating a hard link after the final descriptor check remains an external filesystem race outside this deterministic boundary. Linux additionally supports descriptor-relative creation of missing guarded files and parent directories; other platforms fail closed for those prospective writes. During active scans PiCM blocks every agent Bash command and unrecognized agent tool; confirmed privacy paths remain blocked between scan phases and after same-session resume. Trusted packaged skill/reference/template reads require declared- or canonical-package-root provenance plus the exact expected canonical target, and the extension rewrites the built-in read input to that target before execution. Legitimately symlinked package-root installs remain supported, but project aliases and nested or leaf package-resource aliases do not gain trust. This is a deterministic boundary around PiCM's guarded tools, not an OS sandbox for arbitrary filesystem access. Never use another worktree or any other route to bypass it.
 
 Do not follow symlinks during protected scans. A non-excluded symlink can resolve to excluded or out-of-repository content, so the extension blocks direct path-tool access to symlinks. Record only the link path/type; if its content is genuinely needed, ask the user for a non-symlink, non-excluded copy inside the approved workspace.
 
@@ -87,15 +87,13 @@ Offer:
 
 Curated mode is permission to analyze and propose—not permission to apply. Apply `preview-review-protocol.md` before every proposed project write. Highlight linked moves and deletions in the summary; deletions require mandatory exact review before separate approval for the complete current change set.
 
-### 3. Maintenance preset
+### 3. Automatic Strict adoption examination
 
-Offer:
+Do not ask the user to choose a maintenance depth during initial coding adoption. Perform the Strict examination automatically and record `capabilities.codebaseMap.maintenancePreset: "strict"` in the exact config preview.
 
-- **Light**
-- **Balanced** (recommended default)
-- **Strict**
+Strict (recommended): broader systematic coverage across declared roots and mapped contexts; higher cost.
 
-Explain the tradeoff using `coding-maintenance-rubric.md`. Keep configuration preset-first; do not present a matrix of per-check toggles.
+Use the Strict checks in `coding-maintenance-rubric.md` to establish the initial map baseline. This remains a bounded, protected scan: it does not authorize exhaustive source comprehension, weaken privacy boundaries, or approve writes.
 
 ### 4. Optional user hints
 
@@ -268,13 +266,15 @@ Record only what maintenance needs. Example coding-primary config:
       "roots": ["apps", "packages"],
       "map": "CONTEXT-MAP.md",
       "localContexts": ["apps/web/CONTEXT.md"],
-      "maintenancePreset": "balanced"
+      "maintenancePreset": "strict"
     }
   }
 }
 ```
 
 For a hybrid, preserve the primary workflow profile and use the same optional `capabilities.codebaseMap` object. Roots may overlap `paths.workflowFolders`. If the map lives in the routing file or an existing architecture document, record that path instead of manufacturing `CONTEXT-MAP.md`.
+
+Existing configs remain compatible: explicit `light`, `balanced`, and `strict` values are readable and honored, while a historically missing value falls back to Balanced. Light is compatibility-only and must not appear in new adoption choices or new adoption output.
 
 When the user approves durable PiCM-only scan exclusions, preserve their normalized project-relative paths in the same config:
 
@@ -300,7 +300,8 @@ Add these sections to the normal adoption report when coding adoption is selecte
 - Mapping approach selected:
 - Resulting map shape:
 - Adoption depth:
-- Maintenance preset:
+- Initial examination: Strict
+- Stored maintenance preset: strict
 
 ## Repository boundaries proposed
 

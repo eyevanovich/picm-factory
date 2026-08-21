@@ -14,7 +14,7 @@ Do not use hard failures unless the project is unreadable or dangerous.
 
 `/picm-maintain` is a heuristic health report and focused drift-investigation helper for folder-agent and coding-repository workspaces. It should keep the workspace aligned over time, but it must not silently rewrite the user's system or imply provenance-grade causal tracing.
 
-When the Coding Repository profile, `capabilities.codebaseMap`, or visible `CONTEXT-MAP.md` is present, load `coding-maintenance-rubric.md`. Its Light/Balanced/Strict checks extend this rubric, and its privacy-first exclusion boundary applies before any coding scan.
+When the Coding Repository profile, `capabilities.codebaseMap`, or visible `CONTEXT-MAP.md` is present, load `coding-maintenance-rubric.md`. Its Strict/Balanced run depths and historical Light compatibility checks extend this rubric, and its privacy-first exclusion boundary applies before any coding scan.
 
 For every non-trivial Warning or Suggestion, include a healing path:
 

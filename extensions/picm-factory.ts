@@ -1,12 +1,26 @@
 import {
+  createEditTool,
+  createFindTool,
+  createGrepTool,
+  createLsTool,
+  createReadTool,
+  createWriteTool,
   withFileMutationQueue,
   type ExtensionAPI,
   type ExtensionContext,
 } from "@earendil-works/pi-coding-agent";
 import { StringEnum } from "@earendil-works/pi-ai";
+import { realpathSync } from "node:fs";
 import { join } from "node:path";
 import { Type } from "typebox";
+import {
+  BALANCED_MAINTENANCE_GUIDANCE,
+  MAINTENANCE_DEPTH_CHOICES,
+  STRICT_MAINTENANCE_GUIDANCE,
+  parseMaintenanceDepthArgument,
+} from "./runtime/coding-maintenance-depth.mjs";
 import { packageRootFromImportMeta } from "./runtime/git-read-gate.mjs";
+import { executeBoundGrep } from "./runtime/path-execution-binding.mjs";
 import { createRuntimeCoordinator } from "./runtime/runtime-coordinator.mjs";
 
 type CommandName = "picm-new" | "picm-adopt" | "picm-maintain" | "picm-optimize" | "picm-help";
@@ -16,7 +30,7 @@ const scanWorkflowEntryType = "picm-scan-workflow";
 const commandDescriptions: Record<CommandName, string> = {
   "picm-new": "Create a workspace; optionally add a workflow description after the command",
   "picm-adopt": "Adopt an existing workspace safely; type a space for optional arguments",
-  "picm-maintain": "Check workspace health; type a space for focus and trace arguments",
+  "picm-maintain": "Check workspace health; type a space for one-run depth and focus arguments",
   "picm-optimize": "Optimize agent-facing documentation without changing intended outcomes",
   "picm-help": "Show command syntax, arguments, examples, setup, and safety guidance",
 };
@@ -30,6 +44,8 @@ const adoptArgumentCompletions = [
 ];
 
 const maintainArgumentCompletions = [
+  { value: "strict", label: "strict", description: STRICT_MAINTENANCE_GUIDANCE },
+  { value: "balanced", label: "balanced", description: BALANCED_MAINTENANCE_GUIDANCE },
   { value: "coding", label: "coding", description: "Check repository context-map drift" },
   {
     value: 'trace "final output drifted from approved source"',
@@ -77,9 +93,47 @@ function scheduledMaintenancePrompt(): string {
   return `${buildPrompt("picm-maintain", "scheduled read-only advisory cycle", false)}\n\nThis is an automatic due-cycle advisory. Do not edit or write files, run Bash, create a report, repair anything, commit, send data, or cause external side effects. Report findings in chat only.`;
 }
 
-export default function picmFactoryExtension(pi: ExtensionAPI) {
+type PicmFactoryExtensionOptions = {
+  createCoordinator?: typeof createRuntimeCoordinator;
+  grepExecutionOptions?: Parameters<typeof executeBoundGrep>[3];
+};
+
+export default function picmFactoryExtension(
+  pi: ExtensionAPI,
+  options: PicmFactoryExtensionOptions = {},
+) {
   const packageRoot = packageRootFromImportMeta(import.meta.url);
-  const coordinator = createRuntimeCoordinator({ packageRoot });
+  const canonicalPackageRoot = realpathSync(packageRoot);
+  const coordinator = (options.createCoordinator ?? createRuntimeCoordinator)({
+    packageRoot,
+    canonicalPackageRoot,
+  });
+
+  const registerBoundBuiltin = (
+    toolName: "read" | "edit" | "write" | "grep" | "rg" | "find" | "ls",
+    createTool: any,
+  ) => {
+    const definition = createTool(process.cwd());
+    pi.registerTool({
+      ...definition,
+      async execute(toolCallId: string, params: any, signal: AbortSignal | undefined, onUpdate: any, ctx: ExtensionContext) {
+        const binding = coordinator.beginBoundPathExecution(toolCallId, ctx, toolName);
+        if (binding && (toolName === "grep" || toolName === "rg")) {
+          return executeBoundGrep(binding, params, signal, options.grepExecutionOptions);
+        }
+        const tool = createTool(ctx.cwd, binding ? { operations: binding.operations } : undefined);
+        return tool.execute(toolCallId, params, signal, onUpdate, ctx);
+      },
+    });
+  };
+
+  registerBoundBuiltin("read", createReadTool);
+  registerBoundBuiltin("edit", createEditTool);
+  registerBoundBuiltin("write", createWriteTool);
+  registerBoundBuiltin("grep", createGrepTool);
+  registerBoundBuiltin("rg", (cwd: string, options?: any) => ({ ...createGrepTool(cwd, options), name: "rg" }));
+  registerBoundBuiltin("find", createFindTool);
+  registerBoundBuiltin("ls", createLsTool);
 
   const restoreScanWorkflow = (ctx: ExtensionContext) => {
     let state;
@@ -111,8 +165,8 @@ export default function picmFactoryExtension(pi: ExtensionAPI) {
       excludedPaths: Type.Optional(Type.Array(Type.String({ minLength: 1 }))),
       persist: Type.Optional(Type.Boolean()),
     }),
-    async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
-      const run = () => coordinator.scanControl(ctx, params);
+    async execute(toolCallId, params, signal, _onUpdate, ctx) {
+      const run = () => coordinator.scanControl(ctx, params, { toolCallId, signal });
       const result = params.action === "privacy" && params.persist
         ? await withFileMutationQueue(join(ctx.cwd, ".picm", "config.json"), run)
         : await run();
@@ -178,8 +232,8 @@ export default function picmFactoryExtension(pi: ExtensionAPI) {
       intervalValue: Type.Optional(Type.Integer({ minimum: 1 })),
       intervalUnit: Type.Optional(StringEnum(["days", "weeks", "months"] as const)),
     }),
-    async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
-      const result = await coordinator.maintenancePolicy(params, ctx);
+    async execute(_toolCallId, params, signal, _onUpdate, ctx) {
+      const result = await coordinator.maintenancePolicy(params, ctx, signal);
       if (params.action === "preview") {
         const response = {
           previewId: result.previewId,
@@ -192,13 +246,28 @@ export default function picmFactoryExtension(pi: ExtensionAPI) {
     },
   });
 
+  pi.on("tool_execution_start", (event, ctx) => {
+    coordinator.startToolExecution(event, ctx);
+  });
+
   pi.on("tool_call", async (event, ctx) => {
-    const decision = await coordinator.checkToolCall(event, ctx);
-    if (!decision.allowed) {
-      const reason = `[picm-factory] Blocked by PiCM scan gate: ${decision.reason}`;
-      if (ctx.hasUI) ctx.ui.notify(reason, "warning");
-      return { block: true, reason };
+    let admitted = false;
+    try {
+      const decision = await coordinator.checkToolCall(event, ctx);
+      if (!decision.allowed) {
+        const reason = `[picm-factory] Blocked by PiCM scan gate: ${decision.reason}`;
+        if (ctx.hasUI) ctx.ui.notify(reason, "warning");
+        return { block: true, reason };
+      }
+      coordinator.admitToolExecution(event, ctx);
+      admitted = true;
+    } finally {
+      if (!admitted) coordinator.rejectToolExecution(event, ctx);
     }
+  });
+
+  pi.on("tool_execution_end", (event, ctx) => {
+    coordinator.endToolExecution(event, ctx);
   });
 
   pi.on("session_start", async (_event, ctx) => {
@@ -261,6 +330,26 @@ export default function picmFactoryExtension(pi: ExtensionAPI) {
       } : {}),
       handler: async (args, ctx) => {
         await ctx.waitForIdle();
+        let promptArgs = args;
+        let maintenanceDepthContext = "";
+        if (command === "picm-maintain") {
+          const parsed = parseMaintenanceDepthArgument(args);
+          let depth = parsed.depth;
+          promptArgs = parsed.remainingArgs;
+          if (!depth && ctx.mode === "tui") {
+            const selected = await ctx.ui.select(
+              "Choose maintenance depth for this run (stored preset will not change)",
+              MAINTENANCE_DEPTH_CHOICES,
+            );
+            if (!selected) {
+              ctx.ui.notify("PiCM maintenance cancelled before scan authorization.", "info");
+              return;
+            }
+            depth = selected === BALANCED_MAINTENANCE_GUIDANCE ? "balanced" : "strict";
+          }
+          depth ??= "strict";
+          maintenanceDepthContext = `\n\nMaintenance run depth: ${depth}. Apply this depth to this run only. Do not mutate \`capabilities.codebaseMap.maintenancePreset\`.`;
+        }
         if (command !== "picm-help") {
           const authorization = coordinator.authorizeWorkflow(ctx, command);
           pi.appendEntry(scanWorkflowEntryType, { status: "authorized", ...authorization });
@@ -268,12 +357,12 @@ export default function picmFactoryExtension(pi: ExtensionAPI) {
           recordClearedWorkflow(ctx);
         }
         try {
-          pi.sendUserMessage(buildPrompt(
+          pi.sendUserMessage(`${buildPrompt(
             command,
-            args,
+            promptArgs,
             command === "picm-adopt" || command === "picm-optimize" ||
               ((command === "picm-new" || command === "picm-maintain") && ctx.mode === "tui"),
-          ));
+          )}${maintenanceDepthContext}`);
         } catch (error) {
           if (command !== "picm-help") {
             coordinator.clearWorkflow(ctx);

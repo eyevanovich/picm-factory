@@ -23,7 +23,8 @@ You are working on PiCM Factory, a project-local Pi package for creating, adopti
 - `.picm/` is maintainer-only context; normal workflow routing should skip it.
 
 ## Repository structure
-- `extensions/picm-factory.ts` — slash-command registration and skill dispatch only.
+- `extensions/picm-factory.ts` — slash-command and guarded-tool registration plus skill dispatch.
+- `extensions/runtime/` — privacy, execution, session, scheduling, and maintenance-depth runtime boundaries.
 - `prompts/` — backing prompt text only; package prompt discovery stays disabled to avoid duplicating extension commands.
 - `skills/picm-factory/SKILL.md` — main behavior contract.
 - `skills/picm-factory/references/` — detailed methodology guidance.
@@ -36,7 +37,8 @@ You are working on PiCM Factory, a project-local Pi package for creating, adopti
 
 | Task | Start here | Supporting files |
 | --- | --- | --- |
-| Change slash-command registration or dispatch | `extensions/picm-factory.ts` | Pi extension documentation |
+| Change slash-command registration, tool wiring, or dispatch | `extensions/picm-factory.ts` | `extensions/runtime/`, Pi extension documentation |
+| Change scan, execution, session, scheduling, or maintenance-depth enforcement | `extensions/runtime/` | `extensions/picm-factory.ts`, focused runtime tests |
 | Change scaffold, adoption, maintenance, optimization, or help behavior | `skills/picm-factory/SKILL.md` | The relevant file under `skills/picm-factory/references/` |
 | Change coding adoption or context-map behavior | `skills/picm-factory/references/coding-adoption-guide.md` | `coding-maintenance-rubric.md`, `layout-profiles.md`, coding templates |
 | Change generated workspace content | `skills/picm-factory/templates/` | `skills/picm-factory/references/layout-profiles.md` |

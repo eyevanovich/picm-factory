@@ -34,7 +34,7 @@ Slash commands accept optional text after the command. Bare commands remain vali
 | --- | --- |
 | `/picm-new [workflow description]` | Supplies optional free-form seed context for the setup interview. |
 | `/picm-adopt [coding | adoption request]` | `coding` skips the initial repository classification; other text describes the adoption focus. |
-| `/picm-maintain [coding | routing | handoffs | stale-context | security | trace "drift symptom"]` | Focuses the advisory check or investigates one concrete symptom. |
+| `/picm-maintain [strict | balanced | coding | routing | handoffs | stale-context | security | trace "drift symptom"]` | Chooses a one-run depth, focuses the advisory check, or investigates one concrete symptom. |
 | `/picm-optimize` | Inspects agent-facing documentation and presents selectable outcome-preserving proposals. |
 | `/picm-help` | Shows this command reference together with setup and safety guidance. |
 
@@ -44,7 +44,8 @@ Arguments are conversational input rather than required flags. For example:
 /picm-new Create a three-stage publishing workflow
 /picm-adopt coding
 /picm-adopt Include the optional file-role inventory; preview only
-/picm-maintain routing
+/picm-maintain strict
+/picm-maintain balanced routing
 /picm-maintain trace "final output drifted from the approved source"
 /picm-optimize
 ```
@@ -116,14 +117,21 @@ For coding repositories, regular `/picm-adopt` can safely detect repository sign
 - root, distributed, or scan-and-recommend mapping;
 - additive adoption or a curated documentation-consolidation proposal;
 - `CONTEXT-MAP.md` for substantial maps and selected local `CONTEXT.md` files for meaningful boundaries;
-- Light, Balanced, or Strict manual maintenance;
+- an automatic Strict initial examination, stored as `capabilities.codebaseMap.maintenancePreset: "strict"` without a depth question;
 - hybrid workspaces where codebase mapping overlaps Stage Pipeline, Specialist Folder, Team / Role OS, or custom layouts.
+
+Every later interactive `/picm-maintain` run selects a one-run depth with Strict preselected. `/picm-maintain strict` and `/picm-maintain balanced` bypass the selector. The run choice never silently changes the stored preset.
+
+- Strict (recommended): broader systematic coverage across declared roots and mapped contexts; higher cost.
+- Balanced: representative coverage of major boundaries and one coding path; lower cost.
+
+Historical stored `light`, `balanced`, and `strict` values remain readable and honored, and a missing value falls back to Balanced. Light is compatibility-only and is not offered in new adoption or interactive selectors.
 
 Every explicit `/picm-new`, `/picm-adopt`, `/picm-maintain`, and `/picm-optimize` workflow starts privacy-pending rather than scan-active. `picm_scan_control preflight` checks Git status plus root `.gitignore` and repository-local `.git/info/exclude` presence without inventorying files or creating temporary Git metadata. PiCM then explains that Git ignore rules and its path protections apply automatically, and asks only for additional sensitive project-relative paths not already covered. This list remains important for sensitive eligible files PiCM cannot infer. Exact exclusions are recorded before `begin` can activate a scan. Approved durable exclusions live in `.picm/config.json` under `privacy.excludedPaths`; session additions are merged, survive same-session resume, and remain enforced until completion or expiry revokes the workflow.
 
-Protected scans combine root/nested `.gitignore`, `.git/info/exclude`, global Git excludes, persisted PiCM exclusions, and current-session exclusions. Any matching source removes the path from inventory and blocks direct access, including tracked Git matches. Active scans also block symlinks, paths outside the worktree, `.git` internals, recursive traversal, every agent Bash call, and unrecognized agent tools. Explicitly included submodules receive parent, local Git, and PiCM privacy checks. User-typed `!bash` is never intercepted because it is an explicit human action.
+Protected scans combine root/nested `.gitignore`, `.git/info/exclude`, global Git excludes, persisted PiCM exclusions, and current-session exclusions. Any matching source removes the path from inventory and blocks direct access, including tracked Git matches. Active scans also block symlinks, paths outside the worktree, `.git` internals, unguarded recursive traversal, every agent Bash call, and unrecognized agent tools. Identity-bound, protected-descendant-filtered directory traversal is authorized only for `grep`, `find`, `ls`, and automatic `rg`; other tools reject directories. Every admitted `read`, `edit`, `write`, `grep`, `find`, `ls`, or `rg` call remains bound to the exact validated target through execution, so later leaf replacement or parent-symlink retargeting cannot redirect the built-in tool. Regular files with multiple hard-link names are rejected at admission, binding, and immediately before guarded access or mutation. Guarded `grep` and automatic `rg` bound traversal discovery/entries, retained files and aggregate snapshots, match/context rendering work, rendered output, and subprocess records/stdout/stderr. Linux also supports descriptor-relative creation of missing guarded files and parent directories. On macOS and Windows, where the runtime cannot safely create a missing file relative to a retained directory descriptor, that guarded creation is refused; writes to existing files remain supported. Explicitly included submodules receive parent, local Git, and PiCM privacy checks. User-typed `!bash` is never intercepted because it is an explicit human action.
 
-PiCM scans and maintenance may run with or without `.git`. When repository metadata is absent, the extension creates transient bare Git metadata only after privacy review and points it at the workspace for remaining candidate and Git-exclude evaluation. It never creates project `.git` metadata and removes the temporary metadata on session shutdown. This is a deterministic PiCM tool boundary rather than an OS sandbox; filesystem time-of-check/time-of-use races remain a limitation.
+PiCM scans and maintenance may run with or without `.git`. When repository metadata is absent, the extension creates transient bare Git metadata only after privacy review and points it at the workspace for remaining candidate and Git-exclude evaluation. It never creates project `.git` metadata and removes the temporary metadata on session shutdown. This is a deterministic PiCM tool boundary rather than an OS sandbox: it protects the guarded built-ins above, not arbitrary filesystem access outside them. Another process creating a hard link after the final descriptor check remains an external filesystem race outside this boundary.
 
 ## Maintenance cadence
 
