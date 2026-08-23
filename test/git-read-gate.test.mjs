@@ -1278,6 +1278,7 @@ test("explicit PiCM commands enforce privacy review, session scope, and durable 
     assert.equal(await h.handlers.get("tool_call")({ toolName: "read", input: { path: "safe.txt" } }, ctx), undefined);
     assert.equal((await h.handlers.get("tool_call")({ toolName: "read", input: { path: "safe-dir/file.txt" } }, ctx)).block, true);
 
+    await control.execute("end", { action: "end" }, undefined, undefined, ctx);
     await control.execute("complete", { action: "complete" }, undefined, undefined, ctx);
     assert.equal(await h.handlers.get("tool_call")({ toolName: "bash", input: { command: "git diff" } }, ctx), undefined);
   });
@@ -1399,6 +1400,7 @@ test("complete finishes workflow and allows subsequent agent tools without locko
       ctx,
     );
     await control.execute("begin", { action: "begin" }, undefined, undefined, ctx);
+    await control.execute("end", { action: "end" }, undefined, undefined, ctx);
     const completeResult = await control.execute("complete", { action: "complete" }, undefined, undefined, ctx);
     assert.equal(completeResult.details.completed, true);
     assert.equal(completeResult.details.authorized, false);
@@ -1445,6 +1447,7 @@ test("session shutdown preserves cleanup and persistence errors", async () => {
       ctx,
     );
     await control.execute("begin", { action: "begin" }, undefined, undefined, ctx);
+    await control.execute("end", { action: "end" }, undefined, undefined, ctx);
     await control.execute("complete", { action: "complete" }, undefined, undefined, ctx);
 
     await assert.rejects(
