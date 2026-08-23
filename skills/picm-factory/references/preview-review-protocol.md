@@ -45,7 +45,7 @@ The summary must be complete even when concise: include every affected path and 
 
 ## Exact review interaction
 
-Offer exact review whenever the user asks to inspect files or diffs, including `view all`, `review files`, or `show diff for <path>`. Enter mandatory exact review before accepting approval only when a mandatory item is pending. At the exact-review entry, offer exactly these choices and no additional peer choice:
+Offer exact review whenever the user asks to inspect files or diffs. Execute recognized direct requests immediately: `view all` renders all affected items, and `show diff for <path>` renders that affected path or linked move pair. A generic request such as `review files` enters the exact-review menu. Enter mandatory exact review before accepting approval only when a mandatory item is pending. At the generic or mandatory exact-review entry, offer exactly these choices and no additional peer choice:
 
 1. **View all**
 2. **Select files**
