@@ -29,7 +29,8 @@ function nonGitFixture(t, maintenance) {
   return cwd;
 }
 
-function harness({ entries = [], confirm = true, selectResult, sendError } = {}) {
+function harness(options = {}) {
+  const { entries = [], confirm = true, selectHandler, sendError } = options;
   const handlers = new Map();
   const commands = new Map();
   const tools = new Map();
@@ -37,8 +38,11 @@ function harness({ entries = [], confirm = true, selectResult, sendError } = {})
   const notifications = [];
   const confirmations = [];
   const selections = [];
+  const widgets = new Map();
   let confirmationResult = confirm;
-  let nextSelection = selectResult;
+  let hasSelectResult = "selectResult" in options;
+  let nextSelection = options.selectResult;
+  let customSelectHandler = selectHandler;
   const pi = {
     on(name, handler) { handlers.set(name, handler); },
     registerCommand(name, definition) { commands.set(name, definition); },
@@ -64,11 +68,20 @@ function harness({ entries = [], confirm = true, selectResult, sendError } = {})
       notify(message, level) { notifications.push({ message, level }); },
       select: async (title, items) => {
         selections.push({ title, items });
-        return nextSelection ?? items[0];
+        if (customSelectHandler) return customSelectHandler(title, items);
+        if (hasSelectResult) return nextSelection;
+        return items[0];
       },
       confirm: async (title, message) => {
         confirmations.push({ title, message });
         return confirmationResult;
+      },
+      setWidget: (key, lines, options) => {
+        if (lines === undefined) {
+          widgets.delete(key);
+        } else {
+          widgets.set(key, { lines, options });
+        }
       },
     },
   });
@@ -81,10 +94,15 @@ function harness({ entries = [], confirm = true, selectResult, sendError } = {})
     notifications,
     confirmations,
     selections,
+    widgets,
     entries,
     context,
     setConfirm(value) { confirmationResult = value; },
-    setSelection(value) { nextSelection = value; },
+    setSelection(value) {
+      hasSelectResult = true;
+      nextSelection = value;
+    },
+    setSelectHandler(handler) { customSelectHandler = handler; },
   };
 }
 
@@ -220,200 +238,238 @@ test("maintain TUI dispatch receives persisted-privacy summary before tool call 
   assert.match(prompt, /exact TUI patch confirmation is the mandatory exact review and separate write approval/);
 });
 
-test("TUI due nudge notifies once without resetting the cycle", async (t) => {
+test("when maintenance is due in TUI, renders persistent reminder widget and presents Run Now and Defer selector", async (t) => {
+  const cwd = fixture(t, oldDue("nudge"));
+  const h = harness({ selectResult: undefined });
+  const before = readFileSync(join(cwd, ".picm/config.json"), "utf8");
+
+  await h.handlers.get("session_start")({}, h.context(cwd));
+
+  assert.equal(h.widgets.has("picm-maintenance-reminder"), true);
+  assert.match(h.widgets.get("picm-maintenance-reminder").lines[0], /PiCM maintenance is due/);
+  assert.equal(h.selections.length, 1);
+  assert.deepEqual(h.selections[0], {
+    title: "PiCM maintenance is due. Choose an action:",
+    items: ["Run Now", "Defer"],
+  });
+  assert.equal(readFileSync(join(cwd, ".picm/config.json"), "utf8"), before);
+});
+
+test("Defer dismisses reminder for session, notifies, appends deferral entry, does not change timestamps", async (t) => {
+  const cwd = fixture(t, oldDue("nudge"));
+  const h = harness({ selectResult: "Defer" });
+  const before = readFileSync(join(cwd, ".picm/config.json"), "utf8");
+
+  await h.handlers.get("session_start")({}, h.context(cwd));
+
+  assert.equal(h.widgets.has("picm-maintenance-reminder"), false);
+  assert.equal(h.notifications.length, 1);
+  assert.equal(h.notifications[0].message, "Maintenance deferred. PiCM will ask again when you start a new session.");
+  assert.equal(readFileSync(join(cwd, ".picm/config.json"), "utf8"), before);
+  assert.equal(h.entries.some((e) => e.customType === "picm-maintenance-due" && e.data?.action === "defer"), true);
+
+  // Reload/resume of the same conversation remains deferred
+  h.selections.length = 0;
+  h.notifications.length = 0;
+  await h.handlers.get("session_start")({ reason: "reload" }, h.context(cwd));
+  assert.equal(h.widgets.has("picm-maintenance-reminder"), false);
+  assert.equal(h.selections.length, 0);
+
+  // A fresh session prompts again
+  const fresh = harness({ selectResult: "Defer" });
+  await fresh.handlers.get("session_start")({}, fresh.context(cwd, "tui", "fresh-session"));
+  assert.equal(fresh.selections.length, 1);
+  assert.equal(fresh.notifications[0].message, "Maintenance deferred. PiCM will ask again when you start a new session.");
+});
+
+test("closing selector without choosing leaves reminder widget visible and does not defer or change timestamps", async (t) => {
+  const cwd = fixture(t, oldDue("nudge"));
+  const h = harness({ selectResult: undefined });
+  const before = readFileSync(join(cwd, ".picm/config.json"), "utf8");
+
+  await h.handlers.get("session_start")({}, h.context(cwd));
+
+  assert.equal(h.widgets.has("picm-maintenance-reminder"), true);
+  assert.equal(h.entries.some((e) => e.customType === "picm-maintenance-due"), false);
+  assert.equal(readFileSync(join(cwd, ".picm/config.json"), "utf8"), before);
+});
+
+test("Run Now prompts depth selection, starts maintenance flow, and advances timestamps only upon completion", async (t) => {
+  const cwd = fixture(t, oldDue("nudge"));
+  let selectionStep = 0;
+  const h = harness({
+    selectHandler: (title, items) => {
+      selectionStep += 1;
+      if (selectionStep === 1) {
+        assert.equal(title, "PiCM maintenance is due. Choose an action:");
+        return "Run Now";
+      }
+      if (selectionStep === 2) {
+        assert.equal(title, "Choose maintenance depth for this run (stored preset will not change)");
+        return items[0]; // Strict
+      }
+      return items[0];
+    },
+  });
+  const ctx = h.context(cwd);
+  const before = readFileSync(join(cwd, ".picm/config.json"), "utf8");
+
+  await h.handlers.get("session_start")({}, ctx);
+
+  assert.equal(h.selections.length, 2);
+  assert.equal(h.sent.length, 1);
+  assert.match(h.sent[0], /Mode: maintain/);
+  assert.match(h.sent[0], /Maintenance run depth: strict/);
+  assert.equal(readFileSync(join(cwd, ".picm/config.json"), "utf8"), before);
+
+  // Preflight and privacy do not advance timestamps yet
+  await h.scanControl.execute("id", { action: "preflight" }, undefined, undefined, ctx);
+  assert.equal(readFileSync(join(cwd, ".picm/config.json"), "utf8"), before);
+  await h.scanControl.execute("id", { action: "privacy", excludedPaths: [], persist: false }, undefined, undefined, ctx);
+  assert.equal(readFileSync(join(cwd, ".picm/config.json"), "utf8"), before);
+
+  await h.scanControl.execute("id", { action: "begin" }, undefined, undefined, ctx);
+  await h.scanControl.execute("id", { action: "end" }, undefined, undefined, ctx);
+
+  // Complete advances timestamps and clears due reminder widget
+  const complete = await h.scanControl.execute("id", { action: "complete" }, undefined, undefined, ctx);
+  assert.equal(complete.details.completed, true);
+  assert.equal(complete.details.maintenanceReset.ok, true);
+  assert.equal(complete.details.maintenanceReset.changed, true);
+  assert.equal(h.widgets.has("picm-maintenance-reminder"), false);
+
+  const after = JSON.parse(readFileSync(join(cwd, ".picm/config.json"), "utf8"));
+  assert.notEqual(after.maintenance.lastCycleAt, "2020-01-01T00:00:00.000Z");
+});
+
+test("Run Now cancelled at depth selection leaves reminder visible and does not authorize or reset", async (t) => {
+  const cwd = fixture(t, oldDue("nudge"));
+  let selectionStep = 0;
+  const h = harness({
+    selectHandler: (_title, items) => {
+      selectionStep += 1;
+      if (selectionStep === 1) return "Run Now";
+      return undefined; // Escape on depth selection
+    },
+  });
+  const ctx = h.context(cwd);
+  const before = readFileSync(join(cwd, ".picm/config.json"), "utf8");
+
+  await h.handlers.get("session_start")({}, ctx);
+
+  assert.equal(h.selections.length, 2);
+  assert.equal(h.sent.length, 0);
+  assert.equal(h.notifications.length, 1);
+  assert.match(h.notifications[0].message, /PiCM maintenance cancelled before scan authorization/);
+  assert.equal(h.widgets.has("picm-maintenance-reminder"), true);
+  assert.equal(readFileSync(join(cwd, ".picm/config.json"), "utf8"), before);
+});
+
+test("Maintenance failure or cancellation before complete leaves maintenance due", async (t) => {
   const cwd = fixture(t, oldDue("nudge"));
   const h = harness();
+  const ctx = h.context(cwd);
   const before = readFileSync(join(cwd, ".picm/config.json"), "utf8");
-  await h.handlers.get("session_start")({}, h.context(cwd));
-  assert.equal(h.notifications.length, 1);
-  assert.match(h.notifications[0].message, /maintenance is due/);
+
+  await h.commands.get("picm-maintain").handler("strict", ctx);
+  await h.scanControl.execute("id", { action: "preflight" }, undefined, undefined, ctx);
+  await h.scanControl.execute("id", { action: "privacy", excludedPaths: [], persist: false }, undefined, undefined, ctx);
+  await h.scanControl.execute("id", { action: "begin" }, undefined, undefined, ctx);
   assert.equal(readFileSync(join(cwd, ".picm/config.json"), "utf8"), before);
-  await h.handlers.get("session_start")({ reason: "reload" }, h.context(cwd));
-  assert.equal(h.notifications.length, 1);
-  assert.equal(h.sent.length, 0);
+
+  // Settlement without complete leaves timestamps unchanged
+  await h.handlers.get("agent_settled")({}, ctx);
+  assert.equal(readFileSync(join(cwd, ".picm/config.json"), "utf8"), before);
 });
 
-test("TUI automatic cycle resets, dispatches once, and blocks side effects until settled", async (t) => {
-  const cwd = fixture(t, oldDue("automatic"));
-  writeFileSync(join(cwd, "safe.txt"), "safe\n");
+test("completion requires the ordinary privacy-reviewed scan flow", async (t) => {
+  const cwd = fixture(t, oldDue("nudge"));
   const h = harness();
   const ctx = h.context(cwd);
-  await h.handlers.get("session_start")({}, ctx);
-  assert.equal(h.sent.length, 1);
-  assert.match(h.sent[0], /scheduled read-only advisory cycle/);
-  assert.match(h.sent[0], /Do not edit or write files/);
-  const reset = JSON.parse(readFileSync(join(cwd, ".picm/config.json"), "utf8"));
-  assert.equal(reset.custom, "keep");
-  assert.notEqual(reset.maintenance.lastCycleAt, "2020-01-01T00:00:00.000Z");
+  const before = readFileSync(join(cwd, ".picm/config.json"), "utf8");
 
-  const blockedWrite = await h.handlers.get("tool_call")({ toolName: "write", input: { path: "safe.txt" } }, h.context(cwd));
-  assert.equal(blockedWrite.block, true);
-  assert.match(blockedWrite.reason, /advisory and read-only/);
-  const blockedIgnoredRead = await h.handlers.get("tool_call")({ toolName: "read", input: { path: ".env" } }, h.context(cwd));
-  assert.equal(blockedIgnoredRead.block, true);
-  assert.match(blockedIgnoredRead.reason, /ignored by Git/);
-  const blockedBash = await h.handlers.get("tool_call")({ toolName: "bash", input: { command: "echo safe" } }, h.context(cwd));
-  assert.equal(blockedBash.block, true);
-  const rgEvent = { toolCallId: "automatic-rg", toolName: "rg", input: { path: "safe.txt", pattern: "safe" } };
-  await h.handlers.get("tool_execution_start")({ ...rgEvent, args: rgEvent.input }, ctx);
-  assert.equal(await h.handlers.get("tool_call")(rgEvent, ctx), undefined);
-  await h.handlers.get("tool_execution_end")({ ...rgEvent, result: { content: [] }, isError: false }, ctx);
-  assert.equal(await h.handlers.get("tool_call")(
-    { toolName: "picm_scan_control", input: { action: "inventory" } },
-    ctx,
-  ), undefined);
-  const inventory = await h.scanControl.execute(
-    "id",
-    { action: "inventory" },
-    undefined,
-    undefined,
-    ctx,
-  );
-  assert.equal(inventory.details.automatic, true);
-  assert.equal(inventory.details.authorized, false);
-  assert.equal(inventory.details.candidates.includes("safe.txt"), true);
-  assert.equal(inventory.details.candidates.includes(".env"), false);
-  const blockedLifecycle = await h.handlers.get("tool_call")(
-    { toolName: "picm_scan_control", input: { action: "end" } },
-    ctx,
-  );
-  assert.equal(blockedLifecycle.block, true);
+  await h.commands.get("picm-maintain").handler("strict", ctx);
   await assert.rejects(
-    h.scanControl.execute("id", { action: "end" }, undefined, undefined, ctx),
-    /PICM_AUTOMATIC_INVENTORY_ONLY/,
+    h.scanControl.execute("id", { action: "complete" }, undefined, undefined, ctx),
+    /PICM_PREFLIGHT_INCOMPLETE/,
   );
-  assert.equal(h.handlers.has("user_bash"), false);
-  await h.handlers.get("agent_settled")({}, h.context(cwd));
-  const allowedWrite = await h.handlers.get("tool_call")({ toolName: "write", input: { path: "safe.txt" } }, h.context(cwd));
-  assert.equal(allowedWrite, undefined);
+  await h.scanControl.execute("id", { action: "preflight" }, undefined, undefined, ctx);
+  await assert.rejects(
+    h.scanControl.execute("id", { action: "complete" }, undefined, undefined, ctx),
+    /PICM_PRIVACY_NOT_REVIEWED/,
+  );
+  await h.scanControl.execute("id", { action: "privacy", excludedPaths: [], persist: false }, undefined, undefined, ctx);
+  await assert.rejects(
+    h.scanControl.execute("id", { action: "complete" }, undefined, undefined, ctx),
+    /PICM_SCAN_NOT_STARTED/,
+  );
+  await h.scanControl.execute("id", { action: "begin" }, undefined, undefined, ctx);
+  await assert.rejects(
+    h.scanControl.execute("id", { action: "complete" }, undefined, undefined, ctx),
+    /PICM_SCAN_NOT_SETTLED/,
+  );
 
-  await h.handlers.get("session_start")({ reason: "reload" }, h.context(cwd));
-  assert.equal(h.sent.length, 1);
+  assert.equal(readFileSync(join(cwd, ".picm/config.json"), "utf8"), before);
+  assert.equal(h.entries.some((entry) => entry.data.status === "completed"), false);
 });
 
-test("due automatic maintenance runs in non-Git workspaces while honoring Git and PiCM exclusions", async (t) => {
-  const cwd = nonGitFixture(t, oldDue("automatic"));
-  writeFileSync(join(cwd, "config-private.txt"), "CONFIG_PRIVATE=do-not-read\n");
-  const before = JSON.parse(readFileSync(join(cwd, ".picm/config.json"), "utf8"));
-  writeFileSync(join(cwd, ".picm/config.json"), `${JSON.stringify({
-    ...before,
-    privacy: { excludedPaths: ["config-private.txt"] },
-  }, null, 2)}\n`);
+test("a maintenance reset conflict leaves the losing workflow incomplete", async (t) => {
+  const cwd = fixture(t, oldDue("nudge"));
   const h = harness();
-  const ctx = h.context(cwd, "tui", "non-git-automatic-session");
+  const first = h.context(cwd, "tui", "first-maintenance-session");
+  const second = h.context(cwd, "tui", "second-maintenance-session");
 
-  await h.handlers.get("session_start")({}, ctx);
-  assert.equal(h.sent.length, 1);
-  assert.match(h.sent[0], /scheduled read-only advisory cycle/);
-  assert.equal(await h.handlers.get("tool_call")(
-    { toolName: "picm_scan_control", input: { action: "inventory" } },
-    ctx,
-  ), undefined);
-  const inventory = await h.scanControl.execute(
-    "id",
-    { action: "inventory" },
-    undefined,
-    undefined,
-    ctx,
-  );
-  assert.equal(inventory.details.automatic, true);
-  assert.equal(inventory.details.isolated, true);
-  assert.equal(inventory.details.candidates.includes("safe.txt"), true);
-  assert.equal(inventory.details.candidates.includes(".env"), false);
-  assert.equal(inventory.details.candidates.includes("config-private.txt"), false);
-  assert.equal(await h.handlers.get("tool_call")(
-    { toolName: "read", input: { path: "safe.txt" } },
-    ctx,
-  ), undefined);
-  const blocked = await h.handlers.get("tool_call")(
-    { toolName: "read", input: { path: ".env" } },
-    ctx,
-  );
-  assert.equal(blocked.block, true);
-  assert.match(blocked.reason, /ignored by Git/);
-  const blockedPrivate = await h.handlers.get("tool_call")(
-    { toolName: "read", input: { path: "config-private.txt" } },
-    ctx,
-  );
-  assert.equal(blockedPrivate.block, true);
-  assert.match(blockedPrivate.reason, /PiCM privacy policy/);
-  assert.equal(h.handlers.has("user_bash"), false);
-  assert.equal(existsSync(join(cwd, ".git")), false);
-  const config = JSON.parse(readFileSync(join(cwd, ".picm/config.json"), "utf8"));
-  assert.equal(config.custom, "keep");
-  assert.notEqual(config.maintenance.lastCycleAt, "2020-01-01T00:00:00.000Z");
-  await h.handlers.get("agent_settled")({}, ctx);
-  await h.handlers.get("session_shutdown")({}, ctx);
-});
-
-test("automatic advisory fails closed when its scan safety boundary expires", async (t) => {
-  const cwd = fixture(t, oldDue("automatic"));
-  writeFileSync(join(cwd, "safe.txt"), "safe\n");
-  const h = harness();
-  const ctx = h.context(cwd, "tui", "expiring-automatic-session");
-  let clock = Date.now();
-  t.mock.method(Date, "now", () => clock);
-
-  await h.handlers.get("session_start")({}, ctx);
-  clock += 2 * 60 * 60 * 1000 + 1;
-
-  for (const event of [
-    { toolName: "read", input: { path: "safe.txt" } },
-    { toolName: "picm_scan_control", input: { action: "inventory" } },
-    { toolName: "write", input: { path: "safe.txt" } },
-  ]) {
-    const blocked = await h.handlers.get("tool_call")(event, ctx);
-    assert.equal(blocked.block, true);
-    assert.match(blocked.reason, /safety boundary expired/);
+  for (const ctx of [first, second]) {
+    await h.commands.get("picm-maintain").handler("strict", ctx);
+    await h.scanControl.execute("id", { action: "preflight" }, undefined, undefined, ctx);
+    await h.scanControl.execute("id", { action: "privacy", excludedPaths: [], persist: false }, undefined, undefined, ctx);
+    await h.scanControl.execute("id", { action: "begin" }, undefined, undefined, ctx);
+    await h.scanControl.execute("id", { action: "end" }, undefined, undefined, ctx);
   }
-  await assert.rejects(
-    h.scanControl.execute("id", { action: "inventory" }, undefined, undefined, ctx),
-    /PICM_AUTOMATIC_SCAN_EXPIRED/,
-  );
 
-  await h.handlers.get("agent_settled")({}, ctx);
-  assert.equal(await h.handlers.get("tool_call")(
-    { toolName: "read", input: { path: "safe.txt" } },
-    ctx,
-  ), undefined);
+  const results = await Promise.allSettled([
+    h.scanControl.execute("first", { action: "complete" }, undefined, undefined, first),
+    h.scanControl.execute("second", { action: "complete" }, undefined, undefined, second),
+  ]);
+  assert.equal(results.filter(({ status }) => status === "fulfilled").length, 1);
+  assert.equal(results.filter(({ status }) => status === "rejected").length, 1);
+  assert.match(results.find(({ status }) => status === "rejected").reason.message, /MAINTENANCE_POLICY_CONFLICT/);
+
+  const incomplete = results[0].status === "rejected" ? first : second;
+  const status = await h.scanControl.execute("status", { action: "status" }, undefined, undefined, incomplete);
+  assert.equal(status.details.completed, false);
+  assert.equal(status.details.maintenanceResetAttempted, false);
 });
 
-test("automatic send failure rolls back the claim and clears the session guard", async (t) => {
-  const due = oldDue("automatic");
-  const cwd = fixture(t, due);
-  const h = harness({ sendError: new Error("synthetic send failure") });
-  await h.handlers.get("session_start")({}, h.context(cwd));
-  assert.equal(h.sent.length, 0);
-  assert.equal(h.entries.length, 0);
-  assert.deepEqual(JSON.parse(readFileSync(join(cwd, ".picm/config.json"), "utf8")).maintenance, due);
-  assert.match(h.notifications.at(-1).message, /could not start/);
-  assert.match(h.notifications.at(-1).message, /remains pending/);
-  const allowedWrite = await h.handlers.get("tool_call")({ toolName: "write", input: { path: "safe.txt" } }, h.context(cwd));
-  assert.equal(allowedWrite, undefined);
+test("Legacy automatic and nudge modes both present the reminder selector rather than auto-dispatching", async (t) => {
+  for (const mode of ["automatic", "nudge"]) {
+    const cwd = fixture(t, oldDue(mode));
+    const h = harness({ selectResult: undefined });
+    const before = readFileSync(join(cwd, ".picm/config.json"), "utf8");
+
+    await h.handlers.get("session_start")({}, h.context(cwd));
+
+    assert.equal(h.widgets.has("picm-maintenance-reminder"), true);
+    assert.equal(h.selections.length, 1);
+    assert.deepEqual(h.selections[0], {
+      title: "PiCM maintenance is due. Choose an action:",
+      items: ["Run Now", "Defer"],
+    });
+    assert.equal(h.sent.length, 0);
+    assert.equal(readFileSync(join(cwd, ".picm/config.json"), "utf8"), before);
+  }
 });
 
-test("automatic read-only guards are scoped to cwd and session", async (t) => {
-  const firstCwd = fixture(t, oldDue("automatic"));
-  const secondCwd = fixture(t, createPolicy({ mode: "automatic", intervalValue: 2, intervalUnit: "days", now: "2020-01-01T00:00:00.000Z" }));
-  const h = harness();
-  const first = h.context(firstCwd, "tui", "first-session");
-  const second = h.context(secondCwd, "tui", "second-session");
-  const unrelated = h.context(firstCwd, "tui", "unrelated-session");
-  await h.handlers.get("session_start")({}, first);
-  await h.handlers.get("session_start")({}, second);
+test("UI resources are cleaned up on session shutdown", async (t) => {
+  const cwd = fixture(t, oldDue("nudge"));
+  const h = harness({ selectResult: undefined });
+  const ctx = h.context(cwd);
 
-  await h.handlers.get("agent_settled")({}, unrelated);
-  await assert.rejects(
-    h.scanControl.execute("id", { action: "inventory" }, undefined, undefined, unrelated),
-    /PICM_SCAN_NOT_ACTIVE/,
-  );
-  assert.equal((await h.handlers.get("tool_call")({ toolName: "write", input: { path: "safe.txt" } }, first)).block, true);
-  assert.equal((await h.handlers.get("tool_call")({ toolName: "write", input: { path: "safe.txt" } }, second)).block, true);
+  await h.handlers.get("session_start")({}, ctx);
+  assert.equal(h.widgets.has("picm-maintenance-reminder"), true);
 
-  await h.handlers.get("agent_settled")({}, first);
-  assert.equal(await h.handlers.get("tool_call")({ toolName: "write", input: { path: "safe.txt" } }, first), undefined);
-  assert.equal((await h.handlers.get("tool_call")({ toolName: "write", input: { path: "safe.txt" } }, second)).block, true);
-  assert.equal(h.handlers.has("user_bash"), false);
+  await h.handlers.get("session_shutdown")({}, ctx);
+  assert.equal(h.widgets.has("picm-maintenance-reminder"), false);
 });
 
 test("non-TUI startup is a no-op for print, json, and rpc", async (t) => {
@@ -424,16 +480,17 @@ test("non-TUI startup is a no-op for print, json, and rpc", async (t) => {
     await h.handlers.get("session_start")({}, h.context(cwd, mode));
     assert.equal(readFileSync(join(cwd, ".picm/config.json"), "utf8"), before);
     assert.equal(h.sent.length, 0);
+    assert.equal(h.widgets.has("picm-maintenance-reminder"), false);
   }
 });
 
-test("new, adopt, and maintain reset scheduled cycles only after preflight and privacy", async (t) => {
+test("new, adopt, and maintain reset scheduled cycles only after complete", async (t) => {
   for (const command of ["picm-new", "picm-adopt", "picm-maintain"]) {
     const cwd = fixture(t, oldDue("nudge"));
     const h = harness();
     const ctx = h.context(cwd);
     const before = readFileSync(join(cwd, ".picm/config.json"), "utf8");
-    await h.commands.get(command).handler("", ctx);
+    await h.commands.get(command).handler(command === "picm-maintain" ? "strict" : "", ctx);
     assert.equal(readFileSync(join(cwd, ".picm/config.json"), "utf8"), before);
     await h.scanControl.execute("id", { action: "preflight" }, undefined, undefined, ctx);
     assert.equal(readFileSync(join(cwd, ".picm/config.json"), "utf8"), before);
@@ -444,9 +501,13 @@ test("new, adopt, and maintain reset scheduled cycles only after preflight and p
       undefined,
       ctx,
     );
+    assert.equal(readFileSync(join(cwd, ".picm/config.json"), "utf8"), before);
+    await h.scanControl.execute("id", { action: "begin" }, undefined, undefined, ctx);
+    await h.scanControl.execute("id", { action: "end" }, undefined, undefined, ctx);
+    const complete = await h.scanControl.execute("id", { action: "complete" }, undefined, undefined, ctx);
+    assert.equal(complete.details.completed, true);
     const config = JSON.parse(readFileSync(join(cwd, ".picm/config.json"), "utf8"));
     assert.notEqual(config.maintenance.lastCycleAt, "2020-01-01T00:00:00.000Z");
-    assert.equal(h.sent.length, 1);
   }
   const helpCwd = fixture(t, oldDue("nudge"));
   const help = harness();
@@ -455,7 +516,7 @@ test("new, adopt, and maintain reset scheduled cycles only after preflight and p
   assert.equal(readFileSync(join(helpCwd, ".picm/config.json"), "utf8"), before);
 });
 
-test("optimization privacy review does not reset maintenance cadence", async (t) => {
+test("optimization privacy review and complete do not reset maintenance cadence", async (t) => {
   const cwd = fixture(t, oldDue("nudge"));
   const h = harness();
   const ctx = h.context(cwd, "tui", "optimize-no-reset-session");
@@ -470,9 +531,14 @@ test("optimization privacy review does not reset maintenance cadence", async (t)
     undefined,
     ctx,
   );
-
   assert.equal(privacy.details.command, "picm-optimize");
-  assert.equal(privacy.details.maintenanceReset, undefined);
+  assert.equal(readFileSync(join(cwd, ".picm/config.json"), "utf8"), before);
+
+  await h.scanControl.execute("id", { action: "begin" }, undefined, undefined, ctx);
+  await h.scanControl.execute("id", { action: "end" }, undefined, undefined, ctx);
+  const complete = await h.scanControl.execute("id", { action: "complete" }, undefined, undefined, ctx);
+  assert.equal(complete.details.completed, true);
+  assert.equal(complete.details.maintenanceReset, undefined);
   assert.equal(readFileSync(join(cwd, ".picm/config.json"), "utf8"), before);
 });
 
@@ -497,7 +563,7 @@ test("maintenance reset is skipped when privacy is declined, incomplete, cancell
   const cancelled = harness();
   const cancelledCtx = cancelled.context(cancelledCwd, "tui", "cancelled-reset-session");
   const cancelledBefore = readFileSync(join(cancelledCwd, ".picm/config.json"), "utf8");
-  await cancelled.commands.get("picm-maintain").handler("", cancelledCtx);
+  await cancelled.commands.get("picm-maintain").handler("strict", cancelledCtx);
   await cancelled.scanControl.execute("id", { action: "preflight" }, undefined, undefined, cancelledCtx);
   await cancelled.commands.get("picm-help").handler("", cancelledCtx);
   assert.equal(readFileSync(join(cancelledCwd, ".picm/config.json"), "utf8"), cancelledBefore);
@@ -537,7 +603,7 @@ test("non-Git command startup and preflight do not read maintenance config or cr
   const ctx = h.context(cwd, "tui", "non-git-privacy-order-session");
   const before = readFileSync(join(cwd, ".picm/config.json"), "utf8");
 
-  await h.commands.get("picm-maintain").handler("", ctx);
+  await h.commands.get("picm-maintain").handler("strict", ctx);
   assert.equal(readFileSync(join(cwd, ".picm/config.json"), "utf8"), before);
   assert.equal(existsSync(join(cwd, ".git")), false);
 
@@ -554,8 +620,7 @@ test("non-Git command startup and preflight do not read maintenance config or cr
     undefined,
     ctx,
   );
-  const reset = JSON.parse(readFileSync(join(cwd, ".picm/config.json"), "utf8"));
-  assert.notEqual(reset.maintenance.lastCycleAt, "2020-01-01T00:00:00.000Z");
+  assert.equal(readFileSync(join(cwd, ".picm/config.json"), "utf8"), before);
   assert.equal(existsSync(join(cwd, ".git")), false);
 
   await h.scanControl.execute("id", { action: "begin" }, undefined, undefined, ctx);
@@ -563,6 +628,11 @@ test("non-Git command startup and preflight do not read maintenance config or cr
   assert.equal(inventory.details.isolated, true);
   assert.equal(inventory.details.candidates.includes("safe.txt"), true);
   assert.equal(existsSync(join(cwd, ".git")), false);
+
+  await h.scanControl.execute("id", { action: "end" }, undefined, undefined, ctx);
+  await h.scanControl.execute("id", { action: "complete" }, undefined, undefined, ctx);
+  const reset = JSON.parse(readFileSync(join(cwd, ".picm/config.json"), "utf8"));
+  assert.notEqual(reset.maintenance.lastCycleAt, "2020-01-01T00:00:00.000Z");
 });
 
 test("policy tool applies the exact accepted confirmation", async (t) => {

@@ -179,7 +179,7 @@ pi
 Expected behavior:
 
 - Before an explicit PiCM command, the extension leaves ordinary Pi reads, user-level skills, screenshots/outside paths, Git inspection, and agent tools untouched; use only the synthetic fixture when demonstrating that pass-through.
-- User-typed `!bash` is never intercepted, including during an active PiCM scan or automatic maintenance cycle.
+- User-typed `!bash` is never intercepted, including during an active PiCM scan.
 - `/picm-new`, `/picm-adopt`, `/picm-maintain`, and `/picm-optimize` authorize a privacy-pending workflow; `/picm-help` and natural-language requests do not. Before privacy review, every agent tool except `picm_scan_control` is blocked.
 - `picm_scan_control preflight` reports Git status plus root `.gitignore` and `.git/info/exclude` presence without candidate inventory or temporary Git metadata. Immediately afterward, both `/picm-adopt` classified as coding and `/picm-adopt coding` reassure the user that Git ignore rules, Git internals, symlinks, repository/submodule boundaries, and outside-project paths are already protected, then ask only for additional sensitive project-relative paths or `none`.
 - The additional-path question does not claim every secret is inferred or treat ignore rules as sufficient for sensitive eligible files. The workflow records `config-excluded.txt`, previews `privacy.excludedPaths`, and persists it only after exact confirmation.
@@ -187,7 +187,7 @@ Expected behavior:
 - `begin` is refused before privacy review. After review, `inventory` combines root/nested `.gitignore`, `.git/info/exclude`, global Git excludes, persisted PiCM config, and session additions. A later scan phase calls `begin` again and `end` afterward.
 - Session shutdown clears only active scan state; resuming the same session restores valid privacy-reviewed authorization and exclusions inactive. Workflow completion, explicit clearing, dispatch failure, or expiry revokes authorization durably.
 - Uses `picm_scan_control inventory` to derive candidates without agent Bash and checks Git plus PiCM exclusions immediately before each path-tool execution. Admitted ordinary reads, edits, and writes stay bound to the validated file until execution settles. Unknown agent tools are blocked during active scans; confirmed privacy paths remain blocked between scan phases.
-- In a second disposable fixture, omit `.git` but keep `.gitignore`; verify preflight creates no temporary metadata, then privacy review allows explicit and automatic maintenance scans to block excluded reads, allow safe candidates, create no project `.git`, and remove post-review transient metadata on shutdown.
+- In a second disposable fixture, omit `.git` but keep `.gitignore`; verify preflight creates no temporary metadata, then privacy review allows explicit maintenance scans to block excluded reads, allow safe candidates, create no project `.git`, and remove post-review transient metadata on shutdown.
 - In a third disposable fixture, omit both `.git` and `.gitignore`; verify preflight asks privacy before creating transient metadata and persisted/session exclusions protect the scan.
 - Does not open, quote, summarize, hash, or otherwise inspect untracked ignored `.env`, tracked ignored `.env.tracked`, `secrets/fake-key.pem`, `.git/info/exclude`-matched `local-excluded.txt`, or config-excluded `config-excluded.txt`, including through `git show`, broad traversal, or another worktree.
 - Does not follow `ignored-target-link` to the ignored `.env` target.
@@ -204,7 +204,7 @@ Observed smoke: 2026-07-22 in visible Zellij/Pi panes against `/tmp/picm-coding-
 
 ## Maintenance cadence smoke check
 
-In a disposable fixture, configure a one-day nudge with `picm_maintenance_policy`, confirm the exact `.picm/config.json` patch, then make `nextDueAt` due and restart an interactive Pi session. Verify one deterministic notification appears without resetting timestamps. Repeat with automatic mode: verify the first eligible TUI session resets the cycle once and dispatches a chat-only maintenance report while agent-initiated Bash/edit/write remain blocked; user-typed `!bash` stays unrestricted. Repeat without `.git` but with `.gitignore` and verify the cycle still dispatches while ignored agent reads remain blocked and no project `.git` is created. Reload/resume must not dispatch the same due key twice. Print, JSON, and RPC sessions must neither notify/dispatch nor mutate the schedule. Decline an apply confirmation and verify no file changes. Do not run write-capable smoke tests outside an explicitly disposable target.
+In a disposable fixture, configure a one-day reminder with `picm_maintenance_policy`, confirm the exact `.picm/config.json` patch, then make `nextDueAt` due and restart an interactive Pi session. Verify the persistent reminder section renders above the editor and presents a selector with `Run Now` and `Defer`. Test `Defer`: verify the reminder is dismissed for the current session, notification states PiCM will ask again in a new session, timestamps are not changed, and reload/resume in the same session does not prompt again while a fresh session prompts again. Test `Run Now`: verify it invokes the Strict/Balanced depth selector, starts privacy review, and advances `lastCycleAt`/`nextDueAt` and clears the reminder only after successful completion. Verify cancellation or escape leaves the reminder visible and maintenance due. Repeat with legacy `automatic` and `nudge` configs to verify both use the approval prompt. Print, JSON, and RPC sessions must neither prompt nor mutate the schedule. Decline an apply confirmation and verify no file changes. Do not run write-capable smoke tests outside an explicitly disposable target.
 
 ## `/picm-maintain` smoke checks
 
@@ -218,7 +218,7 @@ Expected behavior:
   - Strict (recommended): broader systematic coverage across declared roots and mapped contexts; higher cost.
   - Balanced: representative coverage of major boundaries and one coding path; lower cost.
 - `/picm-maintain strict` and `/picm-maintain balanced` bypass the selector. Every choice applies only to that run and leaves the stored preset unchanged.
-- Historical stored Light/Balanced/Strict values remain readable and preset-driven scheduled maintenance honors them; a missing stored value falls back to Balanced. Light never appears in the interactive selector.
+- Historical stored Light/Balanced/Strict values remain readable. Scheduled `Run Now` presents the ordinary Strict/Balanced selector instead of using the stored preset, and Light never appears in that selector.
 - Uses coding cold walks: root routing → map/equivalent → owning boundary → entry point → authoritative tests/checks.
 - `small-service` accepts the root map in `AGENTS.md`.
 - `monorepo-distributed` checks root/local responsibility agreement and manifest-level workspace coverage without attempting a full semantic dependency graph.

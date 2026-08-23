@@ -106,7 +106,7 @@ export function validatePolicy(policy) {
   return { mode: policy.mode, interval, lastCycleAt, nextDueAt };
 }
 
-export function createPolicy({ mode, intervalValue, intervalUnit, now = new Date() }) {
+export function createPolicy({ mode = "nudge", intervalValue, intervalUnit, now = new Date() } = {}) {
   if (mode === "manual") return { mode: "manual" };
   if (mode !== "nudge" && mode !== "automatic") {
     fail("INVALID_MODE", "maintenance mode must be manual, nudge, or automatic");
