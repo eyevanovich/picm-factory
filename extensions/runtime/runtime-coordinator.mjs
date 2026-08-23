@@ -562,11 +562,18 @@ export function createRuntimeCoordinator({
         if (!GUARDED_PATH_TOOLS.has(event.toolName)) {
           return { allowed: false, reason: "Unrecognized agent tools are blocked while PiCM privacy exclusions are active" };
         }
-        const decision = await runtimeFor(ctx).gate.checkPrivacyPath(
+        const decision = await runtimeFor(ctx).gate.checkPath(
           event.toolName,
           event.input?.path,
           workflow.excludedPaths,
         );
+        if (
+          decision.allowed &&
+          event.toolName === "read" &&
+          typeof decision.canonicalPath === "string"
+        ) {
+          event.input.path = decision.canonicalPath;
+        }
         if (decision.allowed && decision.executionBinding && typeof event.toolCallId === "string") {
           const binding = runtimeFor(ctx).gate.bindPath(decision.executionBinding);
           activeToolBindings.set(`${sessionId}:${event.toolCallId}`, binding);
