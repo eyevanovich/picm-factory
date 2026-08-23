@@ -45,9 +45,11 @@ test("shipped protocol defines complete summary and approval invalidation", () =
     "Known uncertainty",
     "Mandatory exact review",
     "literal `None`",
-    "separate explicit write approval",
+    "An unambiguous direct approval of that current summary",
+    "`accept`, `approve`, `accept and write`, or `proceed`",
+    "Do not require a separate summary-acceptance step or an exact-review menu",
     "Option choice, cadence choice, a preview request, review navigation, or vague assent is not approval",
-    "A proposal revision invalidates all earlier preview acceptance, exact-review state, and approval",
+    "A proposal revision invalidates all earlier approval and exact-review state",
   ]) assert.ok(protocol.includes(signal), `missing protocol signal: ${signal}`);
 });
 
@@ -68,6 +70,8 @@ test("exact review choices, navigation state, and rendering kinds are explicit",
     "conversationally names or checks paths from the current proposal",
     "Selecting either the source or destination of a linked move selects and reviews the whole source-destination pair",
     "protected or sensitive content cannot safely be rendered exactly, stop",
+    "Offer exact review whenever the user asks to inspect files or diffs",
+    "show diff for <path>",
   ]) assert.ok(protocol.includes(signal), `missing exact-review signal: ${signal}`);
 });
 
@@ -90,11 +94,11 @@ test("skill, adopt, coding, maintenance, optimization, help, and public guidance
     "skills/picm-factory/SKILL.md": [protocolPath.split("/").at(-1), "Before every proposed project write"],
     "skills/picm-factory/references/adoption-guide.md": ["preview-review-protocol.md", "refreshed summary"],
     "skills/picm-factory/references/coding-adoption-guide.md": ["preview-review-protocol.md", "mandatory exact review"],
-    "skills/picm-factory/references/maintenance-rubric.md": ["preview-review-protocol.md", "separate explicit approval"],
-    "skills/picm-factory/references/optimization-guide.md": ["preview-review-protocol.md", "separate explicit approval"],
-    "prompts/picm-adopt.md": ["summary-preview and exact-review protocol", "separate explicit approval"],
-    "prompts/picm-maintain.md": ["summary-preview and exact-review protocol", "separate explicit approval"],
-    "prompts/picm-optimize.md": ["summary-preview and exact-review protocol", "separate explicit approval"],
+    "skills/picm-factory/references/maintenance-rubric.md": ["preview-review-protocol.md", "direct explicit approval"],
+    "skills/picm-factory/references/optimization-guide.md": ["preview-review-protocol.md", "direct explicit approval"],
+    "prompts/picm-adopt.md": ["summary-preview and exact-review protocol", "direct explicit approval"],
+    "prompts/picm-maintain.md": ["summary-preview and exact-review protocol", "direct explicit approval"],
+    "prompts/picm-optimize.md": ["summary-preview and exact-review protocol", "direct explicit approval"],
     "prompts/picm-help.md": ["complete concise summary", "selective exact review"],
     "README.md": ["complete concise summary", "`View all`, `Select files`, and `Return to summary`"],
     "docs/layout-fixture-qa.md": ["both `/picm-adopt` and `/picm-maintain`", "Repeat the no-write check"],
@@ -127,9 +131,9 @@ test("dispatch prompts preserve privacy bootstrap ordering and add preview guida
     assert.ok(privacy < confirmation && confirmation < skill);
   }
   assert.ok(adopt.indexOf("load the `picm-factory` skill") < adopt.indexOf("summary-preview and exact-review protocol"));
-  assert.match(maintain, /Before every proposed project write.*summary-preview and exact-review protocol/s);
-  assert.match(optimize, /Before every proposed project write.*summary-preview and exact-review protocol/s);
-  assert.match(help, /Explain the shipped adoption\/maintenance\/optimization summary-preview, selective exact-review/);
+  assert.match(maintain, /Before every proposed project write.*summary-preview and exact-review protocol.*direct explicit approval/s);
+  assert.match(optimize, /Before every proposed project write.*summary-preview and exact-review protocol.*direct explicit approval/s);
+  assert.match(help, /Explain the shipped adoption\/maintenance\/optimization summary-preview, on-demand exact-review, and direct summary-approval behavior/);
   assert.match(maintain, /Maintenance run depth: strict.*run only.*Do not mutate/s);
 });
 

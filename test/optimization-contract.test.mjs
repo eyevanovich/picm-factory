@@ -83,8 +83,8 @@ test("optimization guide preserves unique constraints and user-controlled writes
     "Let the user choose, combine, reject, or revise",
     "Selection is design intent only and never write approval",
     "complete concise summary",
-    "separate explicit approval",
-    "If the proposal changes, invalidate prior summary acceptance",
+    "direct explicit approval",
+    "If the proposal changes, invalidate prior approval",
   ]) assert.ok(guide.includes(signal), `missing preservation/approval signal: ${signal}`);
 });
 

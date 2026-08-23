@@ -83,9 +83,9 @@ For the selected set:
 
 1. Draft the exact current proposal without writing.
 2. Check it against the preservation ledger and all source/destination pointers. If any unique constraint is lost, unreachable, or uncertain, revise or stop.
-3. Apply `preview-review-protocol.md`: present the complete concise summary, offer `View all`, `Select files`, and `Return to summary`, complete every mandatory exact review, and obtain separate explicit approval for this current proposal.
+3. Apply `preview-review-protocol.md`: present the complete concise summary, offer `View all`, `Select files`, and `Return to summary` on demand, complete every mandatory exact review, and accept direct explicit approval of this current summary.
 4. Treat deletions and any change to safety, privacy, permissions, approval boundaries, or required commands as mandatory exact-review items. Review linked cross-file reorganizations together.
-5. If the proposal changes, invalidate prior summary acceptance, exact-review state, and approval; regenerate the summary and repeat required review.
+5. If the proposal changes, invalidate prior approval and exact-review state; regenerate the summary and repeat required review.
 6. Begin a protected scan phase before guarded re-reads or writes, refresh inventory when needed, write only the approved agent-facing documentation changes, re-read the changed docs through the guard, and call `end` afterward.
 
 Never infer approval from proposal selection, a request to preview, review navigation, or vague assent.

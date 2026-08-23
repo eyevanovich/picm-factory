@@ -69,7 +69,7 @@ Expected behavior:
 - Identifies evidence-backed opportunities before drafting edits, distinguishes true duplication from intentional local safety or approval reminders, and builds a qualitative preservation ledger for unique safety, privacy, permission, approval, command, behavior, verification, handoff, and domain constraints.
 - Offers independently selectable proposals, makes no semantic-equivalence or guaranteed token-savings claim, and does not manufacture a proposal when the current docs are already clear.
 - Never proposes source/build/runtime, `.picm/`, generated-artifact, per-run output, or unrelated-workspace edits.
-- Treats proposal selection as design intent only. Every selected write uses the complete concise summary, optional `View all` / `Select files` / `Return to summary` review, mandatory exact review for deletions and safety/permission/approval-boundary/required-command changes, and separate explicit approval for the current proposal. Revisions invalidate prior acceptance.
+- Treats proposal selection as design intent only. Every selected write uses the complete concise summary, optional `View all` / `Select files` / `Return to summary` review, mandatory exact review for deletions and safety/permission/approval-boundary/required-command changes, and direct explicit approval of the current summary. Revisions invalidate prior approval.
 - If no useful change is justified, reports exactly `No worthwhile optimizations found`.
 
 ## Coding Repository smoke checks
@@ -97,7 +97,7 @@ Expected behavior:
 - `/picm-adopt coding` skips the initial classification question but preserves the same security, scan, preview, and approval rules.
 - The flow offers root, distributed, and scan-and-recommend mapping plus additive and curated adoption. It does not ask for maintenance depth: it automatically performs the Strict examination and previews `capabilities.codebaseMap.maintenancePreset: "strict"`.
 - The user can choose Coding Repository as the primary profile or add codebase mapping to another primary profile.
-- No files are written without an accepted complete summary, any mandatory exact review, and separate approval.
+- No files are written without a complete concise summary, any mandatory exact review, and direct explicit approval.
 
 ### Root and distributed maps
 
@@ -264,7 +264,7 @@ Expected behavior:
 - Identifies the final announcement's September 28 date as inconsistent with the approved September 18 date.
 - Reports **high confidence** in the visible output inconsistency, but only **medium confidence** that the publishing contract's weak fact-alignment Verify step contributed; it must not claim causal or provenance-grade certainty.
 - Recommends **both** an output patch for this run (restore September 18) and source-context healing for future runs (a Tier 2 contract fix requiring exact logistical facts to be checked against the approved brief).
-- Keeps trace mode framed as a heuristic, focused investigation and does not write either repair without an accepted complete summary, any mandatory exact review, and explicit approval.
+- Keeps trace mode framed as a heuristic, focused investigation and does not write either repair without a complete concise summary, any mandatory exact review, and direct explicit approval.
 
 ### Maintenance Anti-Patterns
 
@@ -492,8 +492,8 @@ Expected behavior:
 - Uses an adequate existing `CLAUDE.md` or `AGENTS.md` as the routing source of truth instead of proposing replacement.
 - If both files exist, checks coexistence/conflict and offers optimization only as an approved optional edit.
 - If neither file exists, recommends `AGENTS.md` as the PiCM default and asks whether to add a `CLAUDE.md` compatibility shim.
-- Does not rewrite, merge, rename, move, delete, or create visible files without an accepted complete summary, any mandatory exact review, user iteration, and approval.
-- Does not treat option selection as write approval; if the user asks for preview or says not to write yet, it stops after preview and waits for a separate explicit approval before writing even `.picm/` files.
+- Does not rewrite, merge, rename, move, delete, or create visible files without a complete concise summary, any mandatory exact review, user iteration, and direct explicit approval.
+- Does not treat option selection as write approval; if the user asks for preview or says not to write yet, it stops after preview and waits for direct explicit approval of the current summary before writing even `.picm/` files.
 - Separates readiness labels: `Ready`, `Ready with warnings`, `Needs routing before adoption`, and `Scanned only`.
 - Marks `.picm/config.json` as `adoption.status: "adopted"` only when visible routing is adequate.
 - May write scanned-only `.picm/config.json`/`.picm/adoption-report.md` after approval, with a report link or brief scan summary for future `/picm-maintain` guidance.
@@ -521,7 +521,7 @@ Expected behavior:
 - Keeps routing readiness separate: the inventory does not turn the fixture's partial `AGENTS.md` into adequate routing or full adoption.
 - Does not invent an archive candidate when none is supported. If a path is unclear, asks the owner and preserves it as-is rather than labeling it dead.
 - Does not propose destinations or move, rename, archive, delete, merge, rewrite, or create files from the classification.
-- Does not write files without an accepted complete summary, any mandatory exact review, and separate explicit approval.
+- Does not write files without a complete concise summary, any mandatory exact review, and direct explicit approval.
 
 Observed smoke: 2026-07-19 in a visible Zellij/Pi pane against a disposable copy at `/tmp/picm-7hj-adopt-inventory`.
 
@@ -566,7 +566,8 @@ Do not run this write-capable interaction against a real project. When interacti
 For each command, construct proposals containing one modified file, one new file, one deletion, and a linked source/destination move, including a safety or required-command change. Verify:
 
 - Before every proposed write, one complete concise summary enumerates every affected file and operation, behavior/configuration changes, linked cross-file moves, preserved behavior, known uncertainty, and mandatory exact-review items; every empty category says `None`.
-- Option choice, cadence choice, preview request, review navigation, and vague assent produce no write. A separate explicit approval from the accepted summary works only when no mandatory exact review is pending.
+- Option choice, cadence choice, preview request, review navigation, and vague assent produce no write. An unambiguous direct approval from the current summary works only when no mandatory exact review is pending.
+- Also test a proposal with no mandatory exact-review item: `accept`, `approve`, `accept and write`, and `proceed` write exactly the enumerated summary without opening the exact-review menu.
 - Deletions and changes to safety, permissions, approval boundaries, or required commands remain unapprovable until exact review. Existing exact control confirmations for persisted privacy exclusions and standalone maintenance-policy writes still occur and authorize no other write.
 - Exact-review entry offers exactly `View all`, `Select files`, and `Return to summary`.
 - `View all` renders every affected item in summary order. In `Select files`, the user conversationally names or checks paths from the current proposal; selecting either source or destination of a linked move selects and reviews the whole source-destination pair. Selection and reviewed state persist while navigating one file at a time through `Previous`, `Next`, `Back to selection`, and `Return to summary`. Returning to the summary and re-entering review does not lose state.

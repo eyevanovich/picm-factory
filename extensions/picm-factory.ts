@@ -79,9 +79,9 @@ function buildPrompt(
   const argText = args.trim() ? `\n\nUser arguments:\n${args.trim()}` : "";
   const commandContext = `Mode: ${mode}\nCommand: /${command}${argText}`;
   const previewGuidance = command === "picm-adopt" || command === "picm-maintain" || command === "picm-optimize"
-    ? "\n\nBefore every proposed project write, follow the skill's shipped summary-preview and exact-review protocol; require a separate explicit approval for the current proposal."
+    ? "\n\nBefore every proposed project write, follow the skill's shipped summary-preview and exact-review protocol; accept direct explicit approval of the current summary before writing the exact proposal."
     : command === "picm-help"
-      ? "\n\nExplain the shipped adoption/maintenance/optimization summary-preview, selective exact-review, and separate write-approval behavior."
+      ? "\n\nExplain the shipped adoption/maintenance/optimization summary-preview, on-demand exact-review, and direct summary-approval behavior."
       : "";
   if (privacyBootstrap) {
     return `Privacy-first startup — follow this order exactly:\n1. Call \`picm_scan_control\` with \`action: "preflight"\`. Do not load the skill or use any other tool yet.\n2. After preflight, ask this exact question and wait for the user's reply:\n\n${adoptionPrivacyQuestion}\n\n3. Prepare the privacy call with every additional exact path from the reply (an empty list for \`none\`). Use \`persist: true\` only if the user requests durable exclusions. Before a call with \`persist: true\`, present the complete concise \`.picm/config.json\` summary categories: affected files and operations, behavior or configuration changes, linked cross-file moves, preserved behavior, known uncertainty, and mandatory exact review. Use \`None\` for empty categories, mark the safety/configuration change as mandatory exact review, and obtain the user's summary acceptance. Then call \`picm_scan_control\` with \`action: "privacy"\`; its exact TUI patch confirmation is the mandatory exact review and separate write approval.\n4. Only after privacy review completes, load the \`picm-factory\` skill and its \`SKILL.md\`, then continue the ${mode} workflow.\n\n${commandContext}${previewGuidance}`;

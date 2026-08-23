@@ -24,7 +24,7 @@ You do not need to know PiCM or ICM terminology. Choose based on what is already
 | You know this is a repository or monorepo and want to skip the initial classification. | `/picm-adopt coding` | Enters the same coding-adoption flow that regular `/picm-adopt` can offer. |
 | You are still unsure. | `/picm-help` | Repeats this guide and the safety/install model. |
 
-When a folder already has workspace architecture, prefer `/picm-adopt` over `/picm-new`. Adoption does not mean conversion: it scans and reports first, then requires an accepted complete summary, any mandatory exact review, and separate approval before writing or restructuring anything.
+When a folder already has workspace architecture, prefer `/picm-adopt` over `/picm-new`. Adoption does not mean conversion: it scans and reports first, then requires a complete concise summary, any mandatory exact review, and direct explicit approval before writing or restructuring anything.
 
 ## Command arguments and autocomplete
 
@@ -145,7 +145,7 @@ PiCM Factory is intentionally conservative:
 
 - Project-local install by default: use `pi install -l ...`.
 - Non-destructive by default: adoption, maintenance, and optimization show a complete concise summary before every proposed project write. It enumerates every file/operation, behavior or configuration change, linked move, preserved behavior, uncertainty, and mandatory exact-review item, using `None` for empty categories.
-- Separate approval: option/cadence choices, preview requests, review navigation, and vague assent do not approve writes. Revisions invalidate earlier review and approval. When no mandatory exact review is pending, the current summary can receive a separate explicit write approval.
+- Direct summary approval: option/cadence choices, preview requests, review navigation, and vague assent do not approve writes. Revisions invalidate earlier review and approval. When no mandatory exact review is pending, an unambiguous `accept`, `approve`, `accept and write`, or `proceed` directly authorizes the current summary.
 - Exact review: deletions and changes to safety, permissions, approval boundaries, or required commands must be reviewed exactly before approval. Review offers `View all`, `Select files`, and `Return to summary`; modified files use unified diffs, new/deleted files show complete content, and linked moves are reviewed together. Protected content that cannot be rendered safely is not approved or written.
 - Git encouraged, but no automatic commits.
 - Secrets-first handling: do not commit `.env`, keys, tokens, credentials, or sensitive client data accidentally.

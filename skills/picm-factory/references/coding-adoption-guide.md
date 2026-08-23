@@ -85,7 +85,7 @@ Offer:
 - **Additive** — preserve existing documentation and add only missing routing/maps. Report repetition or conflicts as optional findings.
 - **Curated** — inventory agent and architecture documentation, identify repetition/conflict/stale pointers, and draft a consolidation/restructure proposal.
 
-Curated mode is permission to analyze and propose—not permission to apply. Apply `preview-review-protocol.md` before every proposed project write. Highlight linked moves and deletions in the summary; deletions require mandatory exact review before separate approval for the complete current change set.
+Curated mode is permission to analyze and propose—not permission to apply. Apply `preview-review-protocol.md` before every proposed project write. Highlight linked moves and deletions in the summary; deletions require mandatory exact review before direct approval of the complete current summary.
 
 ### 3. Automatic Strict adoption examination
 
@@ -135,7 +135,7 @@ Start from user hints and visible workspace/build boundaries. Propose local cont
 - frequent independent agent work;
 - material cross-boundary coordination risk.
 
-Do not place `CONTEXT.md` in every package by default. Preview the proposed boundaries and rationale, and let the user add/remove boundaries before drafting files. Any proposal revision invalidates earlier summary acceptance, exact-review state, and approval.
+Do not place `CONTEXT.md` in every package by default. Preview the proposed boundaries and rationale, and let the user add/remove boundaries before drafting files. Any proposal revision invalidates earlier approval and exact-review state.
 
 ### Scan and recommend
 

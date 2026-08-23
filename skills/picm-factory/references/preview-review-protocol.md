@@ -4,16 +4,16 @@ Use this protocol for every project write proposed by `/picm-adopt`, `/picm-main
 
 ## Write gate
 
-Before each proposed project write, present one complete concise summary preview. Do not write until the user has accepted the current preview and then given separate explicit write approval. Option choice, cadence choice, a preview request, review navigation, or vague assent is not approval.
+Before each proposed project write, present one complete concise summary preview. An unambiguous direct approval of that current summary—for example, `accept`, `approve`, `accept and write`, or `proceed`—authorizes writing its exact enumerated changes. Do not require a separate summary-acceptance step or an exact-review menu before writing unless mandatory exact review is pending. Option choice, cadence choice, a preview request, review navigation, or vague assent is not approval.
 
-A proposal revision invalidates all earlier preview acceptance, exact-review state, and approval. Present a refreshed summary and repeat any mandatory exact review for the revised proposal.
+A proposal revision invalidates all earlier approval and exact-review state. Present a refreshed summary and repeat any mandatory exact review for the revised proposal.
 
 Exact review is mandatory before approval for:
 
 - every deletion;
 - every change to safety, permissions, approval boundaries, or required commands.
 
-When no mandatory exact review is pending, the user may approve directly from the summary. Every persisted `privacy.excludedPaths` or standalone maintenance-policy control write still receives the complete concise summary first, marks its safety/configuration change as mandatory exact review, and obtains summary acceptance. Then use the built-in exact TUI patch confirmation as the mandatory exact review and separate write approval. For a standalone maintenance-policy apply, pass only `action: "apply"` and the accepted preview's `previewId`; direct-apply runtime compatibility remains unchanged but is not agent guidance. Neither control confirmation authorizes other project writes.
+When no mandatory exact review is pending, the user may approve directly from the summary. Exact review remains available on demand for any affected file or diff. Every persisted `privacy.excludedPaths` or standalone maintenance-policy control write still receives the complete concise summary first, marks its safety/configuration change as mandatory exact review, and obtains summary acceptance. Then use the built-in exact TUI patch confirmation as the mandatory exact review and separate write approval. For a standalone maintenance-policy apply, pass only `action: "apply"` and the accepted preview's `previewId`; direct-apply runtime compatibility remains unchanged but is not agent guidance. Neither control confirmation authorizes other project writes.
 
 ## Summary preview template
 
@@ -45,7 +45,7 @@ The summary must be complete even when concise: include every affected path and 
 
 ## Exact review interaction
 
-At the exact-review entry, offer exactly these choices and no additional peer choice:
+Offer exact review whenever the user asks to inspect files or diffs, including `view all`, `review files`, or `show diff for <path>`. Enter mandatory exact review before accepting approval only when a mandatory item is pending. At the exact-review entry, offer exactly these choices and no additional peer choice:
 
 1. **View all**
 2. **Select files**
@@ -66,6 +66,6 @@ Do not substitute paraphrase for exact rendering. If protected or sensitive cont
 
 ## Approval language
 
-After the accepted summary and all mandatory exact review, ask for explicit approval to write the current proposal. A valid approval clearly authorizes writing the enumerated current proposal. Any requested change returns to proposal revision; refresh the summary and required reviews before requesting approval again.
+A valid approval clearly authorizes writing the enumerated current proposal. When no mandatory item is pending, accept it directly from the summary without an intervening exact-review ceremony. When mandatory items are pending, render them exactly first, then accept direct approval of the current summary. Any requested change returns to proposal revision; refresh the summary and required reviews before requesting approval again.
 
 This protocol does not authorize crawling, a custom TUI, a workflow executor, or automated semantic-equivalence claims. Use the existing Pi conversation and file tools while preserving all runtime privacy and scan behavior.
