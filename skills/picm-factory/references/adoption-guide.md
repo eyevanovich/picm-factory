@@ -77,7 +77,7 @@ Rules:
 - Keep routing readiness and adoption status separate. An inventory classification does not make inadequate routing adoptable and does not make a custom layout wrong.
 - Treat **Unclear / possible archive candidate** as a question for the owner, never a declaration that content is dead. State the evidence, preserve the path as-is, and recommend archive/delete consideration only after owner confirmation.
 - Do not turn the inventory into proposed destinations, renamed paths, or a conversion plan unless the user separately asks for options.
-- Never move, rename, archive, delete, merge, or rewrite files from the inventory. Any later file action requires an accepted complete summary, any mandatory exact review, and separate explicit approval under `preview-review-protocol.md`.
+- Never move, rename, archive, delete, merge, or rewrite files from the inventory. Any later file action requires a current complete concise summary, any mandatory exact review, and direct explicit approval under `preview-review-protocol.md`.
 - Keep sensitive material generic. Do not quote contents, and avoid reproducing filenames or paths that themselves reveal protected information; use a safe area label such as “private source area” when needed.
 - Omit the table when it would add noise to a small, already legible workspace.
 
@@ -161,9 +161,9 @@ When routing is missing, partial, or conflicting, offer alternatives rather than
 - **Option 2 — Stronger ICM routing**: more opinionated route map inferred from the visible workflow, such as stage/role/specialist paths, local contracts, handoffs, stable references, and outputs.
 - **Option 3 — Scanned only for now**: write only report/scanned metadata after approval; do not mark adopted.
 
-For coding adoption, present Additive and Curated as proposal-depth choices in addition to readiness options. Curated mode can recommend canonical docs and compatibility pointers, but it does not weaken the summary-preview, mandatory-review, or separate-approval gate.
+For coding adoption, present Additive and Curated as proposal-depth choices in addition to readiness options. Curated mode can recommend canonical docs and compatibility pointers, but it does not weaken the summary-preview, mandatory-review, or direct-approval gate.
 
-Never write routing/context edits until the user is satisfied with the proposal and explicitly approves exact changes. Apply `preview-review-protocol.md` before every proposed project write. Treat option selection as design intent, not write approval. A preview request, review navigation, cadence choice, or vague assent is also not approval; revisions require a refreshed summary and mandatory reviews before a new separate approval.
+Never write routing/context edits until the user is satisfied with the proposal and explicitly approves exact changes. Apply `preview-review-protocol.md` before every proposed project write. Treat option selection as design intent, not write approval. A preview request, review navigation, cadence choice, or vague assent is also not approval; revisions invalidate prior approval and require a refreshed summary and mandatory reviews before approval.
 
 ## PiCM config
 
@@ -176,7 +176,7 @@ Default approved adoption writes are minimal and live under `.picm/`:
 
 Use config to preserve compatibility metadata, provenance, maintenance policy, and approved PiCM scan exclusions—not workflow instructions.
 
-Near the final config preview, ask whether the user wants scheduled maintenance reminders: No configures manual maintenance; Yes asks for cadence in days, weeks, or months (such as the recommended monthly reminder). Do not present separate nudge versus automatic choices. Explain that scheduling requires `.picm/config.json` to remain non-ignored and a regular non-symlink file beneath a regular non-symlink `.picm/` directory. Accept positive integer day/week/month intervals. Skipped or declined leaves no policy object. Use `picm_maintenance_policy` preview for deterministic `lastCycleAt` and `nextDueAt`, then include the exact object in the same adoption preview. Cadence selection does not approve the config write. When maintenance is due in an interactive session, PiCM displays a persistent reminder above the editor offering Run Now and Defer. Cycle timestamp advance occurs only upon successful maintenance completion; reports, repairs, commits, and all other writes still require separate approval.
+Near the final config preview, ask whether the user wants scheduled maintenance reminders: No configures manual maintenance; Yes asks for cadence in days, weeks, or months (such as the recommended monthly reminder). Do not present separate nudge versus automatic choices. Explain that scheduling requires `.picm/config.json` to remain non-ignored and a regular non-symlink file beneath a regular non-symlink `.picm/` directory. Accept positive integer day/week/month intervals. Skipped or declined leaves no policy object. Use `picm_maintenance_policy` preview for deterministic `lastCycleAt` and `nextDueAt`, then include the exact object in the same adoption preview. Cadence selection does not approve the config write. When maintenance is due in an interactive session, PiCM displays a persistent reminder above the editor offering Run Now and Defer. Cycle timestamp advance occurs only upon successful maintenance completion; reports, repairs, commits, and all other writes still require direct approval of their current summary.
 
 Adopted example:
 
@@ -232,7 +232,7 @@ Keep `scanSummary` brief. Put detailed findings in `.picm/adoption-report.md`.
 
 When coding mapping is enabled, preserve one primary `profile` and add a minimal optional `capabilities.codebaseMap` object with the resulting `shape` (`root` or `distributed`), approved `roots`, map/equivalent path, selected local contexts, and `maintenancePreset: "strict"`. A Coding Repository profile implies this capability; a hybrid retains its workflow profile and adds the same capability. Roots may overlap workflow folders. Approved durable scan exclusions live separately under `privacy.excludedPaths` and remain effective even when `.gitignore` is absent or later changes.
 
-Even `.picm/` writes use `preview-review-protocol.md`: a complete concise summary, any mandatory exact review, and separate explicit approval for the current proposal. Do not treat “choose option 3 scanned only” as approval to write. The deterministic exact TUI confirmation for persisted privacy exclusions remains intact and does not authorize other writes.
+Even `.picm/` writes use `preview-review-protocol.md`: a complete concise summary, any mandatory exact review, and direct explicit approval of the current summary. Do not treat “choose option 3 scanned only” as approval to write. The deterministic exact TUI confirmation for persisted privacy exclusions remains intact and does not authorize other writes.
 
 ## Optional ICM improvements
 

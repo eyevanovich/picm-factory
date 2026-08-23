@@ -23,7 +23,7 @@ For every non-trivial Warning or Suggestion, include a healing path:
 3. **Smallest safe repair** — the least invasive change that restores clarity.
 4. **Previewable change** — what file(s) could be edited after approval.
 
-Never apply repairs automatically. For every proposed project write, use `preview-review-protocol.md`: present the complete concise summary, complete mandatory exact review, and wait for separate explicit approval for the current proposal. A revision invalidates prior acceptance, review, and approval. Offer edits only in `Changes I can apply with your approval`.
+Never apply repairs automatically. For every proposed project write, use `preview-review-protocol.md`: present the complete concise summary, complete mandatory exact review, and wait for direct explicit approval of the current summary. A revision invalidates prior approval and review state. Offer edits only in `Changes I can apply with your approval`.
 
 Scheduled maintenance is reminder-based: when `nextDueAt` arrives, the first eligible interactive TUI session renders a persistent reminder above the editor and presents `Run Now` and `Defer` options, rather than launching an unconfirmed run or running while Pi is closed. Choosing `Defer` dismisses the reminder for the current session only. Choosing `Run Now` starts the ordinary privacy-reviewed maintenance flow with Strict/Balanced depth selection; it grants no approval for a report, repair, commit, or external side effect, so every proposed project write still follows the normal preview, review, and approval gates. User-typed `!bash` remains unrestricted. Advancing `lastCycleAt`/`nextDueAt` and clearing the reminder occurs only after successful completion of maintenance. Cancellation or failure leaves maintenance due. Existing manual, nudge, and automatic configurations remain parseable and both legacy scheduled modes use this approval prompt. Maintenance may run with or without `.git`; when repository metadata is absent the privacy-reviewed flow uses the extension's transient isolated Git view to honor `.gitignore` without modifying the workspace.
 
@@ -183,7 +183,7 @@ Healing paths:
 
 - Tier 2 contract fix: replace repeated mechanical steps with a concise pointer to a user-confirmed script path or MCP/tool name, plus expected inputs/outputs and review requirements.
 - If no script/tool has been named, ask whether the user wants an extraction proposal; do not invent, implement, or execute an integration as part of maintenance approval.
-- Preserve the summary-preview and separate-approval gate before file moves, sends, external API effects, or edits to context files. Review linked move sources and destinations together under `preview-review-protocol.md`.
+- Preserve the summary-preview and direct-approval gate before file moves, sends, external API effects, or edits to context files. Review linked move sources and destinations together under `preview-review-protocol.md`.
 
 ## 5. Living system hygiene and drift
 

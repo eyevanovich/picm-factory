@@ -17,4 +17,4 @@ Follow this privacy-first startup order before loading the skill or using any pr
 
 When arguments begin with `coding`, enter the coding-adoption branch directly. Otherwise, treat arguments as requested adoption focus and safely offer coding adoption when shallow protected-inventory repository signals support it. Initial Coding Repository adoption does not ask for maintenance depth: automatically perform the Strict examination and include `capabilities.codebaseMap.maintenancePreset: "strict"` in the exact config preview. Strict (recommended): broader systematic coverage across declared roots and mapped contexts; higher cost. In both paths, metadata-only preflight and the exact automatic-protections question precede privacy review, skill loading, and scanning. Arguments never authorize writes.
 
-Before every proposed project write, follow the skill's shipped summary-preview and exact-review protocol; require a separate explicit approval for the current proposal.
+Before every proposed project write, follow the skill's shipped summary-preview and exact-review protocol; accept direct explicit approval of the current summary before writing the exact proposal.
