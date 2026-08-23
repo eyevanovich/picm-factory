@@ -218,7 +218,7 @@ Expected behavior:
   - Strict (recommended): broader systematic coverage across declared roots and mapped contexts; higher cost.
   - Balanced: representative coverage of major boundaries and one coding path; lower cost.
 - `/picm-maintain strict` and `/picm-maintain balanced` bypass the selector. Every choice applies only to that run and leaves the stored preset unchanged.
-- Historical stored Light/Balanced/Strict values remain readable and preset-driven scheduled maintenance honors them; a missing stored value falls back to Balanced. Light never appears in the interactive selector.
+- Historical stored Light/Balanced/Strict values remain readable. Scheduled `Run Now` presents the ordinary Strict/Balanced selector instead of using the stored preset, and Light never appears in that selector.
 - Uses coding cold walks: root routing → map/equivalent → owning boundary → entry point → authoritative tests/checks.
 - `small-service` accepts the root map in `AGENTS.md`.
 - `monorepo-distributed` checks root/local responsibility agreement and manifest-level workspace coverage without attempting a full semantic dependency graph.

@@ -2,7 +2,7 @@
 
 Use this guide inside an explicitly invoked `/picm-maintain` workflow when `.picm/config.json` identifies `profile: "coding-repository"`, when `capabilities.codebaseMap` is enabled, or when visible routing points to `CONTEXT-MAP.md`.
 
-Apply the general `maintenance-rubric.md` posture, severity labels, repair tiers, preview requirements, scheduled-maintenance read-only boundary, and report format. This guide adds coding-specific checks; it does not create a deterministic validator or automatic rewrite system. Even scheduled maintenance is advisory only and cannot update maps or reports.
+Apply the general `maintenance-rubric.md` posture, severity labels, repair tiers, preview requirements, scheduled-reminder consent boundary, and report format. This guide adds coding-specific checks; it does not create a deterministic validator or automatic rewrite system. Choosing `Run Now` authorizes the ordinary maintenance flow, not an automatic map or report update.
 
 ## Security before maintenance
 
@@ -26,11 +26,11 @@ Strict (recommended): broader systematic coverage across declared roots and mapp
 
 Balanced: representative coverage of major boundaries and one coding path; lower cost.
 
-Stored presets remain backward compatible. Explicit `light`, `balanced`, and `strict` values are readable and honored by preset-driven scheduled maintenance. A historically missing value falls back to Balanced. Light is compatibility-only: never offer it in a new-user selector or use it for new adoption.
+Stored presets remain backward compatible. Explicit `light`, `balanced`, and `strict` values are readable. Scheduled `Run Now` uses the same Strict/Balanced selector as an ordinary interactive maintenance run rather than selecting a stored preset. Light is compatibility-only: never offer it in a new-user selector or use it for new adoption.
 
 ### Light (compatibility only)
 
-Honor an existing explicit Light preset in a preset-driven compatibility run.
+Honor an existing explicit Light preset only when a compatibility path explicitly requests that stored depth.
 
 Check:
 
