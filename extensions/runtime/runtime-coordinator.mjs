@@ -20,8 +20,7 @@ export function createRuntimeCoordinator({
   const activeScans = new Map();
   const scanControlQueues = new Map();
   const policyPreviews = new Map();
-  const toolExecutionSessions = new Map();
-  const clearedPathExecutions = new Map();
+  const activeToolBindings = new Map();
 
   const sessionIdFor = (ctx) =>
     ctx.sessionManager?.getSessionId?.() ??
@@ -29,96 +28,11 @@ export function createRuntimeCoordinator({
     ctx.sessionManager ??
     ctx;
 
-  function releaseToolBinding(lease) {
-    const binding = lease.pathBinding;
-    lease.pathBinding = undefined;
-    if (binding) binding.release();
-  }
-
-  function settleToolExecution(sessionId, state, lease) {
-    if (state.calls.get(lease.toolCallId) !== lease) return;
-    let releaseError;
-    try {
-      releaseToolBinding(lease);
-    } catch (error) {
-      releaseError = error;
-    } finally {
-      state.calls.delete(lease.toolCallId);
-      if (state.completionFence === lease) state.completionFence = undefined;
-      lease.resolve();
-      if (state.calls.size === 0 && toolExecutionSessions.get(sessionId) === state) {
-        toolExecutionSessions.delete(sessionId);
-      }
-    }
-    if (releaseError) throw releaseError;
-  }
-
-  function retainClearedPathExecution(sessionId, state, lease) {
-    if (!lease.pathBindingRequired && !lease.pathBinding) return;
-    let tombstones = clearedPathExecutions.get(sessionId);
-    if (!tombstones) {
-      tombstones = new Map();
-      clearedPathExecutions.set(sessionId, tombstones);
-    }
-    tombstones.set(lease.toolCallId, {
-      cwd: state.cwd,
-      toolName: lease.toolName,
-    });
-  }
-
-  function clearPathExecutionTombstone(sessionId, toolCallId) {
-    const tombstones = clearedPathExecutions.get(sessionId);
-    if (!tombstones) return;
-    tombstones.delete(toolCallId);
-    if (tombstones.size === 0) clearedPathExecutions.delete(sessionId);
-  }
-
-  function clearToolExecutions(sessionId) {
-    const state = toolExecutionSessions.get(sessionId);
-    if (!state) return false;
-    toolExecutionSessions.delete(sessionId);
-    const errors = [];
-    for (const lease of state.calls.values()) {
-      retainClearedPathExecution(sessionId, state, lease);
-      try {
-        releaseToolBinding(lease);
-      } catch (error) {
-        errors.push(error);
-      }
-      lease.resolve();
-    }
-    state.calls.clear();
-    state.completionFence = undefined;
-    if (errors.length > 1) throw new AggregateError(errors, "PiCM tool binding cleanup failed");
-    if (errors.length === 1) throw errors[0];
-    return true;
-  }
-
-  function toolExecutionStateFor(ctx, create = false) {
-    const sessionId = sessionIdFor(ctx);
-    let state = toolExecutionSessions.get(sessionId);
-    if (state?.cwd !== ctx.cwd) {
-      clearToolExecutions(sessionId);
-      state = undefined;
-    }
-    if (!state && create) {
-      state = {
-        cwd: ctx.cwd,
-        nextSequence: 0,
-        calls: new Map(),
-        completionFence: undefined,
-      };
-      toolExecutionSessions.set(sessionId, state);
-    }
-    return state;
-  }
-
   function pruneScans(now = Date.now()) {
     for (const [sessionId, workflow] of scanWorkflows) {
       if (!workflow.completed && workflow.expiresAt <= now) {
         scanWorkflows.delete(sessionId);
         activeScans.delete(sessionId);
-        clearToolExecutions(sessionId);
       }
     }
     for (const [sessionId, scan] of activeScans) {
@@ -134,7 +48,6 @@ export function createRuntimeCoordinator({
     if ((workflow && workflow.cwd !== ctx.cwd) || (scan && scan.cwd !== ctx.cwd)) {
       scanWorkflows.delete(sessionId);
       activeScans.delete(sessionId);
-      clearToolExecutions(sessionId);
       return undefined;
     }
     return workflow;
@@ -149,8 +62,7 @@ export function createRuntimeCoordinator({
     const sessionId = sessionIdFor(ctx);
     const hadWorkflow = scanWorkflows.delete(sessionId);
     const hadActiveScan = activeScans.delete(sessionId);
-    const hadToolExecutions = clearToolExecutions(sessionId);
-    return hadWorkflow || hadActiveScan || hadToolExecutions;
+    return hadWorkflow || hadActiveScan;
   }
 
   function workflowState(workflow) {
@@ -170,7 +82,7 @@ export function createRuntimeCoordinator({
 
   function authorizeWorkflow(ctx, command) {
     const sessionId = sessionIdFor(ctx);
-    clearToolExecutions(sessionId);
+    clearActiveScan(ctx);
     const expiresAt = Date.now() + scanWorkflowTtlMs;
     const workflow = {
       cwd: ctx.cwd,
@@ -200,8 +112,8 @@ export function createRuntimeCoordinator({
     }
     const completed = state.status === "completed";
     const parsedExpiresAt = Date.parse(state.expiresAt);
-    const expiresAt = Number.isFinite(parsedExpiresAt) ? parsedExpiresAt : Date.now();
-    if (!completed && (!Number.isFinite(parsedExpiresAt) || expiresAt <= Date.now())) return false;
+    const expiresAt = Number.isFinite(parsedExpiresAt) ? parsedExpiresAt : (Date.now() + scanWorkflowTtlMs);
+    if (!completed && Number.isFinite(parsedExpiresAt) && expiresAt <= Date.now()) return false;
     let excludedPaths;
     try {
       excludedPaths = mergePrivacyExcludedPaths(ctx.cwd, state.excludedPaths ?? []);
@@ -410,7 +322,6 @@ export function createRuntimeCoordinator({
       if (!workflow.scanSettled || activeScans.get(sessionId)?.cwd === ctx.cwd) {
         throw new Error("PICM_SCAN_NOT_SETTLED: end the active privacy-reviewed scan before completion");
       }
-      await waitForCompletionBarrier(ctx, execution.toolCallId, execution.signal);
       let maintenanceReset;
       if (!workflow.completed) {
         requireCurrentWorkflow(sessionId, workflow);
@@ -492,24 +403,24 @@ export function createRuntimeCoordinator({
   }
 
   async function dispose(ctx) {
-    const errors = [];
-    try {
-      clearWorkflow(ctx);
-    } catch (error) {
-      errors.push(error);
+    clearWorkflow(ctx);
+    const sessionId = sessionIdFor(ctx);
+    for (const [key, binding] of activeToolBindings) {
+      if (key.startsWith(`${sessionId}:`)) {
+        activeToolBindings.delete(key);
+        try { binding.release(); } catch {}
+      }
     }
     const value = runtimes.get(ctx.cwd);
-    value?.sessions.delete(sessionIdFor(ctx));
+    value?.sessions.delete(sessionId);
     if (value?.sessions.size === 0) {
       runtimes.delete(ctx.cwd);
       try {
         await value.gate.dispose();
       } catch (error) {
-        errors.push(error);
+        throw error;
       }
     }
-    if (errors.length > 1) throw new AggregateError(errors, "PiCM runtime cleanup failed");
-    if (errors.length === 1) throw errors[0];
   }
 
   function isWorkflowCompleted(ctx) {
@@ -526,229 +437,46 @@ export function createRuntimeCoordinator({
       return true;
     }
     clearActiveScan(ctx);
-    clearToolExecutions(sessionIdFor(ctx));
     return false;
   }
 
-  function startToolExecution(event, ctx) {
-    if (typeof event.toolCallId !== "string") return;
-    const workflow = workflowFor(ctx);
-    const owner = workflow;
-    if (!owner || workflow?.completed) return;
-    const sessionId = sessionIdFor(ctx);
-    const state = toolExecutionStateFor(ctx, true);
-    const prior = state.calls.get(event.toolCallId);
-    if (prior) {
-      retainClearedPathExecution(sessionId, state, prior);
-      settleToolExecution(sessionId, state, prior);
-    }
-    let resolveLease;
-    const done = new Promise((resolveDone) => {
-      resolveLease = resolveDone;
-    });
-    state.calls.set(event.toolCallId, {
-      toolCallId: event.toolCallId,
-      toolName: event.toolName,
-      sequence: state.nextSequence++,
-      workflow: owner,
-      admitted: false,
-      barrierOperation: false,
-      completion: false,
-      pathBinding: undefined,
-      pathBindingRequired: false,
-      pathBindingStarted: false,
-      done,
-      resolve: resolveLease,
-    });
-    if (toolExecutionSessions.get(sessionId) !== state) {
-      toolExecutionSessions.set(sessionId, state);
-    }
-  }
-
-  function requiresCompletionBarrier(event) {
-    return !(
-      event.toolName === "picm_scan_control" && event.input?.action === "complete"
-    );
-  }
-
-  function admitToolExecution(event, ctx) {
-    const state = toolExecutionStateFor(ctx);
-    const lease = state?.calls.get(event.toolCallId);
-    const workflow = workflowFor(ctx);
-    const owner = workflow;
-    if (!lease || lease.workflow !== owner || workflow?.completed) return;
-    lease.admitted = true;
-    lease.barrierOperation = requiresCompletionBarrier(event);
-    lease.completion =
-      event.toolName === "picm_scan_control" && event.input?.action === "complete";
-    if (lease.completion && !state.completionFence) state.completionFence = lease;
-  }
-
-  function rejectToolExecution(event, ctx) {
-    const sessionId = sessionIdFor(ctx);
-    const state = toolExecutionStateFor(ctx);
-    const lease = state?.calls.get(event.toolCallId);
-    if (lease) settleToolExecution(sessionId, state, lease);
-    else clearPathExecutionTombstone(sessionId, event.toolCallId);
-  }
+  function startToolExecution(_event, _ctx) {}
+  function admitToolExecution(_event, _ctx) {}
+  function rejectToolExecution(_event, _ctx) {}
 
   function endToolExecution(event, ctx) {
+    if (typeof event.toolCallId !== "string") return;
     const sessionId = sessionIdFor(ctx);
-    const state = toolExecutionStateFor(ctx);
-    const lease = state?.calls.get(event.toolCallId);
-    if (lease) settleToolExecution(sessionId, state, lease);
-    clearPathExecutionTombstone(sessionId, event.toolCallId);
-  }
-
-  function pendingCompletionBlocks(event, ctx) {
-    const state = toolExecutionStateFor(ctx);
-    const lease = state?.calls.get(event.toolCallId);
-    const fence = state?.completionFence;
-    return Boolean(lease && fence && lease !== fence && lease.sequence > fence.sequence);
-  }
-
-  function attachPathBinding(event, ctx, binding) {
-    const state = toolExecutionStateFor(ctx);
-    const lease = state?.calls.get(event.toolCallId);
-    const owner = workflowFor(ctx);
-    if (!lease || lease.workflow !== owner || lease.pathBinding) return false;
-    lease.pathBinding = binding;
-    lease.pathBindingRequired = true;
-    return true;
+    const key = `${sessionId}:${event.toolCallId}`;
+    const binding = activeToolBindings.get(key);
+    if (binding) {
+      activeToolBindings.delete(key);
+      try { binding.release(); } catch {}
+    }
   }
 
   function beginBoundPathExecution(toolCallId, ctx, toolName) {
+    if (typeof toolCallId !== "string") return undefined;
     const sessionId = sessionIdFor(ctx);
-    const state = toolExecutionStateFor(ctx);
-    const lease = state?.calls.get(toolCallId);
-    if (!lease) {
-      const tombstone = clearedPathExecutions.get(sessionId)?.get(toolCallId);
-      if (tombstone) {
-        if (tombstone.cwd !== ctx.cwd || tombstone.toolName !== toolName) {
-          throw new Error("PICM_PATH_BINDING_MISMATCH: guarded path execution changed identity after cleanup");
-        }
-        throw new Error("PICM_PATH_BINDING_MISSING: guarded path execution was cancelled during protected cleanup");
-      }
-      if (workflowFor(ctx)) {
-        throw new Error("PICM_PATH_BINDING_MISSING: protected path execution has no admitted lease");
-      }
-      return undefined;
-    }
-    if (!lease.admitted || !lease.pathBindingRequired || !lease.pathBinding) {
-      throw new Error("PICM_PATH_BINDING_MISSING: guarded path execution lost its admitted binding");
-    }
-    if (lease.toolName !== toolName || lease.pathBinding.toolName !== toolName) {
+    const key = `${sessionId}:${toolCallId}`;
+    const binding = activeToolBindings.get(key);
+    if (!binding) return undefined;
+    if (binding.toolName !== toolName) {
       throw new Error("PICM_PATH_BINDING_MISMATCH: guarded path execution changed tool identity");
     }
-    lease.pathBindingStarted = true;
-    return lease.pathBinding;
-  }
-
-  function bindAllowedPathDecision(event, ctx, decision, workflow, scan) {
-    if (!decision.allowed || !decision.executionBinding || typeof event.toolCallId !== "string") {
-      return undefined;
-    }
-    const binding = runtimeFor(ctx).gate.bindPath(decision.executionBinding);
-    if (!gateStateIsCurrent(ctx, workflow, scan) || !attachPathBinding(event, ctx, binding)) {
-      binding.release();
-      return {
-        allowed: false,
-        reason: "PiCM scan state changed before the guarded path could be bound to execution",
-      };
-    }
-    return undefined;
-  }
-
-  async function waitForSettlements(settlements, signal) {
-    if (signal?.aborted) {
-      throw new Error("PICM_SCAN_ABORTED: completion was cancelled before the execution barrier settled");
-    }
-    if (settlements.length === 0) return;
-    const all = Promise.all(settlements);
-    if (!signal) {
-      await all;
-      return;
-    }
-    await new Promise((resolveWait, rejectWait) => {
-      const onAbort = () => {
-        rejectWait(new Error("PICM_SCAN_ABORTED: completion was cancelled before the execution barrier settled"));
-      };
-      signal.addEventListener("abort", onAbort, { once: true });
-      all.then(resolveWait, rejectWait).finally(() => {
-        signal.removeEventListener("abort", onAbort);
-      });
-    });
-  }
-
-  async function waitForCompletionBarrier(ctx, toolCallId, signal) {
-    if (typeof toolCallId !== "string") return;
-    const sessionId = sessionIdFor(ctx);
-    const state = toolExecutionStateFor(ctx);
-    const completion = state?.calls.get(toolCallId);
-    if (!completion) return;
-    if (!completion.admitted || !completion.completion || state.completionFence !== completion) {
-      throw new Error("PICM_COMPLETION_LEASE_INVALID: completion did not retain its admitted execution lease");
-    }
-    const settlements = [...state.calls.values()]
-      .filter((lease) =>
-        lease !== completion &&
-        lease.sequence < completion.sequence &&
-        lease.workflow === completion.workflow &&
-        lease.admitted &&
-        lease.barrierOperation)
-      .map((lease) => lease.done);
-    await waitForSettlements(settlements, signal);
-    if (
-      toolExecutionSessions.get(sessionId) !== state ||
-      state.calls.get(toolCallId) !== completion ||
-      state.completionFence !== completion
-    ) {
-      throw new Error("PICM_SCAN_STALE: workflow execution leases changed while completion was waiting");
-    }
-  }
-
-  function gateStateIsCurrent(ctx, workflow, scan) {
-    const currentWorkflow = workflowFor(ctx);
-    return (
-      currentWorkflow === workflow &&
-      currentWorkflow?.completed !== true &&
-      activeScans.get(sessionIdFor(ctx)) === scan
-    );
+    return binding;
   }
 
   async function checkToolCall(event, ctx) {
     const workflow = workflowFor(ctx);
     const sessionId = sessionIdFor(ctx);
     const scan = activeScans.get(sessionId);
+
     if (workflow?.completed) {
-      if (event.toolName === "picm_scan_control") return { allowed: true };
-      return {
-        allowed: false,
-        reason: "The completed PiCM workflow must settle before agent tools can access the project",
-      };
+      return { allowed: true };
     }
-    if (workflow && pendingCompletionBlocks(event, ctx)) {
-      return {
-        allowed: false,
-        reason: "PiCM completion was already admitted; later sibling tools are blocked",
-      };
-    }
+
     if (workflow && !workflow.privacyReviewed) {
-      if (event.toolName === "picm_scan_control") return { allowed: true };
-      return {
-        allowed: false,
-        reason: "PiCM privacy review must complete before any agent tool can inspect or change the project",
-      };
-    }
-    if (workflow && event.toolName === "picm_scan_control") return { allowed: true };
-    if (workflow && event.toolName === "picm_maintenance_policy") {
-      if (event.input?.action === "preview" || workflow.scanStarted) return { allowed: true };
-      return {
-        allowed: false,
-        reason: "Begin the privacy-reviewed PiCM scan before maintenance status or apply can access project config",
-      };
-    }
-    if (workflow && scan?.cwd !== ctx.cwd) {
       if (event.toolName === "picm_scan_control") return { allowed: true };
       if (event.toolName === "read") {
         const trusted = await runtimeFor(ctx).gate.checkTrustedPackageRead(
@@ -756,12 +484,43 @@ export function createRuntimeCoordinator({
           event.input?.path,
         );
         if (trusted.allowed) {
-          const currentWorkflow = workflowFor(ctx);
-          if (currentWorkflow === workflow && !workflow.completed) {
-            if (typeof trusted.canonicalPath === "string") event.input.path = trusted.canonicalPath;
-            const bindingFailure = bindAllowedPathDecision(event, ctx, trusted, workflow, scan);
-            return bindingFailure ?? trusted;
+          if (typeof trusted.canonicalPath === "string") event.input.path = trusted.canonicalPath;
+          if (trusted.executionBinding && typeof event.toolCallId === "string") {
+            const binding = runtimeFor(ctx).gate.bindPath(trusted.executionBinding);
+            activeToolBindings.set(`${sessionId}:${event.toolCallId}`, binding);
           }
+          return trusted;
+        }
+      }
+      return {
+        allowed: false,
+        reason: "PiCM privacy review must complete before any agent tool can inspect or change the project",
+      };
+    }
+
+    if (workflow && event.toolName === "picm_scan_control") return { allowed: true };
+
+    if (workflow && event.toolName === "picm_maintenance_policy") {
+      if (event.input?.action === "preview" || workflow.scanStarted) return { allowed: true };
+      return {
+        allowed: false,
+        reason: "Begin the privacy-reviewed PiCM scan before maintenance status or apply can access project config",
+      };
+    }
+
+    if (workflow && scan?.cwd !== ctx.cwd) {
+      if (event.toolName === "read") {
+        const trusted = await runtimeFor(ctx).gate.checkTrustedPackageRead(
+          event.toolName,
+          event.input?.path,
+        );
+        if (trusted.allowed) {
+          if (typeof trusted.canonicalPath === "string") event.input.path = trusted.canonicalPath;
+          if (trusted.executionBinding && typeof event.toolCallId === "string") {
+            const binding = runtimeFor(ctx).gate.bindPath(trusted.executionBinding);
+            activeToolBindings.set(`${sessionId}:${event.toolCallId}`, binding);
+          }
+          return trusted;
         }
       }
       return {
@@ -781,9 +540,6 @@ export function createRuntimeCoordinator({
           event.input?.path,
           scan.excludedPaths,
         );
-        if (!gateStateIsCurrent(ctx, workflow, scan)) {
-          return { allowed: false, reason: "PiCM scan state changed while the guarded tool call was being checked" };
-        }
         if (
           decision.allowed &&
           event.toolName === "read" &&
@@ -791,8 +547,11 @@ export function createRuntimeCoordinator({
         ) {
           event.input.path = decision.canonicalPath;
         }
-        const bindingFailure = bindAllowedPathDecision(event, ctx, decision, workflow, scan);
-        return bindingFailure ?? decision;
+        if (decision.allowed && decision.executionBinding && typeof event.toolCallId === "string") {
+          const binding = runtimeFor(ctx).gate.bindPath(decision.executionBinding);
+          activeToolBindings.set(`${sessionId}:${event.toolCallId}`, binding);
+        }
+        return decision;
       }
 
       if (workflow?.excludedPaths.length > 0) {
@@ -803,16 +562,23 @@ export function createRuntimeCoordinator({
         if (!GUARDED_PATH_TOOLS.has(event.toolName)) {
           return { allowed: false, reason: "Unrecognized agent tools are blocked while PiCM privacy exclusions are active" };
         }
-        const decision = await runtimeFor(ctx).gate.checkPrivacyPath(
+        const decision = await runtimeFor(ctx).gate.checkPath(
           event.toolName,
           event.input?.path,
           workflow.excludedPaths,
         );
-        if (!gateStateIsCurrent(ctx, workflow, scan)) {
-          return { allowed: false, reason: "PiCM scan state changed while the privacy path was being checked" };
+        if (
+          decision.allowed &&
+          event.toolName === "read" &&
+          typeof decision.canonicalPath === "string"
+        ) {
+          event.input.path = decision.canonicalPath;
         }
-        const bindingFailure = bindAllowedPathDecision(event, ctx, decision, workflow, scan);
-        return bindingFailure ?? decision;
+        if (decision.allowed && decision.executionBinding && typeof event.toolCallId === "string") {
+          const binding = runtimeFor(ctx).gate.bindPath(decision.executionBinding);
+          activeToolBindings.set(`${sessionId}:${event.toolCallId}`, binding);
+        }
+        return decision;
       }
       return { allowed: true };
     } catch (error) {
