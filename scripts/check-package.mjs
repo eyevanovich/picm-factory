@@ -428,10 +428,6 @@ const previewReviewGuidance = {
     "No worthwhile optimizations found",
   ],
   "prompts/picm-help.md": ["complete concise summary", "selective exact review"],
-  "extensions/picm-factory.ts": [
-    "summary-preview and exact-review protocol",
-    "adoption/maintenance/optimization summary-preview",
-  ],
   "README.md": ["complete concise summary", "View all", "Select files", "Return to summary"],
   "docs/layout-fixture-qa.md": ["both `/picm-adopt` and `/picm-maintain`", "Repeat the no-write check"],
 };
