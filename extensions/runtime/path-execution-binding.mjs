@@ -1,4 +1,4 @@
-import { existsSync, lstatSync, statSync } from "node:fs";
+import { existsSync, lstatSync, realpathSync, statSync } from "node:fs";
 import { open } from "node:fs/promises";
 import * as fsPromises from "node:fs/promises";
 import { spawn } from "node:child_process";
@@ -73,7 +73,7 @@ function readUint32LE(buffer, offset) {
   return (
     (buffer[offset] ?? 0) +
     ((buffer[offset + 1] ?? 0) << 8) +
-    ((buffer[offset + 2] ?? 0) << 8) +
+    ((buffer[offset + 2] ?? 0) << 16) +
     (buffer[offset + 3] ?? 0) * 0x1000000
   );
 }
@@ -664,8 +664,50 @@ export function createPathExecutionBinding(plan, limitOverrides) {
     return resolvedFromCwd;
   }
 
-  async function assertSafeFile(filePath) {
+  async function canonicalProspectivePath(filePath) {
+    let existing = resolve(filePath);
+    while (true) {
+      try {
+        const st = await fsPromises.lstat(existing);
+        if (st.isSymbolicLink()) fail("target traverses a symlink after validation");
+        const canonicalExisting = await fsPromises.realpath(existing);
+        return resolve(canonicalExisting, relative(existing, filePath));
+      } catch (error) {
+        if (error?.code !== "ENOENT") throw error;
+        const parent = dirname(existing);
+        if (parent === existing) throw error;
+        existing = parent;
+      }
+    }
+  }
+
+  async function assertBoundTarget(filePath, { allowAncestor = false } = {}) {
     const target = resolveOperationTarget(filePath);
+    const currentCanonical = await canonicalProspectivePath(target);
+    const approvedCanonical = resolve(plan.canonicalPath ?? plan.absolutePath);
+    if (
+      currentCanonical !== approvedCanonical &&
+      !(allowAncestor && relative(currentCanonical, approvedCanonical) !== ".." && !relative(currentCanonical, approvedCanonical).startsWith(`..${sep}`))
+    ) {
+      fail("target canonical path changed after validation");
+    }
+    return target;
+  }
+
+  async function assertRetainedFile(entry) {
+    const target = entry.canonicalPath ?? entry.absolutePath;
+    const currentCanonical = await canonicalProspectivePath(target);
+    if (currentCanonical !== resolve(entry.canonicalPath ?? entry.absolutePath)) {
+      fail("retained file canonical path changed after validation");
+    }
+    const st = await fsPromises.lstat(target);
+    if (st.isSymbolicLink()) fail("file became a symlink");
+    if (st.isFile() && st.nlink > 1) fail("validated target has multiple hard links");
+    return { target, st };
+  }
+
+  async function assertSafeFile(filePath) {
+    const target = await assertBoundTarget(filePath);
     const st = await fsPromises.lstat(target);
     if (st.isSymbolicLink()) fail("target became a symlink after validation");
     if (st.isFile() && st.nlink > 1) fail("validated target has multiple hard links");
@@ -682,20 +724,18 @@ export function createPathExecutionBinding(plan, limitOverrides) {
       ? retainedEntries.filter((file) => !file.isDirectory).map((file) => ({
           path: relative(canonical(plan.canonicalPath ?? plan.absolutePath), canonical(file.canonicalPath ?? file.absolutePath)) || basename(file.absolutePath),
           readFile: async () => {
-            const path = file.canonicalPath ?? file.absolutePath;
-            const st = await fsPromises.lstat(path);
-            if (st.isSymbolicLink()) fail("file became a symlink");
+            const { target, st } = await assertRetainedFile(file);
             if (st.size > resourceLimits.maxRetainedFileBytes) {
               fail(`guarded grep file exceeds ${resourceLimits.maxRetainedFileBytes} bytes`);
             }
-            return fsPromises.readFile(path);
+            return fsPromises.readFile(target);
           },
         }))
       : undefined,
     operations: plan.toolName === "read"
       ? {
           access: async (path) => {
-            const target = resolveOperationTarget(path);
+            const target = await assertBoundTarget(path);
             return fsPromises.access(target);
           },
           readFile: async (path) => {
@@ -710,7 +750,7 @@ export function createPathExecutionBinding(plan, limitOverrides) {
       : plan.toolName === "edit"
         ? {
             access: async (path) => {
-              const target = resolveOperationTarget(path);
+              const target = await assertBoundTarget(path);
               return fsPromises.access(target);
             },
             readFile: async (path) => {
@@ -718,7 +758,7 @@ export function createPathExecutionBinding(plan, limitOverrides) {
               return fsPromises.readFile(target);
             },
             writeFile: async (path, content) => {
-              const target = resolveOperationTarget(path);
+              const target = await assertBoundTarget(path);
               try {
                 const st = await fsPromises.lstat(target);
                 if (st.isSymbolicLink()) fail("target became a symlink");
@@ -731,9 +771,12 @@ export function createPathExecutionBinding(plan, limitOverrides) {
           }
         : plan.toolName === "write"
           ? {
-              mkdir: async (dir, options) => fsPromises.mkdir(dir, { recursive: true, ...options }),
+              mkdir: async (dir, options) => {
+                const target = await assertBoundTarget(dir, { allowAncestor: true });
+                return fsPromises.mkdir(target, { recursive: true, ...options });
+              },
               writeFile: async (path, content) => {
-                const target = path ? (isAbsolute(path) ? path : resolveOperationTarget(path)) : plan.absolutePath;
+                const target = await assertBoundTarget(path);
                 try {
                   const st = await fsPromises.lstat(target);
                   if (st.isSymbolicLink()) fail("target became a symlink");
@@ -757,9 +800,7 @@ export function createPathExecutionBinding(plan, limitOverrides) {
                   }
                   const entry = retainedEntries.find((cand) => (cand.displayPath === path || cand.absolutePath === path) && !cand.isDirectory);
                   if (!entry) fail("path is outside the validated traversal snapshot");
-                  const entryPath = entry.canonicalPath ?? entry.absolutePath;
-                  const st = await fsPromises.lstat(entryPath);
-                  if (st.isSymbolicLink()) fail("file became a symlink");
+                  const { target: entryPath, st } = await assertRetainedFile(entry);
                   if (st.size > resourceLimits.maxRetainedFileBytes) {
                     fail(`guarded grep file exceeds ${resourceLimits.maxRetainedFileBytes} bytes`);
                   }
