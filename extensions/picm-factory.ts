@@ -167,7 +167,7 @@ export default function picmFactoryExtension(
         : await run();
       if (
         result.ok &&
-        (params.action === "preflight" || params.action === "privacy" || params.action === "begin") &&
+        (params.action === "preflight" || params.action === "privacy" || params.action === "begin" || params.action === "end") &&
         result.authorized &&
         !result.completed &&
         !coordinator.isWorkflowCompleted(ctx)
@@ -180,6 +180,7 @@ export default function picmFactoryExtension(
           preflightComplete: result.preflightComplete,
           privacyReviewed: result.privacyReviewed,
           scanStarted: result.scanStarted,
+          scanSettled: result.scanSettled,
           maintenanceResetAttempted: result.maintenanceResetAttempted,
           excludedPaths: result.excludedPaths,
         });
@@ -199,6 +200,7 @@ export default function picmFactoryExtension(
             preflightComplete: result.preflightComplete,
             privacyReviewed: result.privacyReviewed,
             scanStarted: result.scanStarted,
+            scanSettled: result.scanSettled,
             maintenanceResetAttempted: result.maintenanceResetAttempted,
             completed: true,
             excludedPaths: result.excludedPaths,

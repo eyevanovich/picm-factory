@@ -161,6 +161,7 @@ export function createRuntimeCoordinator({
       preflightComplete: workflow.preflightComplete,
       privacyReviewed: workflow.privacyReviewed,
       scanStarted: workflow.scanStarted,
+      scanSettled: workflow.scanSettled,
       maintenanceResetAttempted: workflow.maintenanceResetAttempted,
       completed: workflow.completed,
       excludedPaths: [...workflow.excludedPaths],
@@ -178,6 +179,7 @@ export function createRuntimeCoordinator({
       preflightComplete: false,
       privacyReviewed: false,
       scanStarted: false,
+      scanSettled: false,
       maintenanceResetAttempted: false,
       completed: false,
       excludedPaths: [],
@@ -211,6 +213,7 @@ export function createRuntimeCoordinator({
       typeof state.preflightComplete === "boolean" &&
       typeof state.privacyReviewed === "boolean" &&
       typeof state.scanStarted === "boolean" &&
+      typeof state.scanSettled === "boolean" &&
       typeof state.maintenanceResetAttempted === "boolean" &&
       Array.isArray(state.excludedPaths);
     const preflightComplete = completeState && state.preflightComplete;
@@ -222,6 +225,7 @@ export function createRuntimeCoordinator({
       preflightComplete,
       privacyReviewed,
       scanStarted: privacyReviewed && state.scanStarted === true,
+      scanSettled: privacyReviewed && state.scanStarted === true && state.scanSettled === true,
       maintenanceResetAttempted:
         privacyReviewed && state.maintenanceResetAttempted === true,
       completed,
@@ -254,6 +258,9 @@ export function createRuntimeCoordinator({
       const details = await runtimeFor(ctx).gate.preflight();
       requireCurrentWorkflow(sessionId, workflow);
       workflow.preflightComplete = true;
+      workflow.privacyReviewed = false;
+      workflow.scanStarted = false;
+      workflow.scanSettled = false;
       workflow.expiresAt = Date.now() + scanWorkflowTtlMs;
       return {
         ok: true,
@@ -320,6 +327,8 @@ export function createRuntimeCoordinator({
         additions,
       );
       workflow.privacyReviewed = true;
+      workflow.scanStarted = false;
+      workflow.scanSettled = false;
       workflow.expiresAt = Date.now() + scanWorkflowTtlMs;
       clearActiveScan(ctx);
       return {
@@ -371,6 +380,7 @@ export function createRuntimeCoordinator({
         config.privacy?.excludedPaths ?? [],
       );
       workflow.scanStarted = true;
+      workflow.scanSettled = false;
       workflow.expiresAt = Date.now() + scanWorkflowTtlMs;
       activeScans.set(sessionId, {
         cwd: ctx.cwd,
@@ -378,7 +388,12 @@ export function createRuntimeCoordinator({
         excludedPaths: [...workflow.excludedPaths],
       });
     } else if (action === "end") {
+      const scan = activeScans.get(sessionId);
+      if (!workflow || scan?.cwd !== ctx.cwd) {
+        throw new Error("PICM_SCAN_NOT_ACTIVE: begin an explicitly authorized scan before ending it");
+      }
       clearActiveScan(ctx);
+      workflow.scanSettled = true;
     } else if (action === "complete") {
       if (!workflow) {
         throw new Error("PICM_SCAN_NOT_AUTHORIZED: invoke and finish a privacy-reviewed PiCM workflow before completion");
@@ -391,6 +406,9 @@ export function createRuntimeCoordinator({
       }
       if (!workflow.scanStarted) {
         throw new Error("PICM_SCAN_NOT_STARTED: begin the privacy-reviewed scan before completion");
+      }
+      if (!workflow.scanSettled || activeScans.get(sessionId)?.cwd === ctx.cwd) {
+        throw new Error("PICM_SCAN_NOT_SETTLED: end the active privacy-reviewed scan before completion");
       }
       await waitForCompletionBarrier(ctx, execution.toolCallId, execution.signal);
       let maintenanceReset;

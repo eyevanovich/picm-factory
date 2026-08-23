@@ -2278,6 +2278,7 @@ test("privacy-reviewed scan authorization and exclusions survive resuming the sa
     assert.equal(restored.details.preflightComplete, true);
     assert.equal(restored.details.privacyReviewed, true);
     assert.equal(restored.details.scanStarted, true);
+    assert.equal(restored.details.scanSettled, true);
     assert.deepEqual(restored.details.excludedPaths, ["safe-dir"]);
     assert.equal((await resumed.handlers.get("tool_call")(
       { toolName: "read", input: { path: "safe-dir/file.txt" } },
@@ -2293,6 +2294,13 @@ test("privacy-reviewed scan authorization and exclusions survive resuming the sa
     );
     assert.equal(begun.details.authorized, true);
     assert.equal(begun.details.active, true);
+    await resumed.tools.get("picm_scan_control").execute(
+      "id",
+      { action: "end" },
+      undefined,
+      undefined,
+      resumedCtx,
+    );
     await resumed.tools.get("picm_scan_control").execute(
       "id",
       { action: "complete" },
@@ -2323,7 +2331,7 @@ test("privacy-reviewed scan authorization and exclusions survive resuming the sa
 
 test("incomplete resumed workflow state is never treated as preflight-complete", async () => {
   await withFixture(async ({ root }) => {
-    for (const missingField of ["excludedPaths", "maintenanceResetAttempted"]) {
+    for (const missingField of ["excludedPaths", "scanSettled", "maintenanceResetAttempted"]) {
       const state = {
         status: "authorized",
         cwd: root,
@@ -2332,6 +2340,7 @@ test("incomplete resumed workflow state is never treated as preflight-complete",
         preflightComplete: true,
         privacyReviewed: true,
         scanStarted: true,
+        scanSettled: true,
         maintenanceResetAttempted: true,
         excludedPaths: ["safe-dir"],
       };

@@ -403,6 +403,11 @@ test("completion requires the ordinary privacy-reviewed scan flow", async (t) =>
     h.scanControl.execute("id", { action: "complete" }, undefined, undefined, ctx),
     /PICM_SCAN_NOT_STARTED/,
   );
+  await h.scanControl.execute("id", { action: "begin" }, undefined, undefined, ctx);
+  await assert.rejects(
+    h.scanControl.execute("id", { action: "complete" }, undefined, undefined, ctx),
+    /PICM_SCAN_NOT_SETTLED/,
+  );
 
   assert.equal(readFileSync(join(cwd, ".picm/config.json"), "utf8"), before);
   assert.equal(h.entries.some((entry) => entry.data.status === "completed"), false);
