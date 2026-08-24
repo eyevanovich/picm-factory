@@ -221,7 +221,7 @@ test("adopt coding dispatches preflight and exact privacy copy before skill load
   assert.match(prompt, /Mode: adopt\nCommand: \/picm-adopt\n\nUser arguments:\ncoding/);
 });
 
-test("maintain automatically loads persisted exclusions without requiring a privacy interview", async (t) => {
+test("maintain loads persisted exclusions and asks only for additional sensitive paths", async (t) => {
   const cwd = fixture(t);
   writeFileSync(join(cwd, ".picm/config.json"), JSON.stringify({
     version: 1,
@@ -234,10 +234,12 @@ test("maintain automatically loads persisted exclusions without requiring a priv
 
   const prompt = h.sent[0];
   assert.match(prompt, /preflight automatically loads persisted `.picm\/config.json` privacy exclusions/);
-  assert.match(prompt, /do not ask a privacy question or call `privacy`/);
+  assert.match(prompt, /Persisted exclusions are already loaded\. Name any additional sensitive project-relative paths/);
+  assert.match(prompt, /Existing persisted exclusions remain in effect/);
   const scanGuidance = h.scanControl.promptGuidelines.join("\n");
   assert.match(scanGuidance, /If \/picm-maintain preflight returns privacyReviewed true/);
-  assert.match(scanGuidance, /continue without asking the privacy question or calling privacy/);
+  assert.match(scanGuidance, /ask only for additional sensitive project-relative exclusions/);
+  assert.match(scanGuidance, /persisted exclusions remain in effect/);
   const preflight = await h.scanControl.execute("id", { action: "preflight" }, undefined, undefined, ctx);
   assert.equal(preflight.details.privacyReviewed, true);
   assert.deepEqual(preflight.details.excludedPaths, ["private"]);
