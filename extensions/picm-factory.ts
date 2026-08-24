@@ -159,7 +159,7 @@ export default function picmFactoryExtension(
     promptSnippet: "Preflight, record privacy exclusions, and control protected PiCM scan phases",
     promptGuidelines: [
       "Only an explicit /picm-new, /picm-adopt, /picm-maintain, or /picm-optimize command authorizes picm_scan_control; natural-language requests do not.",
-      "After an explicit command, call picm_scan_control preflight before any scan, ask the privacy question, then call privacy with every exact project-relative excluded path before begin.",
+      "After an explicit command, call picm_scan_control preflight before any scan. If /picm-maintain preflight returns privacyReviewed true, continue without asking the privacy question or calling privacy. Otherwise, ask the privacy question, then call privacy with every exact project-relative excluded path before begin.",
       "Use picm_scan_control privacy with persist true only when the user requests durable exclusions. First present and obtain acceptance of the complete concise .picm/config.json summary, marking the safety/configuration change as mandatory exact review; then use the action's exact TUI patch confirmation as the mandatory exact review and separate write approval.",
       "Use picm_scan_control inventory only after begin, end after each scan phase, and complete when the PiCM workflow finishes.",
     ],
