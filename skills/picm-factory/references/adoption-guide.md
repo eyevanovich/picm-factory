@@ -176,6 +176,8 @@ Default approved adoption writes are minimal and live under `.picm/`:
 
 Use config to preserve compatibility metadata, provenance, maintenance policy, and approved PiCM scan exclusions—not workflow instructions.
 
+During the initial adoption write pass, ordinary `.picm/config.json` and `.picm/adoption-report.md` are maintainer metadata and never independently require exact review. They still appear in the complete summary and remain available for on-demand inspection. Persisted privacy exclusions and standalone maintenance-policy controls retain their separate confirmations.
+
 Near the final config preview, ask whether the user wants scheduled maintenance reminders: No configures manual maintenance; Yes asks for cadence in days, weeks, or months (such as the recommended monthly reminder). Do not present separate nudge versus automatic choices. Explain that scheduling requires `.picm/config.json` to remain non-ignored and a regular non-symlink file beneath a regular non-symlink `.picm/` directory. Accept positive integer day/week/month intervals. Skipped or declined leaves no policy object. Use `picm_maintenance_policy` preview for deterministic `lastCycleAt` and `nextDueAt`, then include the exact object in the same adoption preview. Cadence selection does not approve the config write. When maintenance is due in an interactive session, PiCM displays a persistent reminder above the editor offering Run Now and Defer. Cycle timestamp advance occurs only upon successful maintenance completion; reports, repairs, commits, and all other writes still require direct approval of their current summary.
 
 Adopted example:
@@ -232,7 +234,7 @@ Keep `scanSummary` brief. Put detailed findings in `.picm/adoption-report.md`.
 
 When coding mapping is enabled, preserve one primary `profile` and add a minimal optional `capabilities.codebaseMap` object with the resulting `shape` (`root` or `distributed`), approved `roots`, map/equivalent path, selected local contexts, and `maintenancePreset: "strict"`. A Coding Repository profile implies this capability; a hybrid retains its workflow profile and adds the same capability. Roots may overlap workflow folders. Approved durable scan exclusions live separately under `privacy.excludedPaths` and remain effective even when `.gitignore` is absent or later changes.
 
-Even `.picm/` writes use `preview-review-protocol.md`: a complete concise summary, any mandatory exact review, and direct explicit approval of the current summary. Do not treat “choose option 3 scanned only” as approval to write. The deterministic exact TUI confirmation for persisted privacy exclusions remains intact and does not authorize other writes.
+Every `.picm/` write uses `preview-review-protocol.md`: a complete concise summary and direct explicit approval of the current proposal. During initial adoption, ordinary config and report metadata are not mandatory exact-review items. Other project paths still follow the mandatory-review rules. Do not treat “choose option 3 scanned only” as approval to write. The deterministic exact TUI confirmation for persisted privacy exclusions remains intact and does not authorize other writes.
 
 ## Optional ICM improvements
 

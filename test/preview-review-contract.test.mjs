@@ -86,6 +86,24 @@ test("mandatory review and deterministic control-write boundaries remain explici
   ]) assert.ok(protocol.includes(signal), `missing mandatory-review signal: ${signal}`);
 });
 
+test("initial adoption metadata remains optional during exact review", () => {
+  for (const signal of [
+    "Initial-adoption `.picm` metadata is an exception",
+    "creating `.picm/config.json` and/or `.picm/adoption-report.md`",
+    "rendering only its mandatory item or linked pair unblocks approval",
+    "never join the mandatory review set",
+  ]) assert.ok(protocol.includes(signal), `missing initial-metadata signal: ${signal}`);
+
+  assert.match(
+    read("skills/picm-factory/SKILL.md"),
+    /Initial adoption creation of ordinary `\.picm\/config\.json` and `\.picm\/adoption-report\.md` is never itself a mandatory exact-review item/,
+  );
+  assert.match(
+    read("skills/picm-factory/references/adoption-guide.md"),
+    /During the initial adoption write pass, ordinary `\.picm\/config\.json` and `\.picm\/adoption-report\.md` are maintainer metadata and never independently require exact review/,
+  );
+});
+
 test("skill, adopt, coding, maintenance, optimization, help, and public guidance point to the protocol", () => {
   const expected = {
     "skills/picm-factory/SKILL.md": [protocolPath.split("/").at(-1), "Before every proposed project write"],

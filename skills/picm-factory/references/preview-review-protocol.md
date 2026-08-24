@@ -15,6 +15,8 @@ Exact review is mandatory before approval for:
 
 When no mandatory exact review is pending, the user may approve directly from the summary. Exact review remains available on demand for any affected file or diff. Every persisted `privacy.excludedPaths` or standalone maintenance-policy control write still receives the complete concise summary first, marks its safety/configuration change as mandatory exact review, and obtains summary acceptance. Then use the built-in exact TUI patch confirmation as the mandatory exact review and separate write approval. For a standalone maintenance-policy apply, pass only `action: "apply"` and the accepted preview's `previewId`; direct-apply runtime compatibility remains unchanged but is not agent guidance. Neither control confirmation authorizes other project writes.
 
+Initial-adoption `.picm` metadata is an exception: creating `.picm/config.json` and/or `.picm/adoption-report.md` in that first adoption write pass never independently makes exact review mandatory, including ordinary adoption and reminder fields. Both remain available for exact review on request. This exception does not alter the persisted privacy or standalone maintenance-policy control confirmations above.
+
 ## Summary preview template
 
 Enumerate every affected file once and keep linked actions visibly connected. Use the literal `None` for every empty category.
@@ -54,6 +56,8 @@ Offer exact review whenever the user asks to inspect files or diffs. Execute rec
 3. **Return to summary**
 
 **View all** renders every affected item in summary order, pairing linked move sources and destinations. In **Select files**, the user conversationally names or checks paths from the current proposal. Selecting either the source or destination of a linked move selects and reviews the whole source-destination pair. **Select files** retains the current selection and which files have been reviewed while the user navigates. Let the user review selected files one at a time with **Previous**, **Next**, **Back to selection**, and **Return to summary**; navigation must not clear selection or review state. **Return to summary** preserves review state but is not approval.
+
+When another path requires mandatory review, rendering only its mandatory item or linked pair unblocks approval. Ordinary initial-adoption `.picm/config.json` and `.picm/adoption-report.md` never join the mandatory review set; they render only through **View all**, **Select files**, or a direct path request.
 
 Mandatory items are pending until rendered exactly in the current proposal revision. Approval is unavailable while any mandatory item is pending.
 
