@@ -1507,7 +1507,8 @@ test("interactive commands bootstrap privacy before trusted skill loading", asyn
       if (command === "picm-maintain") {
         assert.ok(preflightIndex >= 0 && preflightIndex < skillIndex);
         assert.match(prompt, /preflight automatically loads persisted `.picm\/config.json` privacy exclusions/);
-        assert.match(prompt, /do not ask a privacy question or call `privacy`/);
+        assert.match(prompt, /ask only this concise follow-up without repeating the full privacy boilerplate/);
+        assert.match(prompt, /Existing persisted exclusions remain in effect/);
       } else {
         assert.ok(preflightIndex >= 0 && preflightIndex < privacyIndex && privacyIndex < skillIndex);
       }

@@ -128,7 +128,8 @@ test("dispatch prompts preserve privacy bootstrap ordering and add preview guida
     assert.ok(privacy < confirmation && confirmation < skill);
   }
   assert.match(maintain, /preflight automatically loads persisted `.picm\/config.json` privacy exclusions/);
-  assert.match(maintain, /do not ask a privacy question or call `privacy`/);
+  assert.match(maintain, /ask only this concise follow-up without repeating the full privacy boilerplate/);
+  assert.match(maintain, /Existing persisted exclusions remain in effect/);
   assert.ok(adopt.indexOf("load the `picm-factory` skill") < adopt.indexOf("summary-preview and exact-review protocol"));
   for (const prompt of [adopt, maintain, optimize]) {
     assert.match(prompt, /After presenting the complete current summary/);
