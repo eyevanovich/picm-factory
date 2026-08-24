@@ -3,24 +3,15 @@
 ## Identity
 You are working on PiCM Factory, a project-local Pi package for creating, adopting, maintaining, and optimizing PiCM / ICM-style folder-agent workspaces and coding-repository context maps.
 
-## Canonical terms
-- **Factory**: one-time helper for creating a new baseline workspace.
-- **Maintainer**: ongoing helper for checking and improving an existing workspace.
-- **Adoption**: non-invasive flow for adding PiCM support to an existing workflow or coding repository.
-- **Optimization**: outcome-preserving improvement of agent-facing documentation only.
-- **Layout profile**: a recommended primary workspace shape, not a rigid schema.
-- **Coding Repository**: first-class profile for code-primary workspaces.
-- **Codebase-map capability**: composable coding context mapping that may overlap another primary profile.
-
-## Product rules
+## Operating constraints
 - PiCM Factory is project-local by default. Install with `pi install -l ...`.
 - Keep the extension thin. Runtime methodology belongs in the skill, references, and templates; backing prompts remain repository-only.
 - Do not build a custom TUI or workflow executor without clear evidence it is necessary.
 - Be non-destructive by default. Preview file changes before writing.
 - Security first: never copy secrets, credentials, tokens, private keys, regulated data, or sensitive client material into context files or examples.
-- Explicitly invoked `/picm-new`, `/picm-adopt`, `/picm-maintain`, and `/picm-optimize` workflows must complete privacy preflight/review before scanning. Protected inventory and immediate path checks combine root/nested `.gitignore`, `.git/info/exclude`, global Git excludes, `.picm/config.json` `privacy.excludedPaths`, and session exclusions; never inspect matching contents. Ordinary Pi work and user-typed `!bash` remain unrestricted.
+- Before scanning an explicitly invoked `/picm-new`, `/picm-adopt`, `/picm-maintain`, or `/picm-optimize` workflow, finish privacy preflight and review. Never bypass protected inventory or immediate checks: root/nested Git ignores, repository-local excludes, global excludes, `.picm/config.json` privacy exclusions, and session exclusions make matching paths unreadable. Ordinary Pi work and user-typed `!bash` remain outside the workflow guard.
 - `.pi/` is for Pi config. `.picm/` is for minimal PiCM metadata/reports, including optional persisted scan exclusions.
-- `.picm/` is maintainer-only context; normal workflow routing should skip it.
+- Visible files and folders are the source of truth. `.picm/` is maintainer-only context; normal workflow routing should skip it.
 
 ## Repository structure
 - `extensions/picm-factory.ts` — slash-command and guarded-tool registration plus skill dispatch.

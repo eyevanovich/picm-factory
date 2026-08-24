@@ -1,79 +1,88 @@
 # PiCM Adoption Report
 
 ## Summary
+
 - PiCM compatibility: Ready
 - Inferred layout profile: Coding Repository
 - Existing routing source: `AGENTS.md`
 - Adoption status: Adopted
-- Codebase-map capability: Root map using `AGENTS.md`
+- Codebase map: root map in `AGENTS.md`
+- Initial examination: Strict
+- Stored maintenance preset: strict
 
 ## Existing structure detected
-- Project-local Pi package configured through `.pi/settings.json`.
-- Canonical routing in `AGENTS.md`, with `CLAUDE.md` acting as a compatibility pointer.
-- Shared product context in `CONTEXT.md`.
-- Extension entry point and runtime implementation under `extensions/`.
-- Runtime behavior contracts, references, and templates under `skills/picm-factory/`.
-- Automated tests and synthetic fixtures under `test/`.
-- Package and release tooling under `scripts/` and `.github/workflows/`.
-- Public guidance under `docs/`.
-- Interactive QA specialist context in `qa-runner/CONTEXT.md`.
+
+- `extensions/` contains the thin Pi-facing extension and runtime boundaries.
+- `skills/picm-factory/` contains the workflow contract, references, and templates.
+- `test/` contains automated tests and repository-only synthetic fixtures.
+- `scripts/` contains package validation and release-preparation utilities.
+- `docs/` and `qa-runner/` provide public guidance and interactive QA procedure.
+- `CLAUDE.md` is a compatibility pointer to `AGENTS.md`.
 
 ## Routing readiness
+
 - Source: `AGENTS.md`
 - Adequacy: Adequate
-- Issues: None blocking adoption.
-- `AGENTS.md` identifies the project, routes common tasks to their owning files, names verification through `npm run check`, preserves security boundaries, and excludes `.picm/` from normal work.
-- `CLAUDE.md` cooperates with the canonical routing file rather than duplicating it.
+- Root context: `CONTEXT.md`
+- Local context: `qa-runner/CONTEXT.md`
+- Normal routing excludes `.picm/`.
+
+The root instructions provide task-to-owner routing for extension dispatch, runtime enforcement, skill methodology, templates, package validation, fixtures, and interactive QA. `CLAUDE.md` cooperates as a thin pointer and is not a second source of instructions.
 
 ## PiCM compatibility
-- Existing visible routing is sufficient for `/picm-maintain`.
-- The repository does not need a separate `CONTEXT-MAP.md`.
-- The updated `.picm/config.json` records the root-map shape and Balanced coding-maintenance preset.
+
+`.picm/config.json` records adoption metadata, the root-map shape, selected code roots, and the Strict maintenance baseline. It supplements visible routing and does not replace it.
+
+Daily maintenance is a TUI reminder only. It does not run background work or automatically modify source files.
 
 ## Coding adoption
-- Primary profile: Coding Repository
-- Mapping approach selected: Scan and recommend
-- Resulting map shape: Root
-- Adoption depth: Additive
-- Maintenance preset: Balanced
-- Maintenance cadence: Weekly nudge
 
-## Repository boundaries proposed
-- `extensions/` — Pi command registration, scan enforcement, and maintenance runtime.
-- `skills/` — runtime behavior contract, methodology references, and generated-content templates.
-- `test/` — automated coverage and repository-only synthetic fixtures.
-- `scripts/` — package validation and release preparation.
-- `docs/` — public methodology, QA, and release guidance.
-- `qa-runner/` — interactive command-QA specialist with its own local context.
+- Primary profile: Coding Repository
+- Mapping approach: Root
+- Adoption depth: Curated
+- Resulting map shape: Root
+- Root-map equivalent: `AGENTS.md`
+- Code roots: `extensions/`, `skills/`, `test/`, and `scripts/`
+- Selected local contexts: `CONTEXT.md` and `qa-runner/CONTEXT.md`
+- Initial examination: Strict
+- Stored maintenance preset: strict
+
+## Repository boundaries
+
+| Area | Observed responsibility |
+| --- | --- |
+| `extensions/` | Pi command registration, guarded tools, and runtime integration |
+| `extensions/runtime/` | Privacy, execution, session, scheduling, and maintenance boundaries |
+| `skills/picm-factory/` | Runtime methodology, references, and generated-workspace templates |
+| `test/` | Automated contract coverage and repository-only synthetic fixtures |
+| `scripts/` | Package validation and release preparation |
+| `docs/` and `qa-runner/` | Public guidance and interactive QA procedure |
 
 ## Evidence and unknowns
-- The scan inspected root routing/context, package metadata, the extension entry point, the runtime coordinator, contribution guidance, release guidance, and interactive QA context.
-- This was a bounded topology scan, not exhaustive semantic analysis or dependency-graph generation.
-- No ignored file contents were inspected.
-- No additional user boundary hints were supplied.
+
+The user confirms that this checkout is the extension currently in use. The protected examination verified the visible routing, root context, package metadata, extension entry point, relevant documentation, and representative validation coverage.
+
+No generated or do-not-edit area was identified beyond the documented repository-only fixture boundary. The examination did not attempt exhaustive source comprehension, a full dependency graph, installation-health validation, or Git working-tree-status inspection.
+
+## Documentation consolidation proposal
+
+`AGENTS.md` is the canonical source for agent operating constraints and task routing. `CONTEXT.md` is the canonical source for product terminology and descriptive context. This preserves the existing behavior while removing duplicated terminology and operating guidance.
+
+No merge, move, archive, deletion, or source-code restructuring is proposed.
 
 ## Security/privacy notes
-- The user reported that sensitive material is confined to Git-ignored paths.
-- Git-ignored paths remain unreadable during PiCM coding scans.
-- No sensitive or ignored content is copied into this report or configuration.
+
+No additional session exclusions were requested. Protected scans continue to honor Git ignore rules, repository-local and global excludes, and any future PiCM privacy exclusions. Sensitive material must not be copied into routing, context, examples, or PiCM metadata.
 
 ## Preserved as-is
-- `AGENTS.md`
-- `CLAUDE.md`
-- `CONTEXT.md`
-- Existing source, tests, fixtures, scripts, documentation, workflows, and folder names
-- Existing project-local Pi installation settings
-- All Git-ignored material
 
-## Optional changes requiring approval
-- Replace `.picm/config.json` with the previewed Coding Repository metadata and weekly nudge policy.
-- Create this adoption report.
-- No visible workflow or coding files require changes.
+- `AGENTS.md` remains the canonical root routing file.
+- `CLAUDE.md` remains the compatibility pointer to `AGENTS.md`.
+- Existing extension, runtime, skills, templates, tests, package configuration, QA procedure, and release documentation remain in place.
+- `.picm/` remains maintainer-only and outside normal workflow routing.
 
 ## Next steps
-1. Start a Pi session in this repository and state the coding task normally.
-2. The agent should use the auto-loaded `AGENTS.md` routing to reach the owning boundary and authoritative context.
-3. The agent should confirm the relevant entry point and verification source before editing.
-4. The agent should run `npm run check` when appropriate and present the resulting diff and test output.
-5. Review the presented results, with cross-boundary effects and unknowns kept visible.
-6. Run `/picm-maintain` after meaningful boundary, manifest, command, or architecture changes.
+
+State a normal coding task. The agent should follow `AGENTS.md` to the owning boundary, confirm the relevant entry point and verification source, make the smallest appropriate change, and present the diff and check result. Review that result and keep cross-boundary effects and unknowns visible.
+
+Run `/picm-maintain` after the first real coding task and whenever repository boundaries, manifests, verification commands, or architecture documentation change.
