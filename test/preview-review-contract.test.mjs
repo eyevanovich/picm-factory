@@ -144,22 +144,31 @@ test("dispatch prompts preserve privacy bootstrap ordering and add optional-revi
   await h.commands.get("picm-help").handler("", h.ctx);
 
   const [adopt, maintain, optimize, help] = h.sent;
-  for (const prompt of [adopt, optimize]) {
-    const preflight = prompt.indexOf('action: "preflight"');
-    const question = prompt.indexOf("ask the user");
-    const summary = prompt.indexOf("complete concise `.picm/config.json` summary categories");
-    const acceptance = prompt.indexOf("obtain the user's summary acceptance");
-    const privacy = prompt.indexOf('call `picm_scan_control` with `action: "privacy"`');
-    const confirmation = prompt.indexOf("exact TUI patch confirmation");
-    const skill = prompt.indexOf("load the `picm-factory` skill");
+  {
+    const preflight = adopt.indexOf('action: "preflight"');
+    const question = adopt.indexOf("ask the user");
+    const summary = adopt.indexOf("complete concise `.picm/config.json` summary categories");
+    const acceptance = adopt.indexOf("obtain the user's summary acceptance");
+    const privacy = adopt.indexOf('call `picm_scan_control` with `action: "privacy"`');
+    const confirmation = adopt.indexOf("exact TUI patch confirmation");
+    const skill = adopt.indexOf("load the `picm-factory` skill");
     assert.ok(preflight >= 0 && preflight < question);
     assert.ok(question < summary);
     assert.ok(summary < acceptance && acceptance < privacy);
     assert.ok(privacy < confirmation && confirmation < skill);
   }
-  assert.match(maintain, /preflight automatically loads persisted `.picm\/config.json` privacy exclusions/);
-  assert.match(maintain, /ask only this concise follow-up without repeating the full privacy boilerplate/);
-  assert.match(maintain, /Existing persisted exclusions remain in effect/);
+  {
+    const preflight = optimize.indexOf('action: "preflight"');
+    const conciseQuestion = optimize.indexOf("Name any additional project-relative files or directory that should be excluded from reads, or reply none to continue.");
+    const privacy = optimize.indexOf('call `picm_scan_control` with `action: "privacy"`');
+    const skill = optimize.indexOf("load the `picm-factory` skill");
+    assert.ok(preflight >= 0 && preflight < conciseQuestion);
+    assert.ok(conciseQuestion < privacy && privacy < skill);
+  }
+  for (const prompt of [maintain, optimize]) {
+    assert.match(prompt, /privacyQuestionIsConcise/);
+    assert.match(prompt, /files or directory that should be excluded from reads/);
+  }
   assert.ok(adopt.indexOf("load the `picm-factory` skill") < adopt.indexOf("summary-preview and optional-diff-review protocol"));
   for (const prompt of [adopt, maintain, optimize]) {
     assert.match(prompt, /Present the complete current summary/);

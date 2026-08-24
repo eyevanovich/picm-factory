@@ -65,6 +65,7 @@ Run against a disposable copy of `test/fixtures/coding-repository/existing-doc-d
 Expected behavior:
 
 - Completes `preflight`, the additional-path privacy question, `privacy`, `begin`, protected `inventory`, guarded reads, `end`, and final `complete`; it never uses agent Bash, broad traversal, Git history, symlink following, or another worktree to discover documentation.
+- For an adopted or newly scaffolded workspace, asks exactly: `Name any additional project-relative files or directory that should be excluded from reads, or reply none to continue.` An unknown or incomplete workspace uses the full privacy explanation.
 - Inspects all agent-facing documentation in scope, including root/local instructions, context maps/contracts, routed reference/workflow docs, and prompt/skill guidance when present. It records protected, generated, unrelated, and uncertain omissions without opening excluded/private content.
 - Identifies evidence-backed opportunities before drafting edits, distinguishes true duplication from intentional local safety or approval reminders, and builds a qualitative preservation ledger for unique safety, privacy, permission, approval, command, behavior, verification, handoff, and domain constraints.
 - Offers independently selectable proposals, makes no semantic-equivalence or guaranteed token-savings claim, and does not manufacture a proposal when the current docs are already clear.

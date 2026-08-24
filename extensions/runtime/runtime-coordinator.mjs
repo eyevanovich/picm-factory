@@ -7,6 +7,22 @@ import { mergePrivacyExcludedPaths } from "./privacy-policy.mjs";
 const EXPLICIT_SCAN_COMMANDS = new Set(["picm-new", "picm-adopt", "picm-maintain", "picm-optimize"]);
 const GUARDED_PATH_TOOLS = new Set(["read", "edit", "write", "grep", "rg", "find", "ls"]);
 
+function isRecord(value) {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+function hasCompletedPicmSetup(config) {
+  return isRecord(config) && (
+    config.adoption?.status === "adopted" ||
+    (
+      config.generatedBy === "picm-factory" &&
+      typeof config.profile === "string" &&
+      typeof config.createdAt === "string" &&
+      isRecord(config.paths)
+    )
+  );
+}
+
 export function createRuntimeCoordinator({
   packageRoot,
   canonicalPackageRoot,
@@ -58,6 +74,7 @@ export function createRuntimeCoordinator({
       preflightComplete: workflow.preflightComplete,
       privacyReviewed: workflow.privacyReviewed,
       privacyFollowupPending: workflow.privacyFollowupPending,
+      privacyQuestionIsConcise: workflow.privacyQuestionIsConcise,
       scanStarted: workflow.scanStarted,
       scanSettled: workflow.scanSettled,
       maintenanceResetAttempted: workflow.maintenanceResetAttempted,
@@ -75,6 +92,7 @@ export function createRuntimeCoordinator({
       preflightComplete: false,
       privacyReviewed: false,
       privacyFollowupPending: false,
+      privacyQuestionIsConcise: false,
       scanStarted: false,
       scanSettled: false,
       maintenanceResetAttempted: false,
@@ -113,12 +131,15 @@ export function createRuntimeCoordinator({
     const preflightComplete = completeState && state.preflightComplete;
     const privacyFollowupPending = preflightComplete && state.privacyFollowupPending === true;
     const privacyReviewed = preflightComplete && state.privacyReviewed && !privacyFollowupPending;
+    const privacyQuestionIsConcise =
+      preflightComplete && !privacyReviewed && state.privacyQuestionIsConcise === true;
     scanWorkflows.set(sessionIdFor(ctx), {
       cwd: ctx.cwd,
       command: state.command,
       preflightComplete,
       privacyReviewed,
       privacyFollowupPending,
+      privacyQuestionIsConcise,
       scanStarted: privacyReviewed && state.scanStarted === true,
       scanSettled: privacyReviewed && state.scanStarted === true && state.scanSettled === true,
       maintenanceResetAttempted:
@@ -155,9 +176,10 @@ export function createRuntimeCoordinator({
       workflow.preflightComplete = true;
       workflow.privacyReviewed = false;
       workflow.privacyFollowupPending = false;
+      workflow.privacyQuestionIsConcise = false;
       workflow.scanStarted = false;
       workflow.scanSettled = false;
-      if (workflow.command === "picm-maintain") {
+      if (workflow.command === "picm-maintain" || workflow.command === "picm-optimize") {
         const current = await runtimeFor(ctx).store.readPrivacyForReview();
         requireCurrentWorkflow(sessionId, workflow);
         if (!current.ok) throw new Error(`${current.code}: ${current.message}`);
@@ -169,6 +191,8 @@ export function createRuntimeCoordinator({
           );
           workflow.privacyFollowupPending = true;
         }
+        workflow.privacyQuestionIsConcise =
+          workflow.privacyFollowupPending || hasCompletedPicmSetup(current.config);
       }
       return {
         ok: true,
@@ -236,6 +260,7 @@ export function createRuntimeCoordinator({
       );
       workflow.privacyReviewed = true;
       workflow.privacyFollowupPending = false;
+      workflow.privacyQuestionIsConcise = false;
       workflow.scanStarted = false;
       workflow.scanSettled = false;
       clearActiveScan(ctx);

@@ -44,11 +44,13 @@ test("picm-optimize is registered and dispatches privacy before skill loading", 
   assert.equal(h.sent.length, 1);
   const prompt = h.sent[0];
   const preflight = prompt.indexOf('action: "preflight"');
-  const question = prompt.indexOf("Name any additional project-relative exclusions, or reply `none`.");
+  const conciseQuestion = prompt.indexOf("Name any additional project-relative files or directory that should be excluded from reads, or reply none to continue.");
   const privacy = prompt.indexOf('action: "privacy"');
   const skill = prompt.indexOf("load the `picm-factory` skill");
-  assert.ok(preflight >= 0 && preflight < question);
-  assert.ok(question < privacy && privacy < skill);
+  assert.ok(preflight >= 0 && preflight < conciseQuestion);
+  assert.ok(conciseQuestion < privacy && privacy < skill);
+  assert.match(prompt, /privacyQuestionIsConcise/);
+  assert.match(prompt, /files or directory that should be excluded from reads/);
   assert.match(prompt, /PiCM automatically protects:/);
   assert.match(prompt, /Git internals/);
   assert.match(prompt, /symlinks and nested repository\/submodule boundaries/);

@@ -221,7 +221,7 @@ test("adopt coding dispatches preflight and exact privacy copy before skill load
   assert.match(prompt, /Mode: adopt\nCommand: \/picm-adopt\n\nUser arguments:\ncoding/);
 });
 
-test("maintain loads persisted exclusions and asks only for additional sensitive paths", async (t) => {
+test("maintain loads persisted exclusions and asks the concise privacy question", async (t) => {
   const cwd = fixture(t);
   writeFileSync(join(cwd, ".picm/config.json"), JSON.stringify({
     version: 1,
@@ -233,16 +233,16 @@ test("maintain loads persisted exclusions and asks only for additional sensitive
   await h.commands.get("picm-maintain").handler("routing", ctx);
 
   const prompt = h.sent[0];
-  assert.match(prompt, /preflight automatically loads persisted `.picm\/config.json` privacy exclusions/);
-  assert.match(prompt, /Persisted exclusions are already loaded\. Name any additional sensitive project-relative paths/);
-  assert.match(prompt, /Existing persisted exclusions remain in effect/);
+  assert.match(prompt, /privacyQuestionIsConcise/);
+  assert.match(prompt, /files or directory that should be excluded from reads/);
+  assert.doesNotMatch(prompt, /Persisted exclusions are already loaded/);
   const scanGuidance = h.scanControl.promptGuidelines.join("\n");
-  assert.match(scanGuidance, /If \/picm-maintain preflight returns privacyFollowupPending true/);
-  assert.match(scanGuidance, /ask only for additional sensitive project-relative exclusions/);
-  assert.match(scanGuidance, /persisted exclusions remain in effect/);
+  assert.match(scanGuidance, /privacyQuestionIsConcise/);
+  assert.match(scanGuidance, /files or directory that should be excluded from reads/);
   const preflight = await h.scanControl.execute("id", { action: "preflight" }, undefined, undefined, ctx);
   assert.equal(preflight.details.privacyReviewed, false);
   assert.equal(preflight.details.privacyFollowupPending, true);
+  assert.equal(preflight.details.privacyQuestionIsConcise, true);
   assert.deepEqual(preflight.details.excludedPaths, ["private"]);
   await assert.rejects(
     h.scanControl.execute("id", { action: "begin" }, undefined, undefined, ctx),
@@ -257,7 +257,50 @@ test("maintain loads persisted exclusions and asks only for additional sensitive
   );
   assert.equal(privacy.details.privacyReviewed, true);
   assert.equal(privacy.details.privacyFollowupPending, false);
+  assert.equal(privacy.details.privacyQuestionIsConcise, false);
   assert.deepEqual(privacy.details.excludedPaths, ["private"]);
+});
+
+test("maintain and optimize use concise privacy wording for adopted and scaffolded workspaces", async (t) => {
+  const completedConfigs = [
+    { version: 1, adoption: { status: "adopted" } },
+    {
+      version: 1,
+      generatedBy: "picm-factory",
+      profile: "stage-pipeline",
+      createdAt: "2026-08-24",
+      paths: { rootInstructions: "AGENTS.md" },
+    },
+  ];
+
+  for (const command of ["picm-maintain", "picm-optimize"]) {
+    for (const config of completedConfigs) {
+      const cwd = fixture(t);
+      writeFileSync(join(cwd, ".picm/config.json"), JSON.stringify(config));
+      const h = harness();
+      const ctx = h.context(cwd);
+
+      await h.commands.get(command).handler("", ctx);
+
+      assert.match(h.sent[0], /privacyQuestionIsConcise/);
+      assert.match(h.sent[0], /files or directory that should be excluded from reads/);
+      const preflight = await h.scanControl.execute("id", { action: "preflight" }, undefined, undefined, ctx);
+      assert.equal(preflight.details.privacyQuestionIsConcise, true);
+    }
+  }
+});
+
+test("maintain and optimize retain the full privacy path for incomplete PiCM setup", async (t) => {
+  for (const command of ["picm-maintain", "picm-optimize"]) {
+    const cwd = fixture(t);
+    const h = harness();
+    const ctx = h.context(cwd);
+
+    await h.commands.get(command).handler("", ctx);
+
+    const preflight = await h.scanControl.execute("id", { action: "preflight" }, undefined, undefined, ctx);
+    assert.equal(preflight.details.privacyQuestionIsConcise, false);
+  }
 });
 
 test("when maintenance is due in TUI, renders persistent reminder widget and presents Run Now and Defer selector", async (t) => {

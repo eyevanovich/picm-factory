@@ -398,6 +398,25 @@ for (const [file, signals] of Object.entries(adoptionPrivacyQuestionGuidance)) {
   }
 }
 
+const conciseExistingWorkspacePrivacyGuidance = {
+  "extensions/picm-factory.ts": ["privacyQuestionIsConcise", "files or directory that should be excluded from reads"],
+  "extensions/runtime/runtime-coordinator.mjs": ["hasCompletedPicmSetup", "privacyQuestionIsConcise"],
+  "skills/picm-factory/SKILL.md": ["privacyQuestionIsConcise", "completed adoption or new-workspace setup"],
+  "skills/picm-factory/references/coding-maintenance-rubric.md": ["privacyQuestionIsConcise", "files or directory that should be excluded from reads"],
+  "prompts/picm-optimize.md": ["privacyQuestionIsConcise", "files or directory that should be excluded from reads"],
+  "README.md": ["completed adopted or newly scaffolded workspaces", "files or directory that should be excluded from reads"],
+  "docs/layout-fixture-qa.md": ["adopted or newly scaffolded workspace", "files or directory that should be excluded from reads"],
+};
+for (const [file, signals] of Object.entries(conciseExistingWorkspacePrivacyGuidance)) {
+  const text = readFileSync(join(root, file), "utf8");
+  for (const signal of signals) {
+    if (!text.includes(signal)) {
+      console.error(`Concise established-workspace privacy guidance ${file} missing signal: ${signal}`);
+      process.exit(1);
+    }
+  }
+}
+
 const previewReviewGuidance = {
   "skills/picm-factory/references/preview-review-protocol.md": [
     "Affected files and operations",

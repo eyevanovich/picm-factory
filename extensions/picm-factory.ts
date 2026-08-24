@@ -76,6 +76,9 @@ const adoptionPrivacyQuestion = `PiCM automatically protects:
 
 Name any additional project-relative exclusions, or reply \`none\`.`;
 
+const concisePrivacyQuestion =
+  "Name any additional project-relative files or directory that should be excluded from reads, or reply none to continue.";
+
 function buildPrompt(
   command: CommandName,
   args: string,
@@ -89,11 +92,12 @@ function buildPrompt(
     : command === "picm-help"
       ? "\n\nExplain the shipped adoption/maintenance/optimization summary-preview: unambiguous direct approval of the complete current summary writes only that exact proposal without a separate acceptance step or review menu; non-blocking review suggestions and exact review remain available on demand for view all, review files, and show diff for a path."
       : "";
+  if (command === "picm-maintain" || command === "picm-optimize") {
+    const workflow = command === "picm-maintain" ? "maintenance" : "optimization";
+    return `Privacy-first startup — follow this order exactly:\n1. Call \`picm_scan_control\` with \`action: "preflight"\`. Do not load the skill or use any other tool yet.\n2. After preflight, if it reports \`privacyQuestionIsConcise: true\`, ask exactly:\n\n${concisePrivacyQuestion}\n\nThen call \`picm_scan_control\` with \`action: "privacy"\` and every additional exact path (an empty list for \`none\`).\n3. Otherwise, ask the user:\n\n${adoptionPrivacyQuestion}\n\nThen call \`picm_scan_control\` with \`action: "privacy"\` and every additional exact path (an empty list for \`none\`). Use \`persist: true\` only if the user requests durable exclusions and follow its summary and exact TUI confirmation requirements.\n4. After the privacy call completes, load the \`picm-factory\` skill and continue the ${workflow} workflow.\n\n${commandContext}${previewGuidance}`;
+  }
   if (privacyBootstrap) {
     return `Privacy-first startup — follow this order exactly:\n1. Call \`picm_scan_control\` with \`action: "preflight"\`. Do not load the skill or use any other tool yet.\n2. After preflight, ask the user:\n\n${adoptionPrivacyQuestion}\n\n3. Prepare the privacy call with every additional exact path from the reply (an empty list for \`none\`). Use \`persist: true\` only if the user requests durable exclusions. Before a call with \`persist: true\`, present the complete concise \`.picm/config.json\` summary categories: affected files and operations, behavior or configuration changes, linked cross-file moves, preserved behavior, known uncertainty, and review suggestions. Use \`None\` for empty categories, explain the privacy configuration impact, and obtain the user's summary acceptance. Then call \`picm_scan_control\` with \`action: "privacy"\`; its exact TUI patch confirmation is the separate runtime write confirmation.\n4. Only after privacy review completes, load the \`picm-factory\` skill and its \`SKILL.md\`, then continue the ${mode} workflow.\n\n${commandContext}${previewGuidance}`;
-  }
-  if (command === "picm-maintain") {
-    return `Privacy-first startup — follow this order exactly:\n1. Call \`picm_scan_control\` with \`action: "preflight"\`. Do not load the skill or use any other tool yet.\n2. For maintenance, preflight automatically loads persisted \`.picm/config.json\` privacy exclusions. If its result has \`privacyFollowupPending: true\`, ask only this concise follow-up without repeating the full privacy boilerplate:\n\nPersisted exclusions are already loaded. Name any additional sensitive project-relative paths to exclude for this run, or reply \`none\`.\n\nThen call \`picm_scan_control\` with \`action: "privacy"\` and every additional exact path (an empty list for \`none\`). Existing persisted exclusions remain in effect.\n3. Otherwise, ask the user:\n\n${adoptionPrivacyQuestion}\n\nThen call \`picm_scan_control\` with \`action: "privacy"\` and every additional exact path (an empty list for \`none\`). Use \`persist: true\` only if the user requests durable exclusions and follow its summary and exact TUI confirmation requirements.\n4. After the privacy call completes, load the \`picm-factory\` skill and continue.\n\n${commandContext}${previewGuidance}`;
   }
   return `Use the picm-factory skill. Load its SKILL.md before proceeding.\n\n${commandContext}${previewGuidance}`;
 }
@@ -159,7 +163,7 @@ export default function picmFactoryExtension(
     promptSnippet: "Preflight, record privacy exclusions, and control protected PiCM scan phases",
     promptGuidelines: [
       "Only an explicit /picm-new, /picm-adopt, /picm-maintain, or /picm-optimize command authorizes picm_scan_control; natural-language requests do not.",
-      "After an explicit command, call picm_scan_control preflight before any scan. If /picm-maintain preflight returns privacyFollowupPending true, ask only for additional sensitive project-relative exclusions without repeating the full privacy boilerplate, then call privacy; persisted exclusions remain in effect. Otherwise, ask the full privacy question, then call privacy with every exact project-relative excluded path before begin.",
+      "After an explicit command, call picm_scan_control preflight before any scan. For /picm-maintain and /picm-optimize, if preflight returns privacyQuestionIsConcise true, ask exactly: Name any additional project-relative files or directory that should be excluded from reads, or reply none to continue. Then call privacy with every exact project-relative excluded path. Otherwise, ask the full privacy question before privacy and begin.",
       "Use picm_scan_control privacy with persist true only when the user requests durable exclusions. First present and obtain acceptance of the complete concise .picm/config.json summary, explain the privacy configuration impact, then use the action's exact TUI patch confirmation as the separate runtime write confirmation.",
       "Use picm_scan_control inventory only after begin, end after each scan phase, and complete when the PiCM workflow finishes.",
     ],
@@ -188,6 +192,7 @@ export default function picmFactoryExtension(
           preflightComplete: result.preflightComplete,
           privacyReviewed: result.privacyReviewed,
           privacyFollowupPending: result.privacyFollowupPending,
+          privacyQuestionIsConcise: result.privacyQuestionIsConcise,
           scanStarted: result.scanStarted,
           scanSettled: result.scanSettled,
           maintenanceResetAttempted: result.maintenanceResetAttempted,
@@ -208,6 +213,7 @@ export default function picmFactoryExtension(
             preflightComplete: result.preflightComplete,
             privacyReviewed: result.privacyReviewed,
             privacyFollowupPending: result.privacyFollowupPending,
+            privacyQuestionIsConcise: result.privacyQuestionIsConcise,
             scanStarted: result.scanStarted,
             scanSettled: result.scanSettled,
             maintenanceResetAttempted: result.maintenanceResetAttempted,
