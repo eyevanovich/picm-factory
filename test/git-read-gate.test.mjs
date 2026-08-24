@@ -1327,6 +1327,38 @@ test("privacy-reviewed scan authorization and exclusions survive resuming the sa
   });
 });
 
+test("resumed scan authorization does not expire by elapsed time", async () => {
+  await withFixture(async ({ root }) => {
+    const h = extensionHarness({ entries: [{
+      type: "custom",
+      customType: "picm-scan-workflow",
+      data: {
+        status: "authorized",
+        cwd: root,
+        command: "picm-adopt",
+        expiresAt: "2000-01-01T00:00:00.000Z",
+        preflightComplete: true,
+        privacyReviewed: true,
+        scanStarted: true,
+        scanSettled: true,
+        maintenanceResetAttempted: false,
+        excludedPaths: ["safe-dir"],
+      },
+    }] });
+    const ctx = h.context(root, "long-lived-session");
+    await h.handlers.get("session_start")({ reason: "resume" }, ctx);
+    const status = await h.tools.get("picm_scan_control").execute(
+      "id",
+      { action: "status" },
+      undefined,
+      undefined,
+      ctx,
+    );
+    assert.equal(status.details.authorized, true);
+    assert.equal(status.details.privacyReviewed, true);
+  });
+});
+
 test("incomplete resumed workflow state is never treated as preflight-complete", async () => {
   await withFixture(async ({ root }) => {
     const entries = [{
@@ -1351,7 +1383,7 @@ test("incomplete resumed workflow state is never treated as preflight-complete",
   });
 });
 
-test("scan authorization rejects help, timeout, cwd mismatch, and dispatch failure", async () => {
+test("scan authorization rejects help, cwd mismatch, and dispatch failure", async () => {
   await withFixture(async ({ root }) => {
     const h = extensionHarness();
     const ctx = h.context(root, "auth-checks");
@@ -1472,8 +1504,18 @@ test("interactive commands bootstrap privacy before trusted skill loading", asyn
       const preflightIndex = prompt.indexOf('action: "preflight"');
       const privacyIndex = prompt.indexOf('action: "privacy"');
       const skillIndex = prompt.indexOf("load the `picm-factory` skill");
-      assert.ok(preflightIndex >= 0 && preflightIndex < privacyIndex && privacyIndex < skillIndex);
-      assert.match(prompt, /Only name additional sensitive project-relative paths/);
+      if (command === "picm-maintain") {
+        assert.ok(preflightIndex >= 0 && preflightIndex < skillIndex);
+        assert.match(prompt, /preflight automatically loads persisted `.picm\/config.json` privacy exclusions/);
+        assert.match(prompt, /ask only this concise follow-up without repeating the full privacy boilerplate/);
+        assert.match(prompt, /Existing persisted exclusions remain in effect/);
+      } else {
+        assert.ok(preflightIndex >= 0 && preflightIndex < privacyIndex && privacyIndex < skillIndex);
+      }
+      assert.match(prompt, /PiCM automatically protects:/);
+      assert.match(prompt, /Git internals/);
+      assert.match(prompt, /symlinks and nested repository\/submodule boundaries/);
+      assert.match(prompt, /Name any additional project-relative exclusions, or reply `none`/);
 
       const control = h.tools.get("picm_scan_control");
       const skill = join(packageRoot, "skills", "picm-factory", "SKILL.md");

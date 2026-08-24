@@ -377,7 +377,10 @@ const adoptionPrivacyQuestionGuidance = {
   ],
   "extensions/picm-factory.ts": [
     "Privacy-first startup — follow this order exactly",
-    "Only name additional sensitive project-relative paths not already covered",
+    "PiCM automatically protects:",
+    "Git internals",
+    "symlinks and nested repository/submodule boundaries",
+    "Name any additional project-relative exclusions, or reply \\`none\\`",
     "Only after privacy review completes, load the \\`picm-factory\\` skill",
   ],
   "docs/layout-fixture-qa.md": [

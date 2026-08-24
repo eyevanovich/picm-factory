@@ -199,8 +199,8 @@ test("adopt coding dispatches preflight and exact privacy copy before skill load
   assert.equal(h.sent.length, 1);
   const prompt = h.sent[0];
   const preflight = prompt.indexOf("Call `picm_scan_control` with `action: \"preflight\"`");
-  const reassurance = prompt.indexOf("PiCM already honors `.gitignore`, nested Git ignore rules, and repository-local `.git/info/exclude`.");
-  const additionalPaths = prompt.indexOf("Only name additional sensitive project-relative paths not already covered by those protections. Reply with exact paths, or `none`.");
+  const reassurance = prompt.indexOf("PiCM automatically protects:");
+  const additionalPaths = prompt.indexOf("Name any additional project-relative exclusions, or reply `none`.");
   const summary = prompt.indexOf("complete concise `.picm/config.json` summary categories");
   const acceptance = prompt.indexOf("obtain the user's summary acceptance");
   const privacy = prompt.indexOf("call `picm_scan_control` with `action: \"privacy\"`");
@@ -210,6 +210,8 @@ test("adopt coding dispatches preflight and exact privacy copy before skill load
   assert.ok(preflight >= 0);
   assert.ok(preflight < reassurance);
   assert.ok(reassurance < additionalPaths);
+  assert.match(prompt, /Git internals/);
+  assert.match(prompt, /symlinks and nested repository\/submodule boundaries/);
   assert.ok(additionalPaths < summary);
   assert.ok(summary < acceptance);
   assert.ok(acceptance < privacy);
@@ -219,23 +221,43 @@ test("adopt coding dispatches preflight and exact privacy copy before skill load
   assert.match(prompt, /Mode: adopt\nCommand: \/picm-adopt\n\nUser arguments:\ncoding/);
 });
 
-test("maintain TUI dispatch receives persisted-privacy summary before tool call and skill load", async (t) => {
+test("maintain loads persisted exclusions and asks only for additional sensitive paths", async (t) => {
   const cwd = fixture(t);
+  writeFileSync(join(cwd, ".picm/config.json"), JSON.stringify({
+    version: 1,
+    privacy: { excludedPaths: ["private"] },
+  }));
   const h = harness();
+  const ctx = h.context(cwd);
 
-  await h.commands.get("picm-maintain").handler("routing", h.context(cwd));
+  await h.commands.get("picm-maintain").handler("routing", ctx);
 
   const prompt = h.sent[0];
-  const question = prompt.indexOf("Only name additional sensitive project-relative paths not already covered by those protections. Reply with exact paths, or `none`.");
-  const summary = prompt.indexOf("complete concise `.picm/config.json` summary categories");
-  const acceptance = prompt.indexOf("obtain the user's summary acceptance");
-  const privacy = prompt.indexOf("call `picm_scan_control` with `action: \"privacy\"`");
-  const skill = prompt.indexOf("load the `picm-factory` skill and its `SKILL.md`");
-  assert.ok(question >= 0 && question < summary);
-  assert.ok(summary < acceptance && acceptance < privacy);
-  assert.ok(privacy < skill);
-  assert.match(prompt, /mark the safety\/configuration change as mandatory exact review/);
-  assert.match(prompt, /exact TUI patch confirmation is the mandatory exact review and separate write approval/);
+  assert.match(prompt, /preflight automatically loads persisted `.picm\/config.json` privacy exclusions/);
+  assert.match(prompt, /Persisted exclusions are already loaded\. Name any additional sensitive project-relative paths/);
+  assert.match(prompt, /Existing persisted exclusions remain in effect/);
+  const scanGuidance = h.scanControl.promptGuidelines.join("\n");
+  assert.match(scanGuidance, /If \/picm-maintain preflight returns privacyFollowupPending true/);
+  assert.match(scanGuidance, /ask only for additional sensitive project-relative exclusions/);
+  assert.match(scanGuidance, /persisted exclusions remain in effect/);
+  const preflight = await h.scanControl.execute("id", { action: "preflight" }, undefined, undefined, ctx);
+  assert.equal(preflight.details.privacyReviewed, false);
+  assert.equal(preflight.details.privacyFollowupPending, true);
+  assert.deepEqual(preflight.details.excludedPaths, ["private"]);
+  await assert.rejects(
+    h.scanControl.execute("id", { action: "begin" }, undefined, undefined, ctx),
+    /PICM_PRIVACY_NOT_REVIEWED/,
+  );
+  const privacy = await h.scanControl.execute(
+    "id",
+    { action: "privacy", excludedPaths: [] },
+    undefined,
+    undefined,
+    ctx,
+  );
+  assert.equal(privacy.details.privacyReviewed, true);
+  assert.equal(privacy.details.privacyFollowupPending, false);
+  assert.deepEqual(privacy.details.excludedPaths, ["private"]);
 });
 
 test("when maintenance is due in TUI, renders persistent reminder widget and presents Run Now and Defer selector", async (t) => {

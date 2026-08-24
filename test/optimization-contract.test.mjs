@@ -44,11 +44,14 @@ test("picm-optimize is registered and dispatches privacy before skill loading", 
   assert.equal(h.sent.length, 1);
   const prompt = h.sent[0];
   const preflight = prompt.indexOf('action: "preflight"');
-  const question = prompt.indexOf("Only name additional sensitive project-relative paths");
+  const question = prompt.indexOf("Name any additional project-relative exclusions, or reply `none`.");
   const privacy = prompt.indexOf('action: "privacy"');
   const skill = prompt.indexOf("load the `picm-factory` skill");
   assert.ok(preflight >= 0 && preflight < question);
   assert.ok(question < privacy && privacy < skill);
+  assert.match(prompt, /PiCM automatically protects:/);
+  assert.match(prompt, /Git internals/);
+  assert.match(prompt, /symlinks and nested repository\/submodule boundaries/);
   assert.match(prompt, /Mode: optimize\nCommand: \/picm-optimize/);
   assert.equal(h.entries.at(-1).data.command, "picm-optimize");
 });

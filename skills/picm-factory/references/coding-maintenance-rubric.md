@@ -8,7 +8,7 @@ Apply the general `maintenance-rubric.md` posture, severity labels, repair tiers
 
 Apply the coding adoption guide's **excluded means unreadable** boundary before any scan:
 
-- call `preflight`, ask the privacy question, record exact exclusions with `privacy`, and call `begin` before inventory or content inspection;
+- call `preflight` before inventory or content inspection; when it loads persisted exclusions and reports `privacyFollowupPending: true`, ask only for additional sensitive project-relative paths without repeating the full privacy boilerplate, call `privacy` with those additions, and retain all persisted exclusions; otherwise ask the full privacy question and record exact exclusions with `privacy`; then call `begin`;
 - derive candidates through protected inventory, using the real Git repository when present or isolated transient Git metadata only after privacy review when `.git` is absent;
 - honor root/nested `.gitignore`, `.git/info/exclude`, global Git excludes, persisted `privacy.excludedPaths`, and session additions as cumulative rules;
 - skip matching paths even if tracked;

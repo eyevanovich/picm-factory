@@ -163,7 +163,7 @@ When routing is missing, partial, or conflicting, offer alternatives rather than
 
 For coding adoption, present Additive and Curated as proposal-depth choices in addition to readiness options. Curated mode can recommend canonical docs and compatibility pointers, but it does not weaken the summary-preview, mandatory-review, or direct-approval gate.
 
-Never write routing/context edits until the user is satisfied with the proposal and explicitly approves exact changes. Apply `preview-review-protocol.md` before every proposed project write. Treat option selection as design intent, not write approval. A preview request, review navigation, cadence choice, or vague assent is also not approval; revisions invalidate prior approval and require a refreshed summary and mandatory reviews before approval.
+Never write routing/context edits until the user is satisfied with the proposal and explicitly approves exact changes. Apply `preview-review-protocol.md` before every proposed project write. Treat option selection as design intent, not write approval. A preview request, review navigation, cadence choice, or vague assent is also not approval; a draft adjustment supersedes pending write approval, preserves applicable unchanged-path review state, and requires a refreshed summary plus any newly required mandatory review before approval.
 
 ## PiCM config
 

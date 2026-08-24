@@ -6,7 +6,7 @@ Use this protocol for every project write proposed by `/picm-adopt`, `/picm-main
 
 Before each proposed project write, present one complete concise summary preview. An unambiguous direct approval of that current summary—for example, `accept`, `approve`, `accept and write`, or `proceed`—authorizes writing its exact enumerated changes. Do not require a separate summary-acceptance step or an exact-review menu before writing unless mandatory exact review is pending. Option choice, cadence choice, a preview request, review navigation, or vague assent is not approval.
 
-A proposal revision invalidates all earlier approval and exact-review state. Present a refreshed summary and repeat any mandatory exact review for the revised proposal.
+A request to adjust a draft creates a revised current proposal without restarting the protocol. It supersedes any pending write approval, but preserves applicable selection and exact-review state for unchanged paths. Re-evaluate changed paths and repeat mandatory exact review only where the revised content or a newly affected mandatory item requires it. Present a refreshed summary, then allow direct approval of that revised proposal when no mandatory exact review is pending.
 
 Exact review is mandatory before approval for:
 
@@ -43,6 +43,8 @@ Enumerate every affected file once and keep linked actions visibly connected. Us
 
 The summary must be complete even when concise: include every affected path and operation, behavior/configuration effects, linked cross-file moves, behavior intentionally preserved, known uncertainty, and mandatory exact-review items.
 
+End every proposed-write summary with: “Approve this proposal to write it, or ask to inspect a diff (for example, `show diff for <path>`). You can also request an adjustment.”
+
 ## Exact review interaction
 
 Offer exact review whenever the user asks to inspect files or diffs. Execute recognized direct requests immediately: `view all` renders all affected items, and `show diff for <path>` renders that affected path or linked move pair. A generic request such as `review files` enters the exact-review menu. Enter mandatory exact review before accepting approval only when a mandatory item is pending. At the generic or mandatory exact-review entry, offer exactly these choices and no additional peer choice:
@@ -66,6 +68,6 @@ Do not substitute paraphrase for exact rendering. If protected or sensitive cont
 
 ## Approval language
 
-A valid approval clearly authorizes writing the enumerated current proposal. When no mandatory item is pending, accept it directly from the summary without an intervening exact-review ceremony. When mandatory items are pending, render them exactly first, then accept direct approval of the current summary. Any requested change returns to proposal revision; refresh the summary and required reviews before requesting approval again.
+A valid approval clearly authorizes writing the enumerated current proposal. When no mandatory item is pending, accept it directly from the summary without an intervening exact-review ceremony. When mandatory items are pending, render them exactly first, then accept direct approval of the current summary. A requested change revises the proposal conversationally: retain applicable unchanged-path review state, refresh the summary, and invite direct approval or diff inspection of the revised proposal.
 
 This protocol does not authorize crawling, a custom TUI, a workflow executor, or automated semantic-equivalence claims. Use the existing Pi conversation and file tools while preserving all runtime privacy and scan behavior.

@@ -11,7 +11,7 @@ Coding repositories commonly store credentials, local configuration, private fix
 Before inspecting repository contents:
 
 1. Call `picm_scan_control preflight`. It checks Git-repository status plus root `.gitignore` and repository-local `.git/info/exclude` presence without inventorying files or creating temporary Git metadata.
-2. Ask the privacy question with this concise reassurance: “PiCM already honors `.gitignore`, nested Git ignore rules, and repository-local `.git/info/exclude`. It also protects Git internals, symlinks, nested repository/submodule boundaries, and paths outside this project. Only name additional sensitive project-relative paths not already covered by those protections. Reply with exact paths, or `none`.” These protections are automatic; the reply adds exclusions for sensitive eligible paths PiCM cannot infer. No other agent tool is available until this privacy review completes.
+2. Ask the privacy question with this concise reassurance: “PiCM automatically protects:\n- paths covered by root, nested, and repository-local Git ignore rules;\n- Git internals;\n- symlinks and nested repository/submodule boundaries; and\n- paths outside this project.\n\nName any additional project-relative exclusions, or reply `none`.” These protections are automatic; the reply adds exclusions for sensitive eligible paths PiCM cannot infer. No other agent tool is available until this privacy review completes.
 3. Call `picm_scan_control privacy` with every exact project-relative exclusion. When the user chooses durable PiCM exclusions, use `persist: true`; the action shows the exact `privacy.excludedPaths` patch and writes `.picm/config.json` only after TUI confirmation. Otherwise exclusions remain session-only. Existing persisted exclusions are merged automatically and exclusions can only be added during the workflow.
 4. When the Git repository has no root `.gitignore`, offer an exact `.gitignore` proposal for paths the user also wants excluded from commits. Declining it does not weaken PiCM protection because config and session exclusions remain enforced.
 5. Call `begin`, then use `inventory` for candidate discovery. Never begin with broad traversal or direct filesystem tools.
@@ -135,7 +135,7 @@ Start from user hints and visible workspace/build boundaries. Propose local cont
 - frequent independent agent work;
 - material cross-boundary coordination risk.
 
-Do not place `CONTEXT.md` in every package by default. Preview the proposed boundaries and rationale, and let the user add/remove boundaries before drafting files. Any proposal revision invalidates earlier approval and exact-review state.
+Do not place `CONTEXT.md` in every package by default. Preview the proposed boundaries and rationale, and let the user add/remove boundaries before drafting files. A proposal adjustment supersedes pending write approval while preserving applicable unchanged-path review state.
 
 ### Scan and recommend
 
