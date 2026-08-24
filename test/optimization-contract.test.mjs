@@ -110,7 +110,7 @@ test("skill, backing prompt, help, README, and shared review protocol stay synch
     "prompts/picm-optimize.md": [
       "Command: /picm-optimize",
       "Inspect all agent-facing documentation",
-      "summary-preview and exact-review protocol",
+      "summary-preview and optional-diff-review protocol",
       "No worthwhile optimizations found",
     ],
     "prompts/picm-help.md": ["`/picm-optimize`", "semantic equivalence"],

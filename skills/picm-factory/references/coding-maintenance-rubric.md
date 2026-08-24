@@ -2,7 +2,7 @@
 
 Use this guide inside an explicitly invoked `/picm-maintain` workflow when `.picm/config.json` identifies `profile: "coding-repository"`, when `capabilities.codebaseMap` is enabled, or when visible routing points to `CONTEXT-MAP.md`.
 
-Apply the general `maintenance-rubric.md` posture, severity labels, repair tiers, preview requirements, scheduled-reminder consent boundary, and report format. Coding repairs use the shared complete concise summary and may receive direct explicit approval from that summary when no mandatory exact review is pending. This guide adds coding-specific checks; it does not create a deterministic validator or automatic rewrite system. Choosing `Run Now` authorizes the ordinary maintenance flow, not an automatic map or report update.
+Apply the general `maintenance-rubric.md` posture, severity labels, repair tiers, preview requirements, scheduled-reminder consent boundary, and report format. Coding repairs use the shared complete concise summary, non-blocking review suggestions, and direct explicit approval. This guide adds coding-specific checks; it does not create a deterministic validator or automatic rewrite system. Choosing `Run Now` authorizes the ordinary maintenance flow, not an automatic map or report update.
 
 ## Security before maintenance
 
