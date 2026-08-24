@@ -237,12 +237,27 @@ test("maintain loads persisted exclusions and asks only for additional sensitive
   assert.match(prompt, /Persisted exclusions are already loaded\. Name any additional sensitive project-relative paths/);
   assert.match(prompt, /Existing persisted exclusions remain in effect/);
   const scanGuidance = h.scanControl.promptGuidelines.join("\n");
-  assert.match(scanGuidance, /If \/picm-maintain preflight returns privacyReviewed true/);
+  assert.match(scanGuidance, /If \/picm-maintain preflight returns privacyFollowupPending true/);
   assert.match(scanGuidance, /ask only for additional sensitive project-relative exclusions/);
   assert.match(scanGuidance, /persisted exclusions remain in effect/);
   const preflight = await h.scanControl.execute("id", { action: "preflight" }, undefined, undefined, ctx);
-  assert.equal(preflight.details.privacyReviewed, true);
+  assert.equal(preflight.details.privacyReviewed, false);
+  assert.equal(preflight.details.privacyFollowupPending, true);
   assert.deepEqual(preflight.details.excludedPaths, ["private"]);
+  await assert.rejects(
+    h.scanControl.execute("id", { action: "begin" }, undefined, undefined, ctx),
+    /PICM_PRIVACY_NOT_REVIEWED/,
+  );
+  const privacy = await h.scanControl.execute(
+    "id",
+    { action: "privacy", excludedPaths: [] },
+    undefined,
+    undefined,
+    ctx,
+  );
+  assert.equal(privacy.details.privacyReviewed, true);
+  assert.equal(privacy.details.privacyFollowupPending, false);
+  assert.deepEqual(privacy.details.excludedPaths, ["private"]);
 });
 
 test("when maintenance is due in TUI, renders persistent reminder widget and presents Run Now and Defer selector", async (t) => {

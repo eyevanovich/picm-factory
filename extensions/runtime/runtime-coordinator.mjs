@@ -57,6 +57,7 @@ export function createRuntimeCoordinator({
       command: workflow.command,
       preflightComplete: workflow.preflightComplete,
       privacyReviewed: workflow.privacyReviewed,
+      privacyFollowupPending: workflow.privacyFollowupPending,
       scanStarted: workflow.scanStarted,
       scanSettled: workflow.scanSettled,
       maintenanceResetAttempted: workflow.maintenanceResetAttempted,
@@ -73,6 +74,7 @@ export function createRuntimeCoordinator({
       command,
       preflightComplete: false,
       privacyReviewed: false,
+      privacyFollowupPending: false,
       scanStarted: false,
       scanSettled: false,
       maintenanceResetAttempted: false,
@@ -109,12 +111,14 @@ export function createRuntimeCoordinator({
       typeof state.maintenanceResetAttempted === "boolean" &&
       Array.isArray(state.excludedPaths);
     const preflightComplete = completeState && state.preflightComplete;
-    const privacyReviewed = preflightComplete && state.privacyReviewed;
+    const privacyFollowupPending = preflightComplete && state.privacyFollowupPending === true;
+    const privacyReviewed = preflightComplete && state.privacyReviewed && !privacyFollowupPending;
     scanWorkflows.set(sessionIdFor(ctx), {
       cwd: ctx.cwd,
       command: state.command,
       preflightComplete,
       privacyReviewed,
+      privacyFollowupPending,
       scanStarted: privacyReviewed && state.scanStarted === true,
       scanSettled: privacyReviewed && state.scanStarted === true && state.scanSettled === true,
       maintenanceResetAttempted:
@@ -150,6 +154,7 @@ export function createRuntimeCoordinator({
       requireCurrentWorkflow(sessionId, workflow);
       workflow.preflightComplete = true;
       workflow.privacyReviewed = false;
+      workflow.privacyFollowupPending = false;
       workflow.scanStarted = false;
       workflow.scanSettled = false;
       if (workflow.command === "picm-maintain") {
@@ -162,7 +167,7 @@ export function createRuntimeCoordinator({
             workflow.excludedPaths,
             current.privacy.excludedPaths,
           );
-          workflow.privacyReviewed = true;
+          workflow.privacyFollowupPending = true;
         }
       }
       return {
@@ -230,6 +235,7 @@ export function createRuntimeCoordinator({
         additions,
       );
       workflow.privacyReviewed = true;
+      workflow.privacyFollowupPending = false;
       workflow.scanStarted = false;
       workflow.scanSettled = false;
       clearActiveScan(ctx);
