@@ -135,7 +135,7 @@ Start from user hints and visible workspace/build boundaries. Propose local cont
 - frequent independent agent work;
 - material cross-boundary coordination risk.
 
-Do not place `CONTEXT.md` in every package by default. Preview the proposed boundaries and rationale, and let the user add/remove boundaries before drafting files. Any proposal revision invalidates earlier approval and exact-review state.
+Do not place `CONTEXT.md` in every package by default. Preview the proposed boundaries and rationale, and let the user add/remove boundaries before drafting files. A proposal adjustment supersedes pending write approval while preserving applicable unchanged-path review state.
 
 ### Scan and recommend
 

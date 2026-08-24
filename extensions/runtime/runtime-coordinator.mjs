@@ -11,7 +11,6 @@ export function createRuntimeCoordinator({
   packageRoot,
   canonicalPackageRoot,
   pathBindingLimits,
-  scanWorkflowTtlMs = 2 * 60 * 60 * 1000,
   policyPreviewTtlMs = 10 * 60 * 1000,
   maxPolicyPreviews = 32,
 } = {}) {
@@ -28,20 +27,7 @@ export function createRuntimeCoordinator({
     ctx.sessionManager ??
     ctx;
 
-  function pruneScans(now = Date.now()) {
-    for (const [sessionId, workflow] of scanWorkflows) {
-      if (!workflow.completed && workflow.expiresAt <= now) {
-        scanWorkflows.delete(sessionId);
-        activeScans.delete(sessionId);
-      }
-    }
-    for (const [sessionId, scan] of activeScans) {
-      if (scan.expiresAt <= now) activeScans.delete(sessionId);
-    }
-  }
-
   function workflowFor(ctx) {
-    pruneScans();
     const sessionId = sessionIdFor(ctx);
     const workflow = scanWorkflows.get(sessionId);
     const scan = activeScans.get(sessionId);
@@ -69,7 +55,6 @@ export function createRuntimeCoordinator({
     return {
       cwd: workflow.cwd,
       command: workflow.command,
-      expiresAt: new Date(workflow.expiresAt).toISOString(),
       preflightComplete: workflow.preflightComplete,
       privacyReviewed: workflow.privacyReviewed,
       scanStarted: workflow.scanStarted,
@@ -83,11 +68,9 @@ export function createRuntimeCoordinator({
   function authorizeWorkflow(ctx, command) {
     const sessionId = sessionIdFor(ctx);
     clearActiveScan(ctx);
-    const expiresAt = Date.now() + scanWorkflowTtlMs;
     const workflow = {
       cwd: ctx.cwd,
       command,
-      expiresAt,
       preflightComplete: false,
       privacyReviewed: false,
       scanStarted: false,
@@ -111,9 +94,6 @@ export function createRuntimeCoordinator({
       return false;
     }
     const completed = state.status === "completed";
-    const parsedExpiresAt = Date.parse(state.expiresAt);
-    const expiresAt = Number.isFinite(parsedExpiresAt) ? parsedExpiresAt : (Date.now() + scanWorkflowTtlMs);
-    if (!completed && Number.isFinite(parsedExpiresAt) && expiresAt <= Date.now()) return false;
     let excludedPaths;
     try {
       excludedPaths = mergePrivacyExcludedPaths(ctx.cwd, state.excludedPaths ?? []);
@@ -133,7 +113,6 @@ export function createRuntimeCoordinator({
     scanWorkflows.set(sessionIdFor(ctx), {
       cwd: ctx.cwd,
       command: state.command,
-      expiresAt,
       preflightComplete,
       privacyReviewed,
       scanStarted: privacyReviewed && state.scanStarted === true,
@@ -173,7 +152,19 @@ export function createRuntimeCoordinator({
       workflow.privacyReviewed = false;
       workflow.scanStarted = false;
       workflow.scanSettled = false;
-      workflow.expiresAt = Date.now() + scanWorkflowTtlMs;
+      if (workflow.command === "picm-maintain") {
+        const current = await runtimeFor(ctx).store.readPrivacyForReview();
+        requireCurrentWorkflow(sessionId, workflow);
+        if (!current.ok) throw new Error(`${current.code}: ${current.message}`);
+        if (Array.isArray(current.privacy?.excludedPaths)) {
+          workflow.excludedPaths = mergePrivacyExcludedPaths(
+            ctx.cwd,
+            workflow.excludedPaths,
+            current.privacy.excludedPaths,
+          );
+          workflow.privacyReviewed = true;
+        }
+      }
       return {
         ok: true,
         action,
@@ -241,7 +232,6 @@ export function createRuntimeCoordinator({
       workflow.privacyReviewed = true;
       workflow.scanStarted = false;
       workflow.scanSettled = false;
-      workflow.expiresAt = Date.now() + scanWorkflowTtlMs;
       clearActiveScan(ctx);
       return {
         ok: true,
@@ -270,7 +260,6 @@ export function createRuntimeCoordinator({
         isolated: inventory.isolated,
         candidates: [...inventory.candidates].sort(),
         excludedPaths: [...scan.excludedPaths],
-        expiresAt: new Date(workflow.expiresAt).toISOString(),
       };
     }
     if (action === "begin") {
@@ -293,10 +282,8 @@ export function createRuntimeCoordinator({
       );
       workflow.scanStarted = true;
       workflow.scanSettled = false;
-      workflow.expiresAt = Date.now() + scanWorkflowTtlMs;
       activeScans.set(sessionId, {
         cwd: ctx.cwd,
-        expiresAt: workflow.expiresAt,
         excludedPaths: [...workflow.excludedPaths],
       });
     } else if (action === "end") {

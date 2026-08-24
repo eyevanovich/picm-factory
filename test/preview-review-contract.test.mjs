@@ -46,6 +46,9 @@ test("shipped protocol defines complete summary and approval invalidation", () =
     "Mandatory exact review",
     "literal `None`",
     "Option choice, cadence choice, a preview request, review navigation, or vague assent is not approval",
+    "preserves applicable selection and exact-review state for unchanged paths",
+    "allow direct approval of that revised proposal",
+    "Approve this proposal to write it, or ask to inspect a diff",
   ]) assert.ok(protocol.includes(signal), `missing protocol signal: ${signal}`);
 });
 
@@ -111,9 +114,9 @@ test("dispatch prompts preserve privacy bootstrap ordering and add preview guida
   await h.commands.get("picm-help").handler("", h.ctx);
 
   const [adopt, maintain, optimize, help] = h.sent;
-  for (const prompt of [adopt, maintain, optimize]) {
+  for (const prompt of [adopt, optimize]) {
     const preflight = prompt.indexOf('action: "preflight"');
-    const question = prompt.indexOf("ask this exact question");
+    const question = prompt.indexOf("ask the user");
     const summary = prompt.indexOf("complete concise `.picm/config.json` summary categories");
     const acceptance = prompt.indexOf("obtain the user's summary acceptance");
     const privacy = prompt.indexOf('call `picm_scan_control` with `action: "privacy"`');
@@ -124,13 +127,17 @@ test("dispatch prompts preserve privacy bootstrap ordering and add preview guida
     assert.ok(summary < acceptance && acceptance < privacy);
     assert.ok(privacy < confirmation && confirmation < skill);
   }
+  assert.match(maintain, /preflight automatically loads persisted `.picm\/config.json` privacy exclusions/);
+  assert.match(maintain, /do not ask a privacy question or call `privacy`/);
   assert.ok(adopt.indexOf("load the `picm-factory` skill") < adopt.indexOf("summary-preview and exact-review protocol"));
   for (const prompt of [adopt, maintain, optimize]) {
     assert.match(prompt, /After presenting the complete current summary/);
     assert.match(prompt, /accept, approve, accept and write, or proceed/);
     assert.match(prompt, /write only that exact proposal when no mandatory exact review is pending/);
+    assert.match(prompt, /Invite the user to approve directly or ask to inspect a diff/);
     assert.match(prompt, /Do not require a separate summary-acceptance step or exact-review menu/);
     assert.match(prompt, /exact review available on demand for view all, review files, and show diff for a path/);
+    assert.match(prompt, /preserve applicable unchanged-path review state/);
   }
   assert.match(help, /unambiguous direct approval of the complete current summary writes only that exact proposal/);
   assert.match(help, /without a separate acceptance step or exact-review menu/);
