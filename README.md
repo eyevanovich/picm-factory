@@ -24,7 +24,7 @@ You do not need to know PiCM or ICM terminology. Choose based on what is already
 | You know this is a repository or monorepo and want to skip the initial classification. | `/picm-adopt coding` | Enters the same coding-adoption flow that regular `/picm-adopt` can offer. |
 | You are still unsure. | `/picm-help` | Repeats this guide and the safety/install model. |
 
-When a folder already has workspace architecture, prefer `/picm-adopt` over `/picm-new`. Adoption does not mean conversion: it scans and reports first, then requires a complete concise summary, any mandatory exact review, and direct explicit approval before writing or restructuring anything.
+When a folder already has workspace architecture, prefer `/picm-adopt` over `/picm-new`. Adoption does not mean conversion: it scans and reports first, then requires a complete concise summary and direct explicit approval before writing or restructuring anything.
 
 ## Command arguments and autocomplete
 
@@ -144,9 +144,9 @@ The extension stores explicit UTC `lastCycleAt` and `nextDueAt` timestamps. Exis
 PiCM Factory is intentionally conservative:
 
 - Project-local install by default: use `pi install -l ...`.
-- Non-destructive by default: adoption, maintenance, and optimization show a complete concise summary before every proposed project write. It enumerates every file/operation, behavior or configuration change, linked move, preserved behavior, uncertainty, and mandatory exact-review item, using `None` for empty categories.
-- Direct summary approval: option/cadence choices, preview requests, review navigation, and vague assent do not approve writes. Draft adjustments supersede pending write approval while preserving applicable review state for unchanged paths. Each refreshed summary invites the user to approve directly or inspect a diff. When no mandatory exact review is pending, an unambiguous `accept`, `approve`, `accept and write`, or `proceed` directly authorizes the current summary.
-- Exact review: deletions and changes to safety, permissions, approval boundaries, or required commands must be reviewed exactly before approval. On demand, `view all` and `show diff for <path>` render the requested review directly, while `review files` opens `View all`, `Select files`, and `Return to summary`; modified files use unified diffs, new/deleted files show complete content, and linked moves are reviewed together. Protected content that cannot be rendered safely is not approved or written.
+- Non-destructive by default: adoption, maintenance, and optimization show a complete concise summary before every proposal batch. It enumerates every file/operation, behavior or configuration change, linked move, preserved behavior, uncertainty, and review suggestion, using `None` for empty categories.
+- Direct summary approval: option/cadence choices, preview requests, review navigation, and vague assent do not approve writes. Draft adjustments supersede pending write approval while preserving applicable review state for unchanged paths. Each refreshed summary invites the user to approve directly or inspect a diff. An unambiguous `accept`, `approve`, `accept and write`, or `proceed` directly authorizes the current summary.
+- Optional exact review: PiCM flags deletions, linked moves, material safety/privacy/permission/approval/command changes, and unusually large or uncertain change sets with their intent and impact. These suggestions never block approval. On demand, `view all` and `show diff for <path>` render the requested review directly, while `review files` opens `View all`, `Select files`, and `Return to summary`; modified files use unified diffs, new/deleted files show complete content, and linked moves are reviewed together. Protected content that cannot be rendered safely is not revealed or written.
 - Git encouraged, but no automatic commits.
 - Secrets-first handling: do not commit `.env`, keys, tokens, credentials, or sensitive client data accidentally.
 - Privacy-first protected scans: no inventory or project tool runs before privacy review; Git and PiCM exclusions are checked immediately before access, agent Bash and unknown tools are blocked, and ordinary Pi work plus user-typed `!bash` remain unaffected outside the workflow.
