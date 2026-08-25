@@ -27,6 +27,7 @@ export function createRuntimeCoordinator({
   packageRoot,
   canonicalPackageRoot,
   pathBindingLimits,
+  createConfigStore = createMaintenanceConfigStore,
   policyPreviewTtlMs = 10 * 60 * 1000,
   maxPolicyPreviews = 32,
 } = {}) {
@@ -342,17 +343,32 @@ export function createRuntimeCoordinator({
       }
       let maintenanceReset;
       if (!workflow.completed) {
+        let maintenanceResetCommitted = false;
         requireCurrentWorkflow(sessionId, workflow);
         if (workflow.command === "picm-maintain" && !workflow.maintenanceResetAttempted) {
-          maintenanceReset = await runtimeFor(ctx).controller.resetExistingCycle();
+          throwIfAborted(execution.signal, "PICM_SCAN_ABORTED");
+          maintenanceReset = await runtimeFor(ctx).controller.resetExistingCycle({ signal: execution.signal });
           requireCurrentWorkflow(sessionId, workflow);
           if (!maintenanceReset.ok || maintenanceReset.conflict) {
             const code = maintenanceReset.code ?? "MAINTENANCE_POLICY_ERROR";
-            const message = maintenanceReset.message ?? "maintenance cycle reset did not complete";
-            throw new Error(`${code}: ${message}`);
+            const reason = maintenanceReset.message ?? "maintenance cycle reset did not complete";
+            const message = `Maintenance cycle was not reset (${code}: ${reason}). Resolve the configuration conflict or error, then retry picm_scan_control complete.`;
+            return {
+              ok: false,
+              action,
+              code,
+              message,
+              warning: message,
+              maintenanceReset,
+              ...workflowState(workflow),
+              authorized: true,
+              active: false,
+            };
           }
           workflow.maintenanceResetAttempted = true;
+          maintenanceResetCommitted = true;
         }
+        if (!maintenanceResetCommitted) throwIfAborted(execution.signal, "PICM_SCAN_ABORTED");
         workflow.completed = true;
       }
       clearActiveScan(ctx);
@@ -402,7 +418,7 @@ export function createRuntimeCoordinator({
         canonicalPackageRoot,
         pathBindingLimits,
       });
-      const store = createMaintenanceConfigStore({ cwd, gate });
+      const store = createConfigStore({ cwd, gate });
       value = {
         gate,
         store,
