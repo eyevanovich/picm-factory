@@ -1504,11 +1504,10 @@ test("interactive commands bootstrap privacy before trusted skill loading", asyn
       const preflightIndex = prompt.indexOf('action: "preflight"');
       const privacyIndex = prompt.indexOf('action: "privacy"');
       const skillIndex = prompt.indexOf("load the `picm-factory` skill");
-      if (command === "picm-maintain") {
+      if (command === "picm-maintain" || command === "picm-optimize") {
         assert.ok(preflightIndex >= 0 && preflightIndex < skillIndex);
-        assert.match(prompt, /preflight automatically loads persisted `.picm\/config.json` privacy exclusions/);
-        assert.match(prompt, /ask only this concise follow-up without repeating the full privacy boilerplate/);
-        assert.match(prompt, /Existing persisted exclusions remain in effect/);
+        assert.match(prompt, /privacyQuestionIsConcise/);
+        assert.match(prompt, /files or directory that should be excluded from reads/);
       } else {
         assert.ok(preflightIndex >= 0 && preflightIndex < privacyIndex && privacyIndex < skillIndex);
       }

@@ -3,21 +3,16 @@
 ## What we are building
 PiCM Factory is a project-local Pi Coding Agent package that helps users create, adopt, maintain, and optimize PiCM / ICM-style folder-agent workspaces and agent-readable coding repositories.
 
-## Product shape
+Operational routing, safety, and verification rules live in `AGENTS.md`.
+
+## Product terminology
 - **Factory**: one-time setup helper that interviews a user and creates a minimal viable folder-agent scaffold.
 - **Maintainer**: ongoing helper, exposed as `/picm-maintain`, that checks routing/context health and suggests improvements.
-- **Adoption flow**: `/picm-adopt` adds PiCM support to existing workflow or coding repositories without restructuring them. `/picm-adopt coding` is an optional shortcut to the same coding-adoption branch.
-
-## Core principles
-- Install project-locally with `pi install -l ...`; do not bloat unrelated Pi projects.
-- Keep runtime methodology in the skill's references and templates; keep the extension thin.
-- Be non-destructive by default. Preview writes before applying them.
-- Treat security as a first-class requirement: secrets, client data, and private material must not be copied into context files or committed without explicit user approval.
-- Explicit `/picm-new`, `/picm-adopt`, `/picm-maintain`, and `/picm-optimize` workflows start privacy-pending. Protected scans combine Git standard excludes (`.gitignore`, `.git/info/exclude`, and global rules) with persisted `.picm/config.json` and session exclusions; matching contents are unreadable. Outside those workflows ordinary Pi tools remain unaffected, and user-typed `!bash` is never intercepted. When `.git` is absent, transient isolated Git metadata is created only after privacy review and never modifies the project.
-- Use `.pi/` for Pi config and `.picm/` for minimal PiCM metadata/reports, including optional persisted scan exclusions.
-- The visible folder structure and context files remain the source of truth.
-- `.picm/` is maintainer-only context and should not be read during normal workflow execution.
-- Optional maintenance cadence is stored in `.picm/config.json`; automatic means one read-only advisory run in the first eligible interactive TUI session after due, never a daemon or headless mutation.
+- **Adoption**: non-invasive PiCM support for existing workflow or coding repositories. `/picm-adopt coding` is the coding shortcut.
+- **Optimization**: outcome-preserving improvement of agent-facing documentation only.
+- **Layout profile**: a recommended primary workspace shape, not a rigid schema.
+- **Coding Repository**: first-class profile for code-primary workspaces.
+- **Codebase-map capability**: composable coding context mapping that may overlap another primary profile.
 
 ## Current commands
 - `/picm-new` — interview-led minimal scaffold for new workspaces.
@@ -34,8 +29,6 @@ PiCM Factory is a project-local Pi Coding Agent package that helps users create,
 - GitHub is the canonical public repository and issue tracker; `CHANGELOG.md` owns release history.
 
 ## Deliberately out of scope
-- custom TUI wizard
-- workflow executor or orchestrator
 - background daemons, wall-clock execution while Pi is closed, and automatic coding-map/report repair
 - deterministic validator
 - Docker/portable agents

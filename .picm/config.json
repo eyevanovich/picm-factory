@@ -1,23 +1,22 @@
 {
   "version": 1,
-  "profile": "coding-repository",
   "generatedBy": "picm-factory",
   "adoption": {
     "status": "adopted",
     "readiness": "ready",
+    "adoptedAt": "2026-08-24",
     "report": ".picm/adoption-report.md"
   },
+  "profile": "coding-repository",
   "routing": {
     "source": "AGENTS.md",
     "status": "preserved-existing",
-    "coexistence": "claude-shim"
+    "coexistence": "claude-pointer-to-agents"
   },
   "paths": {
     "rootInstructions": "AGENTS.md",
     "rootContext": "CONTEXT.md",
-    "workflowFolders": [
-      "qa-runner"
-    ]
+    "workflowFolders": []
   },
   "capabilities": {
     "codebaseMap": {
@@ -26,24 +25,23 @@
         "extensions",
         "skills",
         "test",
-        "scripts",
-        "docs",
-        "qa-runner"
+        "scripts"
       ],
       "map": "AGENTS.md",
       "localContexts": [
+        "CONTEXT.md",
         "qa-runner/CONTEXT.md"
       ],
-      "maintenancePreset": "balanced"
+      "maintenancePreset": "strict"
     }
   },
   "maintenance": {
     "mode": "nudge",
     "interval": {
       "value": 1,
-      "unit": "weeks"
+      "unit": "days"
     },
-    "lastCycleAt": "2026-07-26T03:53:14.305Z",
-    "nextDueAt": "2026-08-02T03:53:14.305Z"
+    "lastCycleAt": "2026-08-25T03:14:01.774Z",
+    "nextDueAt": "2026-08-26T03:14:01.774Z"
   }
 }

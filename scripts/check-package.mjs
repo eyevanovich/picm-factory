@@ -361,18 +361,18 @@ for (const [stored, expected] of [
 
 const adoptionPrivacyQuestionGuidance = {
   "skills/picm-factory/SKILL.md": [
-    "PiCM already honors `.gitignore`, nested Git ignore rules",
-    "Only name additional sensitive project-relative paths not already covered",
-    "Reply with exact paths, or `none`",
+    "Ask the security/privacy question before any scan",
+    "Use `persist: true` only when the user requests durable PiCM exclusions",
+    "root/nested `.gitignore`, `.git/info/exclude`, global Git excludes",
   ],
   "skills/picm-factory/references/coding-adoption-guide.md": [
-    "PiCM already honors `.gitignore`, nested Git ignore rules",
-    "Only name additional sensitive project-relative paths not already covered",
+    "PiCM automatically protects:",
+    "Name any additional project-relative exclusions, or reply `none`",
     "sensitive eligible paths PiCM cannot infer",
   ],
   "prompts/picm-adopt.md": [
-    "before loading the skill or using any project-reading tool",
-    "Only name additional sensitive project-relative paths not already covered",
+    "PiCM automatically protects:",
+    "Name any additional project-relative exclusions, or reply `none`",
     "Only after privacy review completes, load the `picm-factory` skill",
   ],
   "extensions/picm-factory.ts": [
@@ -398,6 +398,25 @@ for (const [file, signals] of Object.entries(adoptionPrivacyQuestionGuidance)) {
   }
 }
 
+const conciseExistingWorkspacePrivacyGuidance = {
+  "extensions/picm-factory.ts": ["privacyQuestionIsConcise", "files or directory that should be excluded from reads"],
+  "extensions/runtime/runtime-coordinator.mjs": ["hasCompletedPicmSetup", "privacyQuestionIsConcise"],
+  "skills/picm-factory/SKILL.md": ["privacyQuestionIsConcise", "completed adoption or new-workspace setup"],
+  "skills/picm-factory/references/coding-maintenance-rubric.md": ["privacyQuestionIsConcise", "files or directory that should be excluded from reads"],
+  "prompts/picm-optimize.md": ["privacyQuestionIsConcise", "files or directory that should be excluded from reads"],
+  "README.md": ["completed adopted or newly scaffolded workspaces", "files or directory that should be excluded from reads"],
+  "docs/layout-fixture-qa.md": ["adopted or newly scaffolded workspace", "files or directory that should be excluded from reads"],
+};
+for (const [file, signals] of Object.entries(conciseExistingWorkspacePrivacyGuidance)) {
+  const text = readFileSync(join(root, file), "utf8");
+  for (const signal of signals) {
+    if (!text.includes(signal)) {
+      console.error(`Concise established-workspace privacy guidance ${file} missing signal: ${signal}`);
+      process.exit(1);
+    }
+  }
+}
+
 const previewReviewGuidance = {
   "skills/picm-factory/references/preview-review-protocol.md": [
     "Affected files and operations",
@@ -405,7 +424,8 @@ const previewReviewGuidance = {
     "Linked cross-file moves",
     "Preserved behavior",
     "Known uncertainty",
-    "Mandatory exact review",
+    "Review suggestions",
+    "Review suggestions never block approval",
     "View all",
     "Select files",
     "Return to summary",
@@ -419,18 +439,18 @@ const previewReviewGuidance = {
   ],
   "skills/picm-factory/SKILL.md": [
     "references/preview-review-protocol.md",
-    "Before every proposed project write",
+    "Before every proposal batch",
   ],
   "skills/picm-factory/references/adoption-guide.md": ["preview-review-protocol.md"],
   "skills/picm-factory/references/coding-adoption-guide.md": ["preview-review-protocol.md"],
   "skills/picm-factory/references/maintenance-rubric.md": ["preview-review-protocol.md"],
-  "prompts/picm-adopt.md": ["summary-preview and exact-review protocol"],
-  "prompts/picm-maintain.md": ["summary-preview and exact-review protocol"],
+  "prompts/picm-adopt.md": ["summary-preview and optional-diff-review protocol"],
+  "prompts/picm-maintain.md": ["summary-preview and optional-diff-review protocol"],
   "prompts/picm-optimize.md": [
-    "summary-preview and exact-review protocol",
+    "summary-preview and optional-diff-review protocol",
     "No worthwhile optimizations found",
   ],
-  "prompts/picm-help.md": ["complete concise summary", "selective exact review"],
+  "prompts/picm-help.md": ["complete concise summary", "optional exact review"],
   "README.md": ["complete concise summary", "View all", "Select files", "Return to summary"],
   "docs/layout-fixture-qa.md": ["both `/picm-adopt` and `/picm-maintain`", "Repeat the no-write check"],
 };

@@ -85,7 +85,7 @@ Offer:
 - **Additive** — preserve existing documentation and add only missing routing/maps. Report repetition or conflicts as optional findings.
 - **Curated** — inventory agent and architecture documentation, identify repetition/conflict/stale pointers, and draft a consolidation/restructure proposal.
 
-Curated mode is permission to analyze and propose—not permission to apply. Apply `preview-review-protocol.md` before every proposed project write. Highlight linked moves and deletions in the summary; deletions require mandatory exact review before direct approval of the complete current summary.
+Curated mode is permission to analyze and propose—not permission to apply. Apply `preview-review-protocol.md` before every proposal batch. Highlight linked moves and deletions with their intent and impact in the summary, and suggest exact review when useful; direct approval of the complete current summary remains sufficient.
 
 ### 3. Automatic Strict adoption examination
 

@@ -64,6 +64,8 @@ Identify opportunities before drafting edits. A useful opportunity needs visible
 
 Do not treat repeated safety, approval, command, verification, or local-boundary reminders as redundant merely because wording overlaps. Repetition may be intentional at an independent working-directory or handoff boundary. Do not manufacture edits for short, clear, intentionally local, or already well-routed docs.
 
+Before concluding that no useful opportunity exists, compare the visible source-of-truth claims across every inspected agent-facing document. A contradiction, or a repeated claim with no visible canonical home, is evidence for a proposal: identify the canonical home when supported, or propose a thin pointer or a user decision when it is not. Do not call the flow a no-op merely because the evidence spans multiple documents.
+
 For each opportunity, report:
 
 - affected paths;
@@ -71,7 +73,7 @@ For each opportunity, report:
 - the proposed optimization at a qualitative level;
 - expected navigation, maintenance, or clarity benefit;
 - constraints and outcomes that must be preserved;
-- uncertainty, risks, and whether exact review will be mandatory.
+- uncertainty, risks, and which diff would be most useful to inspect.
 
 Do not claim semantic equivalence. Say what visible evidence supports and what remains uncertain. Do not claim token savings unless the runtime provides reliable evidence; numeric savings are out of scope for this flow.
 
@@ -83,9 +85,9 @@ For the selected set:
 
 1. Draft the exact current proposal without writing.
 2. Check it against the preservation ledger and all source/destination pointers. If any unique constraint is lost, unreachable, or uncertain, revise or stop.
-3. Apply `preview-review-protocol.md`: present the complete concise summary, offer `View all`, `Select files`, and `Return to summary` on demand, complete every mandatory exact review, and accept direct explicit approval of this current summary.
-4. Treat deletions and any change to safety, privacy, permissions, approval boundaries, or required commands as mandatory exact-review items. Review linked cross-file reorganizations together.
-5. If the proposal changes, invalidate prior approval and exact-review state; regenerate the summary and repeat required review.
+3. Apply `preview-review-protocol.md`: present the complete concise summary, offer `View all`, `Select files`, and `Return to summary` on demand, and accept direct explicit approval of this current summary.
+4. Flag deletions, linked cross-file reorganizations, and material changes to safety, privacy, permissions, approval boundaries, or required commands with their intent and impact. Suggest the most useful linked diff without making review a gate.
+5. If the proposal changes, invalidate prior approval, preserve applicable unchanged-path review state, regenerate the summary, and refresh review suggestions.
 6. Begin a protected scan phase before guarded re-reads or writes, refresh inventory when needed, write only the approved agent-facing documentation changes, re-read the changed docs through the guard, and call `end` afterward.
 
 Never infer approval from proposal selection, a request to preview, review navigation, or vague assent.
