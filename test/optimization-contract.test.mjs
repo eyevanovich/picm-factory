@@ -44,7 +44,7 @@ test("picm-optimize is registered and dispatches privacy before skill loading", 
   assert.equal(h.sent.length, 1);
   const prompt = h.sent[0];
   const preflight = prompt.indexOf('action: "preflight"');
-  const conciseQuestion = prompt.indexOf("Name any additional project-relative files or directory that should be excluded from reads, or reply none to continue.");
+  const conciseQuestion = prompt.indexOf("Name any additional project-relative files or directory that should be excluded from reads, or reply `none` to continue.");
   const privacy = prompt.indexOf('action: "privacy"');
   const skill = prompt.indexOf("load the `picm-factory` skill");
   assert.ok(preflight >= 0 && preflight < conciseQuestion);

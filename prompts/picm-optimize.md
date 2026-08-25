@@ -9,7 +9,7 @@ Follow this privacy-first startup order before loading the skill or using any pr
 1. Call `picm_scan_control` with `action: "preflight"`.
 2. If preflight reports `privacyQuestionIsConcise: true`, ask exactly:
 
-   Name any additional project-relative files or directory that should be excluded from reads, or reply none to continue.
+   Name any additional project-relative files or directory that should be excluded from reads, or reply `none` to continue.
 
    Wait for the reply.
 3. Otherwise, ask exactly:

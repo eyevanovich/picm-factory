@@ -77,7 +77,7 @@ const adoptionPrivacyQuestion = `PiCM automatically protects:
 Name any additional project-relative exclusions, or reply \`none\`.`;
 
 const concisePrivacyQuestion =
-  "Name any additional project-relative files or directory that should be excluded from reads, or reply none to continue.";
+  "Name any additional project-relative files or directory that should be excluded from reads, or reply `none` to continue.";
 
 function buildPrompt(
   command: CommandName,
@@ -163,7 +163,7 @@ export default function picmFactoryExtension(
     promptSnippet: "Preflight, record privacy exclusions, and control protected PiCM scan phases",
     promptGuidelines: [
       "Only an explicit /picm-new, /picm-adopt, /picm-maintain, or /picm-optimize command authorizes picm_scan_control; natural-language requests do not.",
-      "After an explicit command, call picm_scan_control preflight before any scan. For /picm-maintain and /picm-optimize, if preflight returns privacyQuestionIsConcise true, ask exactly: Name any additional project-relative files or directory that should be excluded from reads, or reply none to continue. Then call privacy with every exact project-relative excluded path. Otherwise, ask the full privacy question before privacy and begin.",
+      "After an explicit command, call picm_scan_control preflight before any scan. For /picm-maintain and /picm-optimize, if preflight returns privacyQuestionIsConcise true, ask exactly: Name any additional project-relative files or directory that should be excluded from reads, or reply `none` to continue. Then call privacy with every exact project-relative excluded path. Otherwise, ask the full privacy question before privacy and begin.",
       "Use picm_scan_control privacy with persist true only when the user requests durable exclusions. First present and obtain acceptance of the complete concise .picm/config.json summary, explain the privacy configuration impact, then use the action's exact TUI patch confirmation as the separate runtime write confirmation.",
       "Use picm_scan_control inventory only after begin, end after each scan phase, and complete when the PiCM workflow finishes.",
     ],

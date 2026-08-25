@@ -159,7 +159,7 @@ test("dispatch prompts preserve privacy bootstrap ordering and add optional-revi
   }
   {
     const preflight = optimize.indexOf('action: "preflight"');
-    const conciseQuestion = optimize.indexOf("Name any additional project-relative files or directory that should be excluded from reads, or reply none to continue.");
+    const conciseQuestion = optimize.indexOf("Name any additional project-relative files or directory that should be excluded from reads, or reply `none` to continue.");
     const privacy = optimize.indexOf('call `picm_scan_control` with `action: "privacy"`');
     const skill = optimize.indexOf("load the `picm-factory` skill");
     assert.ok(preflight >= 0 && preflight < conciseQuestion);
