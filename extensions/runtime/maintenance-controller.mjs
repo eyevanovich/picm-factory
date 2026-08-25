@@ -71,8 +71,7 @@ export function createMaintenanceController({ store, now = () => new Date() } = 
       const previous = validatePolicy(current.maintenance);
       const maintenance = resetPolicy(previous, now());
       throwIfAborted();
-      const result = await store.compareAndUpdateMaintenance(previous, maintenance);
-      throwIfAborted();
+      const result = await store.compareAndUpdateMaintenance(previous, maintenance, { signal });
       return result.ok ? { ...result, maintenance: result.conflict ? result.maintenance : maintenance } : result;
     } catch (error) {
       if (error?.message?.startsWith("PICM_SCAN_ABORTED:")) throw error;

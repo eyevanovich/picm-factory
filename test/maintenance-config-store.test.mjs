@@ -194,6 +194,32 @@ test("two concurrent cycle resets atomically allow one update", async (t) => {
   assert.equal(loser.conflict, true);
 });
 
+test("cycle reset cancellation before rename preserves the prior policy", async (t) => {
+  const { cwd, gate } = await repository(t);
+  const path = join(cwd, ".picm/config.json");
+  await fs.mkdir(join(cwd, ".picm"));
+  await fs.writeFile(path, `${JSON.stringify({ version: 1, maintenance: monthly }, null, 2)}\n`);
+  const abort = new AbortController();
+  let writeChecks = 0;
+  const abortingGate = {
+    async checkPath(toolName, candidate) {
+      const decision = await gate.checkPath(toolName, candidate);
+      if (toolName === "write" && ++writeChecks === 4) abort.abort();
+      return decision;
+    },
+  };
+  const controller = createMaintenanceController({
+    store: createMaintenanceConfigStore({ cwd, gate: abortingGate }),
+    now: () => new Date("2026-02-01T00:00:00.000Z"),
+  });
+
+  await assert.rejects(
+    controller.resetExistingCycle({ signal: abort.signal }),
+    /PICM_SCAN_ABORTED/,
+  );
+  assert.deepEqual(JSON.parse(await fs.readFile(path, "utf8")).maintenance, monthly);
+});
+
 test("post-rename directory sync failure reports a committed change", async (t) => {
   const { cwd, gate } = await repository(t);
   await fs.mkdir(join(cwd, ".picm"));

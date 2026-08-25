@@ -23,6 +23,14 @@ function delay(milliseconds) {
   return new Promise((resolveDelay) => setTimeout(resolveDelay, milliseconds));
 }
 
+function throwIfAborted(signal) {
+  if (signal?.aborted) {
+    const error = new Error("PICM_SCAN_ABORTED: operation was cancelled before mutation");
+    error.code = "PICM_SCAN_ABORTED";
+    throw error;
+  }
+}
+
 export function createMaintenanceConfigStore({
   cwd,
   gate,
@@ -199,8 +207,11 @@ export function createMaintenanceConfigStore({
     conflictCode,
     conflictMessage,
     authorizeAccess = true,
+    signal,
   } = {}) {
+    throwIfAborted(signal);
     const initial = await read({ authorizeAccess });
+    throwIfAborted(signal);
     if (!initial.ok) return initial;
     if (!conditional && !initial.exists && validValue === undefined) {
       return { ok: true, changed: false, exists: false, [field]: undefined };
@@ -279,6 +290,7 @@ export function createMaintenanceConfigStore({
         const beforeRenameAccess = await authorize("write");
         if (!beforeRenameAccess.ok) return beforeRenameAccess;
       }
+      throwIfAborted(signal);
       await fs.rename(tempPath, configPath);
 
       try {
@@ -302,6 +314,7 @@ export function createMaintenanceConfigStore({
       }
       return { ok: true, changed: true, committed: true, exists: true, config: nextConfig, [field]: validValue };
     } catch (error) {
+      if (error?.code === "PICM_SCAN_ABORTED") throw error;
       return errorDecision("CONFIG_WRITE_FAILED", messageOf(error));
     } finally {
       try { await tempHandle?.close(); } catch {}
@@ -326,7 +339,7 @@ export function createMaintenanceConfigStore({
     return mutateConfigField("maintenance", validMaintenance);
   }
 
-  async function compareAndUpdateMaintenance(expectedMaintenance, maintenance) {
+  async function compareAndUpdateMaintenance(expectedMaintenance, maintenance, { signal } = {}) {
     let validExpected;
     let validMaintenance;
     try {
@@ -340,6 +353,7 @@ export function createMaintenanceConfigStore({
       conditional: true,
       conflictCode: "MAINTENANCE_POLICY_CONFLICT",
       conflictMessage: "maintenance policy changed before the conditional update",
+      signal,
     });
   }
 

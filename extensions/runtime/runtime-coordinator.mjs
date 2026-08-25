@@ -342,12 +342,12 @@ export function createRuntimeCoordinator({
       }
       let maintenanceReset;
       if (!workflow.completed) {
+        let maintenanceResetCommitted = false;
         requireCurrentWorkflow(sessionId, workflow);
         if (workflow.command === "picm-maintain" && !workflow.maintenanceResetAttempted) {
           throwIfAborted(execution.signal, "PICM_SCAN_ABORTED");
           maintenanceReset = await runtimeFor(ctx).controller.resetExistingCycle({ signal: execution.signal });
           requireCurrentWorkflow(sessionId, workflow);
-          throwIfAborted(execution.signal, "PICM_SCAN_ABORTED");
           if (!maintenanceReset.ok || maintenanceReset.conflict) {
             const code = maintenanceReset.code ?? "MAINTENANCE_POLICY_ERROR";
             const reason = maintenanceReset.message ?? "maintenance cycle reset did not complete";
@@ -364,10 +364,10 @@ export function createRuntimeCoordinator({
               active: false,
             };
           }
-          throwIfAborted(execution.signal, "PICM_SCAN_ABORTED");
           workflow.maintenanceResetAttempted = true;
+          maintenanceResetCommitted = true;
         }
-        throwIfAborted(execution.signal, "PICM_SCAN_ABORTED");
+        if (!maintenanceResetCommitted) throwIfAborted(execution.signal, "PICM_SCAN_ABORTED");
         workflow.completed = true;
       }
       clearActiveScan(ctx);
