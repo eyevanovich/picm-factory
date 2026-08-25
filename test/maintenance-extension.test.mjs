@@ -208,7 +208,9 @@ test("adopt coding dispatches preflight and exact privacy copy before skill load
   const prompt = h.sent[0];
   const preflight = prompt.indexOf("Call `picm_scan_control` with `action: \"preflight\"`");
   const reassurance = prompt.indexOf("PiCM automatically protects:");
-  const additionalPaths = prompt.indexOf("Name any additional project-relative exclusions, or reply `none`.");
+  const sensitiveMaterial = prompt.indexOf("does this workspace contain secrets, regulated data, client data, or personal/private material that must be excluded?");
+  const additionalPaths = prompt.indexOf("name each exact project-relative file or directory to exclude");
+  const none = prompt.indexOf("reply `none` if there are none");
   const summary = prompt.indexOf("complete concise `.picm/config.json` summary categories");
   const acceptance = prompt.indexOf("obtain the user's summary acceptance");
   const privacy = prompt.indexOf("call `picm_scan_control` with `action: \"privacy\"`");
@@ -217,7 +219,9 @@ test("adopt coding dispatches preflight and exact privacy copy before skill load
 
   assert.ok(preflight >= 0);
   assert.ok(preflight < reassurance);
-  assert.ok(reassurance < additionalPaths);
+  assert.ok(reassurance < sensitiveMaterial);
+  assert.ok(sensitiveMaterial < additionalPaths);
+  assert.ok(additionalPaths < none);
   assert.match(prompt, /Git internals/);
   assert.match(prompt, /symlinks and nested repository\/submodule boundaries/);
   assert.ok(additionalPaths < summary);
@@ -299,17 +303,38 @@ test("maintain and optimize use concise privacy wording for adopted and scaffold
   }
 });
 
-test("maintain and optimize retain the full privacy path for incomplete PiCM setup", async (t) => {
-  for (const command of ["picm-maintain", "picm-optimize"]) {
+test("full privacy bootstrap asks about sensitive material for fresh and incomplete workspaces", async (t) => {
+  for (const [command, mode] of [
+    ["picm-new", "tui"],
+    ["picm-adopt", "tui"],
+    ["picm-maintain", "tui"],
+    ["picm-optimize", "tui"],
+  ]) {
     const cwd = fixture(t);
     const h = harness();
-    const ctx = h.context(cwd);
+    const ctx = h.context(cwd, mode);
 
     await h.commands.get(command).handler("", ctx);
+
+    const prompt = h.sent[0];
+    assert.match(prompt, /Before scanning any workspace files/);
+    assert.match(prompt, /secrets, regulated data, client data, or personal\/private material/);
+    assert.match(prompt, /exact project-relative file or directory to exclude/);
+    assert.match(prompt, /reply `none` if there are none/);
 
     const preflight = await h.scanControl.execute("id", { action: "preflight" }, undefined, undefined, ctx);
     assert.equal(preflight.details.privacyQuestionIsConcise, false);
   }
+});
+
+test("picm-new outside TUI keeps its non-bootstrap skill dispatch", async (t) => {
+  const cwd = fixture(t);
+  const h = harness();
+
+  await h.commands.get("picm-new").handler("", h.context(cwd, "rpc"));
+
+  assert.match(h.sent[0], /Use the picm-factory skill/);
+  assert.doesNotMatch(h.sent[0], /Before scanning any workspace files/);
 });
 
 test("when maintenance is due in TUI, renders persistent reminder widget and presents Run Now and Defer selector", async (t) => {
