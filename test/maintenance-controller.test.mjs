@@ -70,3 +70,22 @@ test("explicit cycle reset affects scheduled modes but not manual", async () => 
   const manualStore = memoryStore({ mode: "manual" });
   assert.equal((await createMaintenanceController({ store: manualStore }).resetExistingCycle()).changed, false);
 });
+
+test("an abort during reset does not advance the cycle", async () => {
+  const abort = new AbortController();
+  const store = memoryStore(createPolicy({ mode: "nudge", intervalValue: 1, intervalUnit: "days", now: "2026-01-01T00:00:00.000Z" }));
+  const originalRead = store.read;
+  store.read = async () => {
+    const result = await originalRead();
+    abort.abort();
+    return result;
+  };
+  const before = structuredClone(store.current().maintenance);
+
+  await assert.rejects(
+    createMaintenanceController({ store, now: () => new Date("2026-01-10T00:00:00.000Z") })
+      .resetExistingCycle({ signal: abort.signal }),
+    /PICM_SCAN_ABORTED/,
+  );
+  assert.deepEqual(store.current().maintenance, before);
+});

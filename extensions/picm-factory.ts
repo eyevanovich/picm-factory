@@ -192,8 +192,7 @@ export default function picmFactoryExtension(
           ? await withFileMutationQueue(join(ctx.cwd, ".picm", "config.json"), run)
           : await run();
       if (
-        result.ok &&
-        (params.action === "preflight" || params.action === "privacy" || params.action === "begin" || params.action === "end" || params.action === "adoption-complete") &&
+        (result.ok || params.action === "complete") &&
         result.authorized &&
         !result.completed &&
         !coordinator.isWorkflowCompleted(ctx)
@@ -211,11 +210,8 @@ export default function picmFactoryExtension(
           maintenanceResetAttempted: result.maintenanceResetAttempted,
           excludedPaths: result.excludedPaths,
         });
-        if (result.maintenanceReset && !result.maintenanceReset.ok && ctx.hasUI) {
-          ctx.ui.notify(
-            `[picm-factory] Maintenance cycle was not reset: ${result.maintenanceReset.message}`,
-            "warning",
-          );
+        if (result.maintenanceReset && (!result.maintenanceReset.ok || result.maintenanceReset.conflict) && ctx.hasUI) {
+          ctx.ui.notify(`[picm-factory] ${result.warning ?? result.message}`, "warning");
         }
       } else if (params.action === "complete" || result.completed) {
         if (result.completed) {
@@ -236,7 +232,7 @@ export default function picmFactoryExtension(
           if (ctx.hasUI) {
             ctx.ui.setWidget("picm-maintenance-reminder", undefined);
           }
-          if (result.maintenanceReset && !result.maintenanceReset.ok && ctx.hasUI) {
+          if (result.maintenanceReset && (!result.maintenanceReset.ok || result.maintenanceReset.conflict) && ctx.hasUI) {
             ctx.ui.notify(
               `[picm-factory] Maintenance cycle was not reset: ${result.maintenanceReset.message}`,
               "warning",

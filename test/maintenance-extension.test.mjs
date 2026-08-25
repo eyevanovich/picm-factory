@@ -480,7 +480,7 @@ test("completion requires the ordinary privacy-reviewed scan flow", async (t) =>
   assert.equal(h.entries.some((entry) => entry.data.status === "completed"), false);
 });
 
-test("a maintenance reset conflict leaves the losing workflow incomplete", async (t) => {
+test("a maintenance reset conflict leaves the losing workflow incomplete with recovery guidance", async (t) => {
   const cwd = fixture(t, oldDue("nudge"));
   const h = harness();
   const first = h.context(cwd, "tui", "first-maintenance-session");
@@ -494,16 +494,46 @@ test("a maintenance reset conflict leaves the losing workflow incomplete", async
     await h.scanControl.execute("id", { action: "end" }, undefined, undefined, ctx);
   }
 
-  const results = await Promise.allSettled([
+  const results = await Promise.all([
     h.scanControl.execute("first", { action: "complete" }, undefined, undefined, first),
     h.scanControl.execute("second", { action: "complete" }, undefined, undefined, second),
   ]);
-  assert.equal(results.filter(({ status }) => status === "fulfilled").length, 1);
-  assert.equal(results.filter(({ status }) => status === "rejected").length, 1);
-  assert.match(results.find(({ status }) => status === "rejected").reason.message, /MAINTENANCE_POLICY_CONFLICT/);
+  const failed = results.find((result) => !result.details.ok);
+  assert.equal(results.filter((result) => result.details.ok).length, 1);
+  assert.equal(failed.details.code, "MAINTENANCE_POLICY_CONFLICT");
+  assert.match(failed.details.warning, /Maintenance cycle was not reset/);
+  assert.match(failed.details.warning, /Resolve the configuration conflict or error, then retry picm_scan_control complete/);
+  assert.match(h.notifications.at(-1).message, /Maintenance cycle was not reset/);
 
-  const incomplete = results[0].status === "rejected" ? first : second;
+  const incomplete = results[0].details.ok ? second : first;
   const status = await h.scanControl.execute("status", { action: "status" }, undefined, undefined, incomplete);
+  assert.equal(status.details.completed, false);
+  assert.equal(status.details.maintenanceResetAttempted, false);
+});
+
+test("an already-aborted maintenance completion leaves the scheduled cycle and workflow unchanged", async (t) => {
+  const cwd = fixture(t, oldDue("nudge"));
+  const h = harness();
+  const ctx = h.context(cwd, "tui", "aborted-maintenance-session");
+  const before = readFileSync(join(cwd, ".picm/config.json"), "utf8");
+  h.widgets.set("picm-maintenance-reminder", { lines: ["PiCM maintenance is due"] });
+
+  await h.commands.get("picm-maintain").handler("strict", ctx);
+  await h.scanControl.execute("id", { action: "preflight" }, undefined, undefined, ctx);
+  await h.scanControl.execute("id", { action: "privacy", excludedPaths: [], persist: false }, undefined, undefined, ctx);
+  await h.scanControl.execute("id", { action: "begin" }, undefined, undefined, ctx);
+  await h.scanControl.execute("id", { action: "end" }, undefined, undefined, ctx);
+
+  const abort = new AbortController();
+  abort.abort();
+  await assert.rejects(
+    h.scanControl.execute("id", { action: "complete" }, abort.signal, undefined, ctx),
+    /PICM_SCAN_ABORTED/,
+  );
+
+  assert.equal(readFileSync(join(cwd, ".picm/config.json"), "utf8"), before);
+  assert.equal(h.widgets.has("picm-maintenance-reminder"), true);
+  const status = await h.scanControl.execute("status", { action: "status" }, undefined, undefined, ctx);
   assert.equal(status.details.completed, false);
   assert.equal(status.details.maintenanceResetAttempted, false);
 });

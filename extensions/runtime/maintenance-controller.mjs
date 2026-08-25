@@ -55,8 +55,14 @@ export function createMaintenanceController({ store, now = () => new Date() } = 
     };
   }
 
-  async function resetExistingCycle() {
+  async function resetExistingCycle({ signal } = {}) {
+    const throwIfAborted = () => {
+      if (signal?.aborted) throw new Error("PICM_SCAN_ABORTED: operation was cancelled before mutation");
+    };
+
+    throwIfAborted();
     const current = await store.read();
+    throwIfAborted();
     if (!current.ok) return current;
     if (!current.maintenance || current.maintenance.mode === "manual") {
       return { ok: true, changed: false, maintenance: current.maintenance };
@@ -64,9 +70,12 @@ export function createMaintenanceController({ store, now = () => new Date() } = 
     try {
       const previous = validatePolicy(current.maintenance);
       const maintenance = resetPolicy(previous, now());
+      throwIfAborted();
       const result = await store.compareAndUpdateMaintenance(previous, maintenance);
+      throwIfAborted();
       return result.ok ? { ...result, maintenance: result.conflict ? result.maintenance : maintenance } : result;
     } catch (error) {
+      if (error?.message?.startsWith("PICM_SCAN_ABORTED:")) throw error;
       return failed(error);
     }
   }
