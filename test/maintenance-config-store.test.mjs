@@ -245,6 +245,68 @@ test("cycle reset cancellation during rename rolls back the committed policy", a
   assert.deepEqual(JSON.parse(await fs.readFile(path, "utf8")).maintenance, monthly);
 });
 
+test("cycle reset cancellation during failed directory sync restores the prior policy", async (t) => {
+  const { cwd, gate } = await repository(t);
+  const path = join(cwd, ".picm/config.json");
+  await fs.mkdir(join(cwd, ".picm"));
+  await fs.writeFile(path, `${JSON.stringify({ version: 1, maintenance: monthly }, null, 2)}\n`);
+  const abort = new AbortController();
+  const abortingSyncFs = {
+    ...fs,
+    async open(openPath, flags, mode) {
+      const handle = await fs.open(openPath, flags, mode);
+      if (openPath === join(cwd, ".picm") && flags === "r") {
+        return {
+          async sync() {
+            abort.abort();
+            throw new Error("synthetic directory sync failure");
+          },
+          async close() { await handle.close(); },
+        };
+      }
+      return handle;
+    },
+  };
+  const controller = createMaintenanceController({
+    store: createMaintenanceConfigStore({ cwd, gate, fs: abortingSyncFs }),
+    now: () => new Date("2026-02-01T00:00:00.000Z"),
+  });
+
+  await assert.rejects(controller.resetExistingCycle({ signal: abort.signal }), /PICM_SCAN_ABORTED/);
+  assert.deepEqual(JSON.parse(await fs.readFile(path, "utf8")).maintenance, monthly);
+});
+
+test("failed cancellation rollback preserves recoverable prior config", async (t) => {
+  const { cwd, gate } = await repository(t);
+  const path = join(cwd, ".picm/config.json");
+  await fs.mkdir(join(cwd, ".picm"));
+  await fs.writeFile(path, `${JSON.stringify({ version: 1, maintenance: monthly }, null, 2)}\n`);
+  const abort = new AbortController();
+  const failingRollbackFs = {
+    ...fs,
+    async rename(from, to) {
+      if (from.includes(".rollback-")) throw new Error("synthetic rollback rename failure");
+      await fs.rename(from, to);
+      if (from.includes(".tmp-")) abort.abort();
+    },
+    async copyFile(from, to) {
+      if (from.includes(".rollback-")) throw new Error("synthetic rollback copy failure");
+      return fs.copyFile(from, to);
+    },
+  };
+  const controller = createMaintenanceController({
+    store: createMaintenanceConfigStore({ cwd, gate, fs: failingRollbackFs }),
+    now: () => new Date("2026-02-01T00:00:00.000Z"),
+  });
+
+  const result = await controller.resetExistingCycle({ signal: abort.signal });
+  assert.equal(result.ok, false);
+  assert.equal(result.code, "CONFIG_ABORT_ROLLBACK_FAILED");
+  assert.match(result.message, /Recover .*config\.json from .*\.rollback-/);
+  const rollback = (await fs.readdir(join(cwd, ".picm"))).find((entry) => entry.includes(".rollback-"));
+  assert.deepEqual(JSON.parse(await fs.readFile(join(cwd, ".picm", rollback), "utf8")).maintenance, monthly);
+});
+
 test("post-rename directory sync failure reports a committed change", async (t) => {
   const { cwd, gate } = await repository(t);
   await fs.mkdir(join(cwd, ".picm"));
