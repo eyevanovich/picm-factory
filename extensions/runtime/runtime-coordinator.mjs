@@ -441,7 +441,12 @@ export function createRuntimeCoordinator({
     }
   }
 
-  function continueAdoptionAsMaintenance(ctx) {
+  async function hasAdoptedStatus(ctx) {
+    const config = await runtimeFor(ctx).store.read();
+    return config.ok && isRecord(config.config) && isRecord(config.config.adoption) && config.config.adoption.status === "adopted";
+  }
+
+  async function continueAdoptionAsMaintenance(ctx) {
     const workflow = workflowFor(ctx);
     if (!workflow || workflow.command !== "picm-adopt") {
       throw new Error("PICM_ADOPTION_CONTINUATION_UNAVAILABLE: finish an adopted workspace before starting initial maintenance");
@@ -451,6 +456,9 @@ export function createRuntimeCoordinator({
     }
     if (!workflow.scanStarted || !workflow.scanSettled || activeScans.get(sessionIdFor(ctx))?.cwd === ctx.cwd) {
       throw new Error("PICM_SCAN_NOT_SETTLED: end the adoption scan before starting initial maintenance");
+    }
+    if (!await hasAdoptedStatus(ctx)) {
+      throw new Error("PICM_ADOPTION_CONTINUATION_UNAVAILABLE: finish an adopted workspace before starting initial maintenance");
     }
     workflow.command = "picm-maintain";
     workflow.scanStarted = false;
@@ -767,6 +775,7 @@ export function createRuntimeCoordinator({
     continueAdoptionAsMaintenance,
     dispose,
     endToolExecution,
+    hasAdoptedStatus,
     isWorkflowCompleted,
     maintenancePolicy,
     rejectToolExecution,

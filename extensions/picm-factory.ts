@@ -320,7 +320,7 @@ export default function picmFactoryExtension(
       action: "adoption-complete",
       initialMaintenance,
     });
-    if (ctx.mode !== "tui") return finish("finished");
+    if (ctx.mode !== "tui" || !await coordinator.hasAdoptedStatus(ctx)) return finish("finished");
 
     const choice = await ctx.ui.select(
       "Would you like to run an initial maintenance pass now (recommended)?",
@@ -331,7 +331,7 @@ export default function picmFactoryExtension(
     const depth = await selectMaintenanceDepth(ctx);
     if (!depth) return finish("cancelled");
 
-    const continuation = coordinator.continueAdoptionAsMaintenance(ctx);
+    const continuation = await coordinator.continueAdoptionAsMaintenance(ctx);
     try {
       pi.sendUserMessage(buildMaintenanceContinuationPrompt(depth));
     } catch (error) {
