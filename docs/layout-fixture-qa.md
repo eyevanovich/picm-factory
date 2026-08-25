@@ -210,6 +210,8 @@ In a disposable fixture, configure a one-day reminder with `picm_maintenance_pol
 
 ## `/picm-maintain` smoke checks
 
+At intake, verify PiCM asks whether to include agent-document optimization and defaults to No. No must preserve the standard maintenance flow. Yes must retain the standalone optimizer's agent-document-only scope, preservation ledger, selectable proposals, `No worthwhile optimizations found` result, privacy boundary, and shared summary/selective-exact preview without proposing source/build/runtime, `.picm/`, generated, or unrelated edits.
+
 ### Coding Repository
 
 Run `/picm-maintain` against the three adopted coding fixtures.
@@ -501,6 +503,7 @@ Expected behavior:
 - May write scanned-only `.picm/config.json`/`.picm/adoption-report.md` after approval, with a report link or brief scan summary for future `/picm-maintain` guidance.
 - Adoption report includes existing routing source, inferred layout profile, PiCM compatibility, optional ICM improvements, security/privacy notes, optional `.picm` artifacts, and a `Preserved as-is` section.
 - Coding adoption reports whether Coding Repository is primary or codebase mapping is composable, the selected mapping/adoption modes, resulting root/distributed shape, automatic Strict examination and stored strict preset, proposed boundaries, evidence, and unknowns.
+- After every successful adopted-status write, asks exactly “Would you like to run an initial maintenance pass now (recommended)?” with `Run maintenance now` and `Finish`. Run reuses the conversation's confirmed exclusions, opens the ordinary Strict/Balanced selector with Strict preselected, and continues profile-appropriate maintenance through the shared summary/selective-exact preview. Finish, cancellation, or failure does not record a maintenance run or change configured reminders; later maintenance starts with normal privacy review.
 
 ### Optional file-role inventory
 

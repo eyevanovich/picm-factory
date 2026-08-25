@@ -4,6 +4,10 @@ Use this guide for `/picm-optimize`.
 
 Optimization is a documentation-only, outcome-preserving flow. It looks for useful ways to make agent guidance easier to navigate and maintain without weakening or silently changing what agents are expected to do. It does not promise semantic equivalence or guaranteed context/token savings.
 
+## Maintenance-integrated use
+
+When `/picm-maintain` intake includes optimization, this guide remains the sole optimization contract. Reuse that maintenance run's already-confirmed privacy exclusions and protected scan lifecycle; do not repeat preflight or privacy review. Perform the normal maintenance work as well, while applying this guide's documentation-only edit scope, preservation ledger, proposal selection, no-worthwhile-change result, and shared summary/selective-exact preview unchanged. If intake selects No, do not load or apply this guide and run standard maintenance unchanged.
+
 ## Scope and non-goals
 
 Inspect agent-facing documentation in the authorized project scope, including:
