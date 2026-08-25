@@ -220,6 +220,31 @@ test("cycle reset cancellation before rename preserves the prior policy", async 
   assert.deepEqual(JSON.parse(await fs.readFile(path, "utf8")).maintenance, monthly);
 });
 
+test("cycle reset cancellation during rename rolls back the committed policy", async (t) => {
+  const { cwd, gate } = await repository(t);
+  const path = join(cwd, ".picm/config.json");
+  await fs.mkdir(join(cwd, ".picm"));
+  await fs.writeFile(path, `${JSON.stringify({ version: 1, maintenance: monthly }, null, 2)}\n`);
+  const abort = new AbortController();
+  const renamingFs = {
+    ...fs,
+    async rename(from, to) {
+      await fs.rename(from, to);
+      if (from.includes(".tmp-")) abort.abort();
+    },
+  };
+  const controller = createMaintenanceController({
+    store: createMaintenanceConfigStore({ cwd, gate, fs: renamingFs }),
+    now: () => new Date("2026-02-01T00:00:00.000Z"),
+  });
+
+  await assert.rejects(
+    controller.resetExistingCycle({ signal: abort.signal }),
+    /PICM_SCAN_ABORTED/,
+  );
+  assert.deepEqual(JSON.parse(await fs.readFile(path, "utf8")).maintenance, monthly);
+});
+
 test("post-rename directory sync failure reports a committed change", async (t) => {
   const { cwd, gate } = await repository(t);
   await fs.mkdir(join(cwd, ".picm"));

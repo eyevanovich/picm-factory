@@ -27,6 +27,7 @@ export function createRuntimeCoordinator({
   packageRoot,
   canonicalPackageRoot,
   pathBindingLimits,
+  createConfigStore = createMaintenanceConfigStore,
   policyPreviewTtlMs = 10 * 60 * 1000,
   maxPolicyPreviews = 32,
 } = {}) {
@@ -417,7 +418,7 @@ export function createRuntimeCoordinator({
         canonicalPackageRoot,
         pathBindingLimits,
       });
-      const store = createMaintenanceConfigStore({ cwd, gate });
+      const store = createConfigStore({ cwd, gate });
       value = {
         gate,
         store,

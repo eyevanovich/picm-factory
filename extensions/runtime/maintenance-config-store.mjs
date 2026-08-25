@@ -226,6 +226,9 @@ export function createMaintenanceConfigStore({
     let lockToken;
     let tempHandle;
     const tempPath = `${configPath}.tmp-${process.pid}-${randomId()}`;
+    const rollbackPath = `${configPath}.rollback-${process.pid}-${randomId()}`;
+    let rollbackReady = false;
+    let configCommitted = false;
     try {
       await fs.mkdir(directory, { recursive: true });
       const beforeLock = await validateDirectory();
@@ -291,7 +294,19 @@ export function createMaintenanceConfigStore({
         if (!beforeRenameAccess.ok) return beforeRenameAccess;
       }
       throwIfAborted(signal);
+      if (signal && current.exists) {
+        await fs.link(configPath, rollbackPath);
+        rollbackReady = true;
+      }
       await fs.rename(tempPath, configPath);
+      configCommitted = true;
+      if (signal?.aborted) {
+        if (rollbackReady) await fs.rename(rollbackPath, configPath);
+        else await fs.unlink(configPath);
+        configCommitted = false;
+        rollbackReady = false;
+        throwIfAborted(signal);
+      }
 
       try {
         const directoryHandle = await fs.open(directory, "r");
@@ -300,7 +315,15 @@ export function createMaintenanceConfigStore({
         } finally {
           await directoryHandle.close();
         }
+        if (signal?.aborted) {
+          if (rollbackReady) await fs.rename(rollbackPath, configPath);
+          else await fs.unlink(configPath);
+          configCommitted = false;
+          rollbackReady = false;
+          throwIfAborted(signal);
+        }
       } catch (error) {
+        if (error?.code === "PICM_SCAN_ABORTED") throw error;
         return {
           ok: true,
           changed: true,
@@ -319,6 +342,9 @@ export function createMaintenanceConfigStore({
     } finally {
       try { await tempHandle?.close(); } catch {}
       try { await fs.unlink(tempPath); } catch {}
+      if (!configCommitted || !signal?.aborted) {
+        try { await fs.unlink(rollbackPath); } catch {}
+      }
       try { await lockHandle?.close(); } catch {}
       if (lockHandle) {
         try {
