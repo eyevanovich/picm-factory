@@ -343,7 +343,7 @@ export function createRuntimeCoordinator({
       let maintenanceReset;
       if (!workflow.completed) {
         requireCurrentWorkflow(sessionId, workflow);
-        if (workflow.command !== "picm-optimize" && !workflow.maintenanceResetAttempted) {
+        if (workflow.command === "picm-maintain" && !workflow.maintenanceResetAttempted) {
           maintenanceReset = await runtimeFor(ctx).controller.resetExistingCycle();
           requireCurrentWorkflow(sessionId, workflow);
           if (!maintenanceReset.ok || maintenanceReset.conflict) {
@@ -439,6 +439,24 @@ export function createRuntimeCoordinator({
         throw error;
       }
     }
+  }
+
+  function continueAdoptionAsMaintenance(ctx) {
+    const workflow = workflowFor(ctx);
+    if (!workflow || workflow.command !== "picm-adopt") {
+      throw new Error("PICM_ADOPTION_CONTINUATION_UNAVAILABLE: finish an adopted workspace before starting initial maintenance");
+    }
+    if (!workflow.preflightComplete || !workflow.privacyReviewed) {
+      throw new Error("PICM_PRIVACY_NOT_REVIEWED: complete adoption privacy review before starting initial maintenance");
+    }
+    if (!workflow.scanStarted || !workflow.scanSettled || activeScans.get(sessionIdFor(ctx))?.cwd === ctx.cwd) {
+      throw new Error("PICM_SCAN_NOT_SETTLED: end the adoption scan before starting initial maintenance");
+    }
+    workflow.command = "picm-maintain";
+    workflow.scanStarted = false;
+    workflow.scanSettled = false;
+    workflow.maintenanceResetAttempted = false;
+    return workflowState(workflow);
   }
 
   function isWorkflowCompleted(ctx) {
@@ -746,6 +764,7 @@ export function createRuntimeCoordinator({
     beginBoundPathExecution,
     checkToolCall,
     clearWorkflow,
+    continueAdoptionAsMaintenance,
     dispose,
     endToolExecution,
     isWorkflowCompleted,

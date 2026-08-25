@@ -79,6 +79,13 @@ Name any additional project-relative exclusions, or reply \`none\`.`;
 const concisePrivacyQuestion =
   "Name any additional project-relative files or directory that should be excluded from reads, or reply `none` to continue.";
 
+const maintenanceOptimizationIntake =
+  "At maintenance intake, ask whether to include agent-document optimization in this pass. Default to No. No runs the standard maintenance workflow unchanged. If Yes, load and follow `references/optimization-guide.md` as the single source for the documentation-only optimization scope, preservation ledger, proposal selection, no-worthwhile-change result, privacy boundaries, and shared summary/selective-exact preview; do not duplicate or weaken that flow.";
+
+function buildMaintenanceContinuationPrompt(depth: "strict" | "balanced") {
+  return `Initial maintenance continuation — successful adoption selected an initial maintenance pass. The adoption privacy review and its confirmed exclusions remain active for this conversation. Do not repeat preflight or the privacy question. Begin a new protected scan phase with \`picm_scan_control\` action \`begin\`, then run profile-appropriate maintenance using protected inventory and guarded reads.\n\nMode: maintain\nInitial maintenance run depth: ${depth}. Apply this depth to this run only. Do not mutate \`capabilities.codebaseMap.maintenancePreset\`.\n\n${maintenanceOptimizationIntake}\n\nBefore applying a proposal batch, follow the skill's shipped summary-preview and optional-diff-review protocol. Present the complete current summary, including non-blocking review suggestions for material or uncertain changes, then treat an unambiguous direct approval such as accept, approve, accept and write, or proceed as approval to write only that exact proposal. Do not require a separate summary-acceptance step or review menu. Keep exact review available on demand for view all, review files, and show diff for a path. When the user requests a draft adjustment, revise the current proposal conversationally, preserve applicable unchanged-path review state, and invite direct approval or diff inspection of the revision.\n\nAfter the final maintenance scan \`end\`, call \`picm_scan_control\` with \`action: "complete"\` before reporting, saving session state, or using any other agent tool.`;
+}
+
 function buildPrompt(
   command: CommandName,
   args: string,
@@ -86,16 +93,19 @@ function buildPrompt(
 ): string {
   const mode = command.replace("picm-", "");
   const argText = args.trim() ? `\n\nUser arguments:\n${args.trim()}` : "";
-  const completionGuidance = command !== "picm-help"
-    ? "\n\nAfter the final scan `end`, call `picm_scan_control` with `action: \"complete\"` before reporting, saving session state, or using any other agent tool."
-    : "";
+  const completionGuidance = command === "picm-adopt"
+    ? "\n\nAfter a successful adopted-status write and final scan `end`, call `picm_scan_control` with `action: \"adoption-complete\"` before reporting or saving session state; it offers the initial maintenance choice. Use `action: \"complete\"` for Scanned only or Needs routing before adoption."
+    : command !== "picm-help"
+      ? "\n\nAfter the final scan `end`, call `picm_scan_control` with `action: \"complete\"` before reporting, saving session state, or using any other agent tool."
+      : "";
   const commandContext = `Mode: ${mode}\nCommand: /${command}${argText}${completionGuidance}`;
   const previewGuidance = command === "picm-adopt" || command === "picm-maintain" || command === "picm-optimize"
     ? "\n\nBefore applying a proposal batch, follow the skill's shipped summary-preview and optional-diff-review protocol. Present the complete current summary, including non-blocking review suggestions for material or uncertain changes, then treat an unambiguous direct approval such as accept, approve, accept and write, or proceed as approval to write only that exact proposal. Do not require a separate summary-acceptance step or review menu. Keep exact review available on demand for view all, review files, and show diff for a path. When the user requests a draft adjustment, revise the current proposal conversationally, preserve applicable unchanged-path review state, and invite direct approval or diff inspection of the revision."
     : "";
+  const optimizationIntake = command === "picm-maintain" ? `\n\n${maintenanceOptimizationIntake}` : "";
   if (command === "picm-maintain" || command === "picm-optimize") {
     const workflow = command === "picm-maintain" ? "maintenance" : "optimization";
-    return `Privacy-first startup — follow this order exactly:\n1. Call \`picm_scan_control\` with \`action: "preflight"\`. Do not load the skill or use any other tool yet.\n2. After preflight, if it reports \`privacyQuestionIsConcise: true\`, ask exactly:\n\n${concisePrivacyQuestion}\n\nThen call \`picm_scan_control\` with \`action: "privacy"\` and every additional exact path (an empty list for \`none\`).\n3. Otherwise, ask the user:\n\n${adoptionPrivacyQuestion}\n\nThen call \`picm_scan_control\` with \`action: "privacy"\` and every additional exact path (an empty list for \`none\`). Use \`persist: true\` only if the user requests durable exclusions and follow its summary and exact TUI confirmation requirements.\n4. After the privacy call completes, load the \`picm-factory\` skill and continue the ${workflow} workflow.\n\n${commandContext}${previewGuidance}`;
+    return `Privacy-first startup — follow this order exactly:\n1. Call \`picm_scan_control\` with \`action: "preflight"\`. Do not load the skill or use any other tool yet.\n2. After preflight, if it reports \`privacyQuestionIsConcise: true\`, ask exactly:\n\n${concisePrivacyQuestion}\n\nThen call \`picm_scan_control\` with \`action: "privacy"\` and every additional exact path (an empty list for \`none\`).\n3. Otherwise, ask the user:\n\n${adoptionPrivacyQuestion}\n\nThen call \`picm_scan_control\` with \`action: "privacy"\` and every additional exact path (an empty list for \`none\`). Use \`persist: true\` only if the user requests durable exclusions and follow its summary and exact TUI confirmation requirements.\n4. After the privacy call completes, load the \`picm-factory\` skill and continue the ${workflow} workflow.\n\n${commandContext}${previewGuidance}${optimizationIntake}`;
   }
   if (privacyBootstrap) {
     return `Privacy-first startup — follow this order exactly:\n1. Call \`picm_scan_control\` with \`action: "preflight"\`. Do not load the skill or use any other tool yet.\n2. After preflight, ask the user:\n\n${adoptionPrivacyQuestion}\n\n3. Prepare the privacy call with every additional exact path from the reply (an empty list for \`none\`). Use \`persist: true\` only if the user requests durable exclusions. Before a call with \`persist: true\`, present the complete concise \`.picm/config.json\` summary categories: affected files and operations, behavior or configuration changes, linked cross-file moves, preserved behavior, known uncertainty, and review suggestions. Use \`None\` for empty categories, explain the privacy configuration impact, and obtain the user's summary acceptance. Then call \`picm_scan_control\` with \`action: "privacy"\`; its exact TUI patch confirmation is the separate runtime write confirmation.\n4. Only after privacy review completes, load the \`picm-factory\` skill and its \`SKILL.md\`, then continue the ${mode} workflow.\n\n${commandContext}${previewGuidance}`;
@@ -166,22 +176,24 @@ export default function picmFactoryExtension(
       "Only an explicit /picm-new, /picm-adopt, /picm-maintain, or /picm-optimize command authorizes picm_scan_control; natural-language requests do not.",
       "After an explicit command, call picm_scan_control preflight before any scan. For /picm-maintain and /picm-optimize, if preflight returns privacyQuestionIsConcise true, ask exactly: Name any additional project-relative files or directory that should be excluded from reads, or reply `none` to continue. Then call privacy with every exact project-relative excluded path. Otherwise, ask the full privacy question before privacy and begin.",
       "Use picm_scan_control privacy with persist true only when the user requests durable exclusions. First present and obtain acceptance of the complete concise .picm/config.json summary, explain the privacy configuration impact, then use the action's exact TUI patch confirmation as the separate runtime write confirmation.",
-      "Use picm_scan_control inventory only after begin, end after each scan phase, and complete when the PiCM workflow finishes.",
+      "Use picm_scan_control inventory only after begin, end after each scan phase, and complete when the PiCM workflow finishes. After a successful adoption, call adoption-complete to present the initial-maintenance choice; it either finishes adoption or reuses that conversation's confirmed exclusions for maintenance.",
     ],
     parameters: Type.Object({
-      action: StringEnum(["preflight", "privacy", "begin", "inventory", "end", "complete", "status"] as const),
+      action: StringEnum(["preflight", "privacy", "begin", "inventory", "end", "complete", "adoption-complete", "status"] as const),
       path: Type.Optional(Type.String({ minLength: 1 })),
       excludedPaths: Type.Optional(Type.Array(Type.String({ minLength: 1 }))),
       persist: Type.Optional(Type.Boolean()),
     }),
     async execute(toolCallId, params, signal, _onUpdate, ctx) {
       const run = () => coordinator.scanControl(ctx, params, { toolCallId, signal });
-      const result = params.action === "privacy" && params.persist
-        ? await withFileMutationQueue(join(ctx.cwd, ".picm", "config.json"), run)
-        : await run();
+      const result = params.action === "adoption-complete"
+        ? await completeAdoption(ctx, toolCallId, signal)
+        : params.action === "privacy" && params.persist
+          ? await withFileMutationQueue(join(ctx.cwd, ".picm", "config.json"), run)
+          : await run();
       if (
         result.ok &&
-        (params.action === "preflight" || params.action === "privacy" || params.action === "begin" || params.action === "end") &&
+        (params.action === "preflight" || params.action === "privacy" || params.action === "begin" || params.action === "end" || params.action === "adoption-complete") &&
         result.authorized &&
         !result.completed &&
         !coordinator.isWorkflowCompleted(ctx)
@@ -205,7 +217,7 @@ export default function picmFactoryExtension(
             "warning",
           );
         }
-      } else if (params.action === "complete") {
+      } else if (params.action === "complete" || result.completed) {
         if (result.completed) {
           pi.appendEntry(scanWorkflowEntryType, {
             status: "completed",
@@ -292,23 +304,60 @@ export default function picmFactoryExtension(
     coordinator.endToolExecution(event, ctx);
   });
 
+  async function selectMaintenanceDepth(ctx: ExtensionContext) {
+    if (ctx.mode !== "tui") return "strict" as const;
+    const selected = await ctx.ui.select(
+      "Choose maintenance depth for this run (stored preset will not change)",
+      MAINTENANCE_DEPTH_CHOICES,
+    );
+    if (!selected) return undefined;
+    return selected === BALANCED_MAINTENANCE_GUIDANCE ? "balanced" as const : "strict" as const;
+  }
+
+  async function completeAdoption(ctx: ExtensionContext, toolCallId: string, signal: AbortSignal | undefined) {
+    const finish = async (initialMaintenance: "finished" | "cancelled") => ({
+      ...await coordinator.scanControl(ctx, { action: "complete" }, { toolCallId, signal }),
+      action: "adoption-complete",
+      initialMaintenance,
+    });
+    if (ctx.mode !== "tui") return finish("finished");
+
+    const choice = await ctx.ui.select(
+      "Would you like to run an initial maintenance pass now (recommended)?",
+      ["Run maintenance now", "Finish"],
+    );
+    if (choice !== "Run maintenance now") return finish(choice ? "finished" : "cancelled");
+
+    const depth = await selectMaintenanceDepth(ctx);
+    if (!depth) return finish("cancelled");
+
+    const continuation = coordinator.continueAdoptionAsMaintenance(ctx);
+    try {
+      pi.sendUserMessage(buildMaintenanceContinuationPrompt(depth));
+    } catch (error) {
+      coordinator.clearWorkflow(ctx);
+      recordClearedWorkflow(ctx);
+      throw error;
+    }
+    return {
+      ok: true,
+      action: "adoption-complete",
+      authorized: true,
+      active: false,
+      initialMaintenance: "started",
+      ...continuation,
+    };
+  }
+
   async function executeMaintain(ctx: ExtensionContext, args = "") {
     await ctx.waitForIdle();
     const parsed = parseMaintenanceDepthArgument(args);
-    let depth = parsed.depth;
+    const depth = parsed.depth ?? await selectMaintenanceDepth(ctx);
     const promptArgs = parsed.remainingArgs;
-    if (!depth && ctx.mode === "tui") {
-      const selected = await ctx.ui.select(
-        "Choose maintenance depth for this run (stored preset will not change)",
-        MAINTENANCE_DEPTH_CHOICES,
-      );
-      if (!selected) {
-        ctx.ui.notify("PiCM maintenance cancelled before scan authorization.", "info");
-        return;
-      }
-      depth = selected === BALANCED_MAINTENANCE_GUIDANCE ? "balanced" : "strict";
+    if (!depth) {
+      ctx.ui.notify("PiCM maintenance cancelled before scan authorization.", "info");
+      return;
     }
-    depth ??= "strict";
     const maintenanceDepthContext = `\n\nMaintenance run depth: ${depth}. Apply this depth to this run only. Do not mutate \`capabilities.codebaseMap.maintenancePreset\`.`;
     const authorization = coordinator.authorizeWorkflow(ctx, "picm-maintain");
     pi.appendEntry(scanWorkflowEntryType, { status: "authorized", ...authorization });

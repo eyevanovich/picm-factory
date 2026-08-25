@@ -135,7 +135,11 @@ test("skill, backing prompt, help, README, and shared review protocol stay synch
       "references/optimization-guide.md",
       "No worthwhile optimizations found",
       "compare claims across every inspected agent-facing document",
+      "Would you like to run an initial maintenance pass now (recommended)?",
+      "At maintenance intake, ask whether to include agent-document optimization",
     ],
+    "prompts/picm-adopt.md": ["adoption-complete", "Run maintenance now", "Finish"],
+    "prompts/picm-maintain.md": ["agent-document optimization", "Default to No"],
     "prompts/picm-optimize.md": [
       "Command: /picm-optimize",
       "Inspect all agent-facing documentation",
@@ -144,7 +148,7 @@ test("skill, backing prompt, help, README, and shared review protocol stay synch
       "No worthwhile optimizations found",
     ],
     "prompts/picm-help.md": ["`/picm-optimize`", "semantic equivalence"],
-    "README.md": ["five project-local commands", "Outcome-preserving optimization"],
+    "README.md": ["five project-local commands", "Outcome-preserving optimization", "initial maintenance pass now", "defaults to No"],
     "skills/picm-factory/references/preview-review-protocol.md": ["`/picm-optimize`"],
     "docs/layout-fixture-qa.md": ["## `/picm-optimize` smoke check", "No worthwhile optimizations found"],
   };
