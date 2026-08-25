@@ -86,12 +86,13 @@ function buildPrompt(
 ): string {
   const mode = command.replace("picm-", "");
   const argText = args.trim() ? `\n\nUser arguments:\n${args.trim()}` : "";
-  const commandContext = `Mode: ${mode}\nCommand: /${command}${argText}`;
+  const completionGuidance = command !== "picm-help"
+    ? "\n\nAfter the final scan `end`, call `picm_scan_control` with `action: \"complete\"` before reporting, saving session state, or using any other agent tool."
+    : "";
+  const commandContext = `Mode: ${mode}\nCommand: /${command}${argText}${completionGuidance}`;
   const previewGuidance = command === "picm-adopt" || command === "picm-maintain" || command === "picm-optimize"
     ? "\n\nBefore applying a proposal batch, follow the skill's shipped summary-preview and optional-diff-review protocol. Present the complete current summary, including non-blocking review suggestions for material or uncertain changes, then treat an unambiguous direct approval such as accept, approve, accept and write, or proceed as approval to write only that exact proposal. Do not require a separate summary-acceptance step or review menu. Keep exact review available on demand for view all, review files, and show diff for a path. When the user requests a draft adjustment, revise the current proposal conversationally, preserve applicable unchanged-path review state, and invite direct approval or diff inspection of the revision."
-    : command === "picm-help"
-      ? "\n\nExplain the shipped adoption/maintenance/optimization summary-preview: unambiguous direct approval of the complete current summary writes only that exact proposal without a separate acceptance step or review menu; non-blocking review suggestions and exact review remain available on demand for view all, review files, and show diff for a path."
-      : "";
+    : "";
   if (command === "picm-maintain" || command === "picm-optimize") {
     const workflow = command === "picm-maintain" ? "maintenance" : "optimization";
     return `Privacy-first startup — follow this order exactly:\n1. Call \`picm_scan_control\` with \`action: "preflight"\`. Do not load the skill or use any other tool yet.\n2. After preflight, if it reports \`privacyQuestionIsConcise: true\`, ask exactly:\n\n${concisePrivacyQuestion}\n\nThen call \`picm_scan_control\` with \`action: "privacy"\` and every additional exact path (an empty list for \`none\`).\n3. Otherwise, ask the user:\n\n${adoptionPrivacyQuestion}\n\nThen call \`picm_scan_control\` with \`action: "privacy"\` and every additional exact path (an empty list for \`none\`). Use \`persist: true\` only if the user requests durable exclusions and follow its summary and exact TUI confirmation requirements.\n4. After the privacy call completes, load the \`picm-factory\` skill and continue the ${workflow} workflow.\n\n${commandContext}${previewGuidance}`;

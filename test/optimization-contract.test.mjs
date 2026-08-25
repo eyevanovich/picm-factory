@@ -55,7 +55,32 @@ test("picm-optimize is registered and dispatches privacy before skill loading", 
   assert.match(prompt, /Git internals/);
   assert.match(prompt, /symlinks and nested repository\/submodule boundaries/);
   assert.match(prompt, /Mode: optimize\nCommand: \/picm-optimize/);
+  assert.match(prompt, /After the final scan `end`, call `picm_scan_control` with `action: "complete"` before reporting, saving session state, or using any other agent tool/);
   assert.equal(h.entries.at(-1).data.command, "picm-optimize");
+});
+
+test("picm-new completes protected scanning before post-scan tools", async () => {
+  const h = commandHarness();
+  const command = h.commands.get("picm-new");
+  assert.ok(command);
+
+  await command.handler("newsletter workflow", h.ctx);
+  assert.equal(h.sent.length, 1);
+  assert.match(h.sent[0], /Mode: new\nCommand: \/picm-new\n\nUser arguments:\nnewsletter workflow/);
+  assert.match(h.sent[0], /After the final scan `end`, call `picm_scan_control` with `action: "complete"` before reporting, saving session state, or using any other agent tool/);
+});
+
+test("picm-help loads the help skill without preview-only override", async () => {
+  const h = commandHarness();
+  const command = h.commands.get("picm-help");
+  assert.ok(command);
+
+  await command.handler("", h.ctx);
+  assert.equal(h.sent.length, 1);
+  const prompt = h.sent[0];
+  assert.match(prompt, /Use the picm-factory skill\. Load its SKILL\.md before proceeding/);
+  assert.match(prompt, /Mode: help\nCommand: \/picm-help/);
+  assert.doesNotMatch(prompt, /Explain the shipped adoption\/maintenance\/optimization summary-preview/);
 });
 
 test("optimization guide defines complete protected discovery and edit scope", () => {
@@ -72,6 +97,7 @@ test("optimization guide defines complete protected discovery and edit scope", (
     "generated artifacts or generated documentation",
     "source code, tests, manifests, build files, runtime code paths",
     "`.picm/` policy, configuration, metadata, or reports",
+    "Before concluding that no useful opportunity exists",
   ]) assert.ok(guide.includes(signal), `missing optimization scope signal: ${signal}`);
 });
 
@@ -108,11 +134,13 @@ test("skill, backing prompt, help, README, and shared review protocol stay synch
       "## Mode: optimize (`/picm-optimize`)",
       "references/optimization-guide.md",
       "No worthwhile optimizations found",
+      "compare claims across every inspected agent-facing document",
     ],
     "prompts/picm-optimize.md": [
       "Command: /picm-optimize",
       "Inspect all agent-facing documentation",
       "summary-preview and optional-diff-review protocol",
+      "repeated claim without a visible canonical home",
       "No worthwhile optimizations found",
     ],
     "prompts/picm-help.md": ["`/picm-optimize`", "semantic equivalence"],

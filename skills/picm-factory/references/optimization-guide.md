@@ -64,6 +64,8 @@ Identify opportunities before drafting edits. A useful opportunity needs visible
 
 Do not treat repeated safety, approval, command, verification, or local-boundary reminders as redundant merely because wording overlaps. Repetition may be intentional at an independent working-directory or handoff boundary. Do not manufacture edits for short, clear, intentionally local, or already well-routed docs.
 
+Before concluding that no useful opportunity exists, compare the visible source-of-truth claims across every inspected agent-facing document. A contradiction, or a repeated claim with no visible canonical home, is evidence for a proposal: identify the canonical home when supported, or propose a thin pointer or a user decision when it is not. Do not call the flow a no-op merely because the evidence spans multiple documents.
+
 For each opportunity, report:
 
 - affected paths;

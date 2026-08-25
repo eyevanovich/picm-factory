@@ -179,9 +179,9 @@ test("dispatch prompts preserve privacy bootstrap ordering and add optional-revi
     assert.match(prompt, /exact review available on demand for view all, review files, and show diff for a path/);
     assert.match(prompt, /preserve applicable unchanged-path review state/);
   }
-  assert.match(help, /unambiguous direct approval of the complete current summary writes only that exact proposal/);
-  assert.match(help, /without a separate acceptance step or review menu/);
-  assert.match(help, /non-blocking review suggestions and exact review remain available on demand/);
+  assert.match(help, /Use the picm-factory skill\. Load its SKILL\.md before proceeding/);
+  assert.match(help, /Mode: help\nCommand: \/picm-help/);
+  assert.doesNotMatch(help, /summary-preview/);
   assert.match(maintain, /Maintenance run depth: strict.*run only.*Do not mutate/s);
 });
 

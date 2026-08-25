@@ -211,7 +211,7 @@ Process:
 
 Goal: improve agent-facing documentation only where visible evidence supports a useful outcome-preserving change.
 
-Load `references/optimization-guide.md` and follow it completely. After preflight, use the concise privacy question when `privacyQuestionIsConcise: true`; otherwise use the full privacy question. Use the same privacy-first protected scan lifecycle and the same `references/preview-review-protocol.md` write gate as adoption and maintenance. Do not inspect before preflight and privacy review. Do not modify source code, build/runtime paths, `.picm/` policy or configuration, generated artifacts, or unrelated workspace material. If discovery finds no useful proposal, complete the protected workflow and report exactly `No worthwhile optimizations found`.
+Load `references/optimization-guide.md` and follow it completely. After preflight, use the concise privacy question when `privacyQuestionIsConcise: true`; otherwise use the full privacy question. Use the same privacy-first protected scan lifecycle and the same `references/preview-review-protocol.md` write gate as adoption and maintenance. Do not inspect before preflight and privacy review. Do not modify source code, build/runtime paths, `.picm/` policy or configuration, generated artifacts, or unrelated workspace material. Before concluding that no useful proposal exists, compare claims across every inspected agent-facing document; a contradiction or repeated claim without a visible canonical home is a useful opportunity to propose a canonical home, thin pointer, or user decision. If discovery finds no useful proposal, complete the protected workflow and report exactly `No worthwhile optimizations found`.
 
 ## Mode: help (`/picm-help`)
 
