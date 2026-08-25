@@ -20,7 +20,7 @@ Follow this privacy-first startup order before loading the skill or using any pr
    - symlinks and nested repository/submodule boundaries; and
    - paths outside this project.
 
-   Name any additional project-relative exclusions, or reply `none`.
+   Before scanning any workspace files, does this workspace contain secrets, regulated data, client data, or personal/private material that must be excluded? If so, name each exact project-relative file or directory to exclude. Name any other project-relative exclusions too, or reply `none` if there are none.
 
    Wait for the reply.
 3. Prepare the privacy call with every additional exact path from the reply (an empty list for `none`). Use `persist: true` only if the user requests durable exclusions. Before a call with `persist: true`, present the complete concise `.picm/config.json` summary categories: affected files and operations, behavior or configuration changes, linked cross-file moves, preserved behavior, known uncertainty, and review suggestions. Use `None` for empty categories, explain the privacy configuration impact, and obtain the user's summary acceptance. Then call `picm_scan_control` with `action: "privacy"`; its exact TUI patch confirmation is the separate runtime write confirmation.

@@ -74,7 +74,7 @@ const adoptionPrivacyQuestion = `PiCM automatically protects:
 - symlinks and nested repository/submodule boundaries; and
 - paths outside this project.
 
-Name any additional project-relative exclusions, or reply \`none\`.`;
+Before scanning any workspace files, does this workspace contain secrets, regulated data, client data, or personal/private material that must be excluded? If so, name each exact project-relative file or directory to exclude. Name any other project-relative exclusions too, or reply \`none\` if there are none.`;
 
 const concisePrivacyQuestion =
   "Name any additional project-relative files or directory that should be excluded from reads, or reply `none` to continue.";

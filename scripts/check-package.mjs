@@ -367,12 +367,12 @@ const adoptionPrivacyQuestionGuidance = {
   ],
   "skills/picm-factory/references/coding-adoption-guide.md": [
     "PiCM automatically protects:",
-    "Name any additional project-relative exclusions, or reply `none`",
+    "secrets, regulated data, client data, or personal/private material",
     "sensitive eligible paths PiCM cannot infer",
   ],
   "prompts/picm-adopt.md": [
     "PiCM automatically protects:",
-    "Name any additional project-relative exclusions, or reply `none`",
+    "secrets, regulated data, client data, or personal/private material",
     "Only after privacy review completes, load the `picm-factory` skill",
   ],
   "extensions/picm-factory.ts": [
@@ -380,7 +380,7 @@ const adoptionPrivacyQuestionGuidance = {
     "PiCM automatically protects:",
     "Git internals",
     "symlinks and nested repository/submodule boundaries",
-    "Name any additional project-relative exclusions, or reply \\`none\\`",
+    "secrets, regulated data, client data, or personal/private material",
     "Only after privacy review completes, load the \\`picm-factory\\` skill",
   ],
   "docs/layout-fixture-qa.md": [

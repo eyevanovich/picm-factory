@@ -1514,7 +1514,9 @@ test("interactive commands bootstrap privacy before trusted skill loading", asyn
       assert.match(prompt, /PiCM automatically protects:/);
       assert.match(prompt, /Git internals/);
       assert.match(prompt, /symlinks and nested repository\/submodule boundaries/);
-      assert.match(prompt, /Name any additional project-relative exclusions, or reply `none`/);
+      assert.match(prompt, /secrets, regulated data, client data, or personal\/private material/);
+      assert.match(prompt, /exact project-relative file or directory to exclude/);
+      assert.match(prompt, /reply `none` if there are none/);
 
       const control = h.tools.get("picm_scan_control");
       const skill = join(packageRoot, "skills", "picm-factory", "SKILL.md");
