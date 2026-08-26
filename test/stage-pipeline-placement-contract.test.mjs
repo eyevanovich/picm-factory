@@ -24,93 +24,36 @@ function harness() {
   return { commands, sent, context };
 }
 
-test("unseeded Stage Pipeline dispatch requires a placement answer", async () => {
+test("Stage Pipeline dispatch preserves placement input for skill resolution", async () => {
+  for (const args of [
+    "Stage Pipeline; use root-numbered folders",
+    "Stage Pipeline; use nested stages without placeholder files",
+    "Stage Pipeline; I prefer not to use nested stages",
+    "Stage Pipeline; do not use root-numbered folders and nested stages",
+  ]) {
+    const h = harness();
+    await h.commands.get("picm-new").handler(args, h.context());
+    assert.match(h.sent[0], new RegExp(`User arguments:\\n${args.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`));
+    assert.match(h.sent[0], /follow the loaded skill when interpreting User arguments/);
+  }
+});
+
+test("placement contract distinguishes affirmative and unresolved input", async () => {
   const h = harness();
   await h.commands.get("picm-new").handler("Create a Stage Pipeline", h.context());
-  assert.match(h.sent[0], /placement is unresolved/);
-  assert.match(h.sent[0], /ask whether stages should be root-numbered or nested under `stages\/`/);
-  assert.match(h.sent[0], /root-numbered only after the user says they have no preference/);
-});
-
-test("root-numbered seed is preserved by dispatch", async () => {
-  const h = harness();
-  await h.commands.get("picm-new").handler("Stage Pipeline; use root numbered folders", h.context());
-  assert.match(h.sent[0], /placement seed: root-numbered/);
-  assert.match(h.sent[0], /retain this explicit placement, skip the placement question/);
-  assert.doesNotMatch(h.sent[0], /placement is unresolved/);
-});
-
-test("nested seed is preserved by dispatch", async () => {
-  const h = harness();
-  await h.commands.get("picm-new").handler("Stage Pipeline; use nested stages", h.context());
-  assert.match(h.sent[0], /placement seed: nested under `stages\/`/);
-  assert.match(h.sent[0], /use it in every preview and generated path/);
-  assert.doesNotMatch(h.sent[0], /placement is unresolved/);
-});
-
-test("negated root cue preserves an explicit nested override", async () => {
-  const h = harness();
-  await h.commands.get("picm-new").handler(
-    "Stage Pipeline; do not use root-numbered folders; use nested stages",
-    h.context(),
-  );
-  assert.match(h.sent[0], /placement seed: nested under `stages\/`/);
-  assert.doesNotMatch(h.sent[0], /placement seed: root-numbered/);
-});
-
-test("negated or conflicting placement cues remain unresolved", async () => {
-  for (const args of [
-    "Stage Pipeline; do not use root-numbered folders",
-    "Stage Pipeline; root-numbered folders are not acceptable",
-    "Stage Pipeline; nested stages would be unacceptable",
-    "Stage Pipeline; either root-numbered folders or nested stages",
-    "Stage Pipeline; do not use root-numbered folders and nested stages",
-    "Stage Pipeline; use root-numbered folders and nested stages",
-  ]) {
-    const h = harness();
-    await h.commands.get("picm-new").handler(args, h.context());
-    assert.match(h.sent[0], /placement is unresolved/);
-    assert.doesNotMatch(h.sent[0], /placement seed:/);
-  }
-});
-
-test("coordinated explicit override remains affirmative", async () => {
-  const h = harness();
-  await h.commands.get("picm-new").handler(
-    "Stage Pipeline; do not use root-numbered folders and use nested stages",
-    h.context(),
-  );
-  assert.match(h.sent[0], /placement seed: nested under `stages\/`/);
-  assert.doesNotMatch(h.sent[0], /placement is unresolved/);
-});
-
-test("postfix affirmative placement is preserved", async () => {
-  const h = harness();
-  await h.commands.get("picm-new").handler(
-    "Stage Pipeline; nested stages are preferred",
-    h.context(),
-  );
-  assert.match(h.sent[0], /placement seed: nested under `stages\/`/);
-  assert.doesNotMatch(h.sent[0], /placement is unresolved/);
-});
-
-test("unrelated negation does not discard an explicit placement", async () => {
-  for (const [args, expected] of [
-    ["Stage Pipeline; use nested stages without placeholder files", /placement seed: nested under `stages\/`/],
-    ["Stage Pipeline; keep root-numbered folders without examples", /placement seed: root-numbered/],
-  ]) {
-    const h = harness();
-    await h.commands.get("picm-new").handler(args, h.context());
-    assert.match(h.sent[0], expected);
-    assert.doesNotMatch(h.sent[0], /placement is unresolved/);
-  }
-});
-
-test("TUI placement dispatch retains privacy-first ordering", async () => {
-  const h = harness();
-  await h.commands.get("picm-new").handler("Stage Pipeline; stages/", h.context("tui"));
   const prompt = h.sent[0];
-  assert.ok(prompt.indexOf('action: "preflight"') < prompt.indexOf("Stage Pipeline placement seed"));
-  assert.ok(prompt.indexOf('action: "privacy"') < prompt.indexOf("Stage Pipeline placement seed"));
-  assert.ok(prompt.indexOf("privacy review completes") < prompt.indexOf("Stage Pipeline placement seed"));
+  assert.match(prompt, /Retain exactly one unambiguous affirmative root-numbered or nested placement/);
+  assert.match(prompt, /Treat negated, conflicting, or absent placement as unresolved/);
+  assert.match(prompt, /root-numbered only after the user says they have no preference/);
+  assert.match(prompt, /use the resolved placement in every preview and generated path/);
+});
+
+test("TUI placement contract retains privacy-first ordering", async () => {
+  const h = harness();
+  await h.commands.get("picm-new").handler("Stage Pipeline; use nested stages", h.context("tui"));
+  const prompt = h.sent[0];
+  const placement = prompt.indexOf("Stage Pipeline placement:");
+  assert.ok(prompt.indexOf('action: "preflight"') < placement);
+  assert.ok(prompt.indexOf('action: "privacy"') < placement);
+  assert.ok(prompt.indexOf("privacy review completes") < placement);
 });
