@@ -345,8 +345,8 @@ export default function picmFactoryExtension(
     };
   }
 
-  async function executeMaintain(ctx: ExtensionContext, args = "") {
-    await ctx.waitForIdle();
+  async function executeMaintain(ctx: ExtensionContext, args = "", waitForIdle = true) {
+    if (waitForIdle) await ctx.waitForIdle();
     const parsed = parseMaintenanceDepthArgument(args);
     const depth = parsed.depth ?? await selectMaintenanceDepth(ctx);
     const promptArgs = parsed.remainingArgs;
@@ -374,7 +374,7 @@ export default function picmFactoryExtension(
     restoreScanWorkflow(ctx);
     await coordinator.startup(ctx, {
       appendEntry: pi.appendEntry.bind(pi),
-      promptMaintenanceWorkflow: () => executeMaintain(ctx, ""),
+      promptMaintenanceWorkflow: () => executeMaintain(ctx, "", false),
     });
   });
 

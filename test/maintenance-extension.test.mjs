@@ -396,7 +396,7 @@ test("closing selector without choosing leaves reminder widget visible and does 
   assert.equal(readFileSync(join(cwd, ".picm/config.json"), "utf8"), before);
 });
 
-test("Run Now prompts depth selection, starts maintenance flow, and advances timestamps only upon completion", async (t) => {
+test("Run Now without waitForIdle prompts depth selection, starts maintenance flow, and advances timestamps only upon completion", async (t) => {
   const cwd = fixture(t, oldDue("nudge"));
   let selectionStep = 0;
   const h = harness({
@@ -414,6 +414,7 @@ test("Run Now prompts depth selection, starts maintenance flow, and advances tim
     },
   });
   const ctx = h.context(cwd);
+  delete ctx.waitForIdle;
   const before = readFileSync(join(cwd, ".picm/config.json"), "utf8");
 
   await h.handlers.get("session_start")({}, ctx);
