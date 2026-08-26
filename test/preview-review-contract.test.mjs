@@ -116,6 +116,22 @@ test("skill and adoption references retain one summary-and-approval flow", () =>
   );
 });
 
+test("no-agent-files adoption keeps the Claude shim optional and draft-only", () => {
+  const adoptionGuide = read("skills/picm-factory/references/adoption-guide.md");
+  const fixtureGuide = read("docs/layout-fixture-qa.md");
+
+  for (const signal of [
+    "AGENTS.md` as the PiCM default routing source",
+    "Before creating the final proposal, explicitly ask",
+    "include the shim only in that draft",
+    "if declined, leave it out without changing the rest of the proposal",
+    "neither answer writes either file without direct approval of the final proposal",
+  ]) assert.ok(adoptionGuide.includes(signal), `missing no-agent-files adoption safeguard: ${signal}`);
+
+  assert.match(fixtureGuide, /existing-no-agent-files.*before making the final proposal.*explicitly asks/s);
+  assert.match(fixtureGuide, /shim is accepted, it appears only in the draft; declining it leaves the remaining proposal unchanged\. Neither choice writes a file\./);
+});
+
 test("skill, adopt, coding, maintenance, optimization, help, and public guidance point to the protocol", () => {
   const expected = {
     "skills/picm-factory/SKILL.md": [protocolPath.split("/").at(-1), "Before every proposal batch"],

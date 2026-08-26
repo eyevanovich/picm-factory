@@ -152,9 +152,10 @@ Classify routing quality:
    - Do not choose the canonical file or edit either file without approval.
 
 4. **Neither exists**
-   - Recommend creating `AGENTS.md` as the PiCM default.
-   - Ask whether to also add a small `CLAUDE.md` compatibility shim for future Claude Code use.
-   - Apply `preview-review-protocol.md` before writing.
+   - Recommend creating `AGENTS.md` as the PiCM default routing source.
+   - Before creating the final proposal, explicitly ask whether to draft a small `CLAUDE.md` compatibility shim for future Claude Code use.
+   - If accepted, include the shim only in that draft alongside the proposed `AGENTS.md`; if declined, leave it out without changing the rest of the proposal.
+   - The answer chooses draft content only. Apply `preview-review-protocol.md` before writing; neither answer writes either file without direct approval of the final proposal.
 
 Suggested `CLAUDE.md` shim:
 
