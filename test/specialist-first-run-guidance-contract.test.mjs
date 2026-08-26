@@ -1,51 +1,52 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
+import picmFactoryExtension from "../extensions/picm-factory.ts";
 
-const root = process.cwd();
-const read = (path) => readFileSync(join(root, path), "utf8");
+function harness() {
+  const commands = new Map();
+  const sent = [];
+  const pi = {
+    on() {},
+    registerCommand(name, definition) { commands.set(name, definition); },
+    registerTool() {},
+    appendEntry() {},
+    sendUserMessage(message) { sent.push(message); },
+  };
+  picmFactoryExtension(pi);
+  return { commands, sent };
+}
 
-const specialistRequirements = [
-  "approved generated routes",
-  "exact first workflow/task recipe path",
-  "inputs",
-  "expected artifact",
-  "inspect, edit, and explicitly approve",
-  "route the next action reads from",
-  "uncertainty, unsupported claims, missing information, blockers, or low-confidence points",
-  "never invent optional folders, recipes, or operations",
-  "after the first real use or when the specialist workflow, routing, or stable guidance changes",
-];
+test("picm-new emits Specialist final-guidance contract for the reported fixture route", async () => {
+  const h = harness();
+  const fixture = join(
+    process.cwd(),
+    "test/fixtures/layout-profiles/specialist-folder/faq-polisher",
+  );
+  const args = "Create a Specialist Folder for the FAQ polisher fixture";
 
-test("Specialist Folder first-run guidance is complete and route-derived", () => {
-  for (const path of [
-    "skills/picm-factory/SKILL.md",
-    "skills/picm-factory/references/layout-profiles.md",
-    "skills/picm-factory/references/interview-guide.md",
-  ]) {
-    const content = read(path);
-    for (const requirement of specialistRequirements) {
-      assert.ok(content.includes(requirement), `${path} missing: ${requirement}`);
-    }
-  }
-});
+  await h.commands.get("picm-new").handler(args, {
+    cwd: fixture,
+    mode: "rpc",
+    hasUI: true,
+    waitForIdle: async () => {},
+    sessionManager: {
+      getBranch: () => [],
+      getEntries: () => [],
+      getSessionId: () => "specialist-guidance-test",
+    },
+    ui: { notify() {}, setWidget() {} },
+  });
 
-test("reported FAQ specialist fixture supplies the concrete first-run routes", () => {
-  const fixture = "test/fixtures/layout-profiles/specialist-folder/faq-polisher/workflows/polish-faq.md";
-  assert.ok(existsSync(join(root, fixture)), `missing reported fixture: ${fixture}`);
-
-  const workflow = read(fixture);
-  for (const route of [
-    "reference/faq-style.md",
-    "review/polished-faq.md",
-    "inspect, edit, and approve",
-    "unsupported claims and unresolved questions visible",
-    "approved edited draft, not chat memory",
-  ]) {
-    assert.ok(workflow.includes(route), `${fixture} missing: ${route}`);
-  }
-
-  const qa = read("docs/layout-fixture-qa.md");
-  assert.ok(qa.includes(fixture), "QA guide must retain the reported fixture route");
+  assert.equal(h.sent.length, 1);
+  const prompt = h.sent[0];
+  assert.match(prompt, /Command: \/picm-new/);
+  assert.match(prompt, new RegExp(`User arguments:\\n${args}`));
+  assert.match(prompt, /derive every detail from its approved generated routes/);
+  assert.match(prompt, /exact first workflow\/task recipe path, its inputs, and expected artifact/);
+  assert.match(prompt, /inspect, edit, and explicitly approve that artifact/);
+  assert.match(prompt, /keep recipe-named uncertainty visible/);
+  assert.match(prompt, /approved artifact as where the next action reads from/);
+  assert.match(prompt, /Do not invent optional folders, recipes, or operations/);
+  assert.match(prompt, /Recommend `\/picm-maintain` after the first real use/);
 });

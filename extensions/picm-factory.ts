@@ -101,6 +101,11 @@ function buildStagePlacementContext(command: CommandName): string {
   return "\n\nStage Pipeline placement: follow the loaded skill when interpreting User arguments. Retain exactly one unambiguous affirmative root-numbered or nested placement as seed context. Treat negated, conflicting, or absent placement as unresolved and ask whether stages should be root-numbered or nested under `stages/` before previewing stage paths. Select root-numbered only after the user says they have no preference, then use the resolved placement in every preview and generated path.";
 }
 
+function buildSpecialistFirstRunContext(command: CommandName): string {
+  if (command !== "picm-new") return "";
+  return "\n\nSpecialist Folder final guidance: if the approved scaffold uses this profile, derive every detail from its approved generated routes. Name the exact first workflow/task recipe path, its inputs, and expected artifact. Require the user to inspect, edit, and explicitly approve that artifact; keep recipe-named uncertainty visible; and name the approved artifact as where the next action reads from. Do not invent optional folders, recipes, or operations. Recommend `/picm-maintain` after the first real use or a specialist workflow, routing, or stable-guidance change.";
+}
+
 function buildPrompt(
   command: CommandName,
   args: string,
@@ -126,14 +131,15 @@ function buildPrompt(
   const batchGuidance = command === "picm-adopt" || command === "picm-maintain"
     ? `\n\n${proposalBatchGuidance}`
     : "";
+  const specialistFirstRunContext = buildSpecialistFirstRunContext(command);
   if (command === "picm-maintain" || command === "picm-optimize") {
     const workflow = command === "picm-maintain" ? "maintenance" : "optimization";
     return `Privacy-first startup — follow this order exactly:\n1. Call \`picm_scan_control\` with \`action: "preflight"\`. Do not load the skill or use any other tool yet.\n2. After preflight, if it reports \`privacyQuestionIsConcise: true\`, ask exactly:\n\n${concisePrivacyQuestion}\n\nThen call \`picm_scan_control\` with \`action: "privacy"\` and every additional exact path (an empty list for \`none\`).\n3. Otherwise, ask the user:\n\n${adoptionPrivacyQuestion}\n\nThen call \`picm_scan_control\` with \`action: "privacy"\` and every additional exact path (an empty list for \`none\`). Use \`persist: true\` only if the user requests durable exclusions and follow its summary and exact TUI confirmation requirements.\n4. After the privacy call completes, load the \`picm-factory\` skill and continue the ${workflow} workflow.\n\n${commandContext}${previewGuidance}${batchGuidance}${optimizationIntake}`;
   }
   if (privacyBootstrap) {
-    return `Privacy-first startup — follow this order exactly:\n1. Call \`picm_scan_control\` with \`action: "preflight"\`. Do not load the skill or use any other tool yet.\n2. After preflight, ask the user:\n\n${adoptionPrivacyQuestion}\n\n3. Prepare the privacy call with every additional exact path from the reply (an empty list for \`none\`). Use \`persist: true\` only if the user requests durable exclusions. Before a call with \`persist: true\`, present the complete concise \`.picm/config.json\` summary categories: affected files and operations, behavior or configuration changes, linked cross-file moves, preserved behavior, known uncertainty, and review suggestions. Use \`None\` for empty categories, explain the privacy configuration impact, and obtain the user's summary acceptance. Then call \`picm_scan_control\` with \`action: "privacy"\`; its exact TUI patch confirmation is the separate runtime write confirmation.\n4. Only after privacy review completes, load the \`picm-factory\` skill and its \`SKILL.md\`, then continue the ${mode} workflow.\n\n${commandContext}${sensitiveNonGitSafeguards}${adoptionReferenceRouting}${stagePlacementContext}${previewGuidance}${batchGuidance}`;
+    return `Privacy-first startup — follow this order exactly:\n1. Call \`picm_scan_control\` with \`action: "preflight"\`. Do not load the skill or use any other tool yet.\n2. After preflight, ask the user:\n\n${adoptionPrivacyQuestion}\n\n3. Prepare the privacy call with every additional exact path from the reply (an empty list for \`none\`). Use \`persist: true\` only if the user requests durable exclusions. Before a call with \`persist: true\`, present the complete concise \`.picm/config.json\` summary categories: affected files and operations, behavior or configuration changes, linked cross-file moves, preserved behavior, known uncertainty, and review suggestions. Use \`None\` for empty categories, explain the privacy configuration impact, and obtain the user's summary acceptance. Then call \`picm_scan_control\` with \`action: "privacy"\`; its exact TUI patch confirmation is the separate runtime write confirmation.\n4. Only after privacy review completes, load the \`picm-factory\` skill and its \`SKILL.md\`, then continue the ${mode} workflow.\n\n${commandContext}${sensitiveNonGitSafeguards}${adoptionReferenceRouting}${stagePlacementContext}${specialistFirstRunContext}${previewGuidance}${batchGuidance}`;
   }
-  return `Use the picm-factory skill. Load its SKILL.md before proceeding.\n\n${commandContext}${stagePlacementContext}${previewGuidance}${batchGuidance}`;
+  return `Use the picm-factory skill. Load its SKILL.md before proceeding.\n\n${commandContext}${stagePlacementContext}${specialistFirstRunContext}${previewGuidance}${batchGuidance}`;
 }
 
 type PicmFactoryExtensionOptions = {
