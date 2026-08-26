@@ -309,7 +309,7 @@ Fixtures:
 
 Expected behavior:
 
-- Identifies or strongly suggests Specialist Folder.
+- Explicitly identifies Specialist Folder because all four defining signals are present.
 - Recognizes `identity.md`, `rules.md`, `reference/`, and `workflows/` as specialist signals.
 - Treats `examples.md` as optional: present in one fixture, absent in the other.
 - Does not write files without explicit confirmation.
