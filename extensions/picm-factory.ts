@@ -93,11 +93,18 @@ function buildMaintenanceContinuationPrompt(depth: "strict" | "balanced") {
 function buildStagePlacementContext(command: CommandName, args: string): string {
   if (command !== "picm-new") return "";
   const normalized = args.toLowerCase();
-  const seededPlacement = /\broot[- ]numbered(?: folders?)?\b/.test(normalized)
-    ? "root-numbered"
-    : /\bnested (?:under )?(?:the )?stages\b|\bstages\//.test(normalized)
-      ? "nested under `stages/`"
-      : undefined;
+  const rootCue = /\broot[- ]numbered(?: folders?)?\b/;
+  const nestedCue = /\bnested (?:under )?(?:the )?stages\b|\bstages\//;
+  const negation = "(?:do not|don't|not|avoid|without)\\s+(?:(?:use|choose|want|prefer|select)\\s+)?(?:the\\s+)?";
+  const rootIsAffirmative = rootCue.test(normalized) &&
+    !new RegExp(`${negation}${rootCue.source}`).test(normalized);
+  const nestedIsAffirmative = nestedCue.test(normalized) &&
+    !new RegExp(`${negation}(?:${nestedCue.source})`).test(normalized);
+  const seededPlacement = rootIsAffirmative === nestedIsAffirmative
+    ? undefined
+    : rootIsAffirmative
+      ? "root-numbered"
+      : "nested under `stages/`";
   return seededPlacement
     ? `\n\nStage Pipeline placement seed: ${seededPlacement}. If Stage Pipeline is confirmed, retain this explicit placement, skip the placement question, and use it in every preview and generated path.`
     : "\n\nStage Pipeline placement is unresolved. If Stage Pipeline is confirmed, ask whether stages should be root-numbered or nested under `stages/` before previewing stage paths. Select root-numbered only after the user says they have no preference, then use the resolved placement in every preview and generated path.";
