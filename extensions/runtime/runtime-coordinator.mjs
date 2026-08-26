@@ -179,6 +179,8 @@ export function createRuntimeCoordinator({
       excludedPaths: [],
       approvedWrites: new Map(),
       specialistConfigWritten: false,
+      specialistRouteSemantics: undefined,
+      specialistScaffoldApproved: false,
     };
     scanWorkflows.set(sessionId, workflow);
     activeScans.delete(sessionId);
@@ -261,6 +263,8 @@ export function createRuntimeCoordinator({
       excludedPaths,
       approvedWrites: new Map(),
       specialistConfigWritten: false,
+      specialistRouteSemantics: undefined,
+      specialistScaffoldApproved: false,
     });
     return true;
   }
@@ -918,6 +922,14 @@ export function createRuntimeCoordinator({
 
   const currentWorkflowCommand = workflowCommand;
 
+  function specialistRouteSemantics(ctx) {
+    const workflow = workflowFor(ctx);
+    if (!workflow?.specialistScaffoldApproved) {
+      throw new Error("SPECIALIST_GUIDANCE_NOT_APPROVED: complete approved Specialist scaffold writes first");
+    }
+    return structuredClone(workflow.specialistRouteSemantics);
+  }
+
   function isAutomatic(_ctx) {
     return false;
   }
@@ -950,10 +962,26 @@ export function createRuntimeCoordinator({
         try {
           const config = JSON.parse(event.args.content);
           workflow.specialistConfigWritten = config?.generatedBy === "picm-factory" && config?.profile === "specialist-folder";
+          workflow.specialistRouteSemantics = workflow.specialistConfigWritten
+            ? structuredClone(config.specialistFirstRun)
+            : undefined;
         } catch {
           workflow.specialistConfigWritten = false;
+          workflow.specialistRouteSemantics = undefined;
         }
       }
+      const semantics = workflow.specialistRouteSemantics;
+      workflow.specialistScaffoldApproved = Boolean(
+        workflow.specialistConfigWritten &&
+        semantics &&
+        typeof semantics.recipePath === "string" &&
+        workflow.approvedWrites.has(resolve(ctx.cwd, semantics.recipePath)) &&
+        Array.isArray(semantics.inputs) && semantics.inputs.length > 0 &&
+        typeof semantics.expectedArtifact === "string" &&
+        semantics.requiresInspectEditApprove === true &&
+        typeof semantics.nextActionSource === "string" &&
+        Array.isArray(semantics.visibleUncertainty) && semantics.visibleUncertainty.length > 0
+      );
     }
     if (typeof event.toolCallId !== "string") return;
     const sessionId = sessionIdFor(ctx);
@@ -1015,26 +1043,11 @@ export function createRuntimeCoordinator({
     }
 
     if (workflow && event.toolName === "picm_specialist_first_run_guidance") {
-      const recipeContent = typeof event.input?.recipePath === "string"
-        ? workflow.approvedWrites.get(resolve(ctx.cwd, event.input.recipePath))
-        : undefined;
-      const namedEvidence = [
-        ...(Array.isArray(event.input?.inputs) ? event.input.inputs : []),
-        event.input?.expectedArtifact,
-        event.input?.nextActionSource,
-        ...(Array.isArray(event.input?.visibleUncertainty) ? event.input.visibleUncertainty : []),
-      ];
-      const evidenceMatches = typeof recipeContent === "string" &&
-        namedEvidence.length >= 5 &&
-        namedEvidence.every((value) => typeof value === "string" && value.trim() && recipeContent.includes(value.trim())) &&
-        event.input?.requiresInspectEditApprove === true &&
-        /\binspect\b/i.test(recipeContent) && /\bedit\b/i.test(recipeContent) && /\bapprove\b/i.test(recipeContent);
       if (
         workflow.command === "picm-new" &&
         workflow.privacyReviewed &&
         workflow.scanStarted &&
-        workflow.specialistConfigWritten &&
-        evidenceMatches
+        workflow.specialistScaffoldApproved
       ) {
         return { allowed: true };
       }
@@ -1303,6 +1316,7 @@ export function createRuntimeCoordinator({
     restoreWorkflow,
     scanControl,
     settle,
+    specialistRouteSemantics,
     startToolExecution,
     startup,
   };

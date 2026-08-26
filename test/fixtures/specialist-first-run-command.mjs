@@ -29,7 +29,7 @@ export async function runSpecialistFirstRunCommand({ commands, tools, handlers, 
   await commands.get("picm-new").handler(args, context);
 
   const dispatch = sent.at(-1);
-  const toolName = dispatch?.match(/call `([^`]+)` with the exact route semantics from the approved recipe/)?.[1];
+  const toolName = dispatch?.match(/then call `([^`]+)` after the config and named recipe are written/)?.[1];
   if (!toolName || !dispatch.includes("use its returned text as the final first-run guidance")) {
     throw new Error("SPECIALIST_TEST_ORCHESTRATION_INCOMPLETE: picm-new did not dispatch final guidance");
   }
@@ -62,6 +62,7 @@ export async function runSpecialistFirstRunCommand({ commands, tools, handlers, 
         generatedBy: "picm-factory",
         createdAt: "2026-08-26T00:00:00.000Z",
         paths: { rootInstructions: "AGENTS.md" },
+        specialistFirstRun: input,
       }),
     },
     isError: false,
@@ -72,10 +73,10 @@ export async function runSpecialistFirstRunCommand({ commands, tools, handlers, 
     args: { path: recipePath, content: recipe },
     isError: false,
   }, context);
-  const event = { toolName, toolCallId: "specialist-final-guidance", input };
+  const event = { toolName, toolCallId: "specialist-final-guidance", input: {} };
   const admission = await handlers.get("tool_call")(event, context);
   if (admission?.block) throw new Error(`SPECIALIST_TEST_TOOL_BLOCKED: ${admission.reason}`);
-  const result = await tool.execute(event.toolCallId, input, undefined, undefined, context);
+  const result = await tool.execute(event.toolCallId, {}, undefined, undefined, context);
   handlers.get("tool_execution_end")({ toolCallId: event.toolCallId }, context);
   return result.content[0].text;
 }

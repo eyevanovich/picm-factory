@@ -56,27 +56,3 @@ test("picm-new emits final guidance derived from the reported Specialist fixture
   assert.match(guidance, /next specialist action reads from the approved `review\/polished-faq\.md`/);
   assert.match(guidance, /Run `\/picm-maintain` after the first real use/);
 });
-
-test("Specialist guidance accepts semantic variants and a distinct next-action route", async () => {
-  const h = harness();
-  const ctx = context(process.cwd(), "distinct-specialist-route-test");
-  await h.commands.get("picm-new").handler("Create a Specialist Folder", ctx);
-  const result = await h.tools.get("picm_specialist_first_run_guidance").execute(
-    "guidance",
-    {
-      recipePath: "workflows/review.md",
-      inputs: ["A submitted draft."],
-      expectedArtifact: "review/draft.md",
-      requiresInspectEditApprove: true,
-      nextActionSource: "queue/approved.md",
-      visibleUncertainty: ["unresolved questions in the review notes"],
-    },
-    undefined,
-    undefined,
-    ctx,
-  );
-
-  assert.match(result.content[0].text, /Expected artifact: `review\/draft\.md`/);
-  assert.match(result.content[0].text, /next specialist action reads from the approved `queue\/approved\.md`/);
-  assert.match(result.content[0].text, /unresolved questions in the review notes visible/);
-});

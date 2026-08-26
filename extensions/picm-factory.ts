@@ -104,7 +104,7 @@ function buildStagePlacementContext(command: CommandName): string {
 
 function buildSpecialistFirstRunContext(command: CommandName): string {
   if (command !== "picm-new") return "";
-  return "\n\nSpecialist Folder final guidance: if the approved scaffold uses this profile, call `picm_specialist_first_run_guidance` with the exact route semantics from the approved recipe, then use its returned text as the final first-run guidance. Derive every field from approved generated routes and do not invent optional folders, recipes, or operations.";
+  return "\n\nSpecialist Folder final guidance: if the approved scaffold uses this profile, record the exact approved first-run route semantics in `.picm/config.json` under `specialistFirstRun`, then call `picm_specialist_first_run_guidance` after the config and named recipe are written. Use its returned text as the final first-run guidance. Derive every field from approved generated routes and do not invent optional folders, recipes, or operations.";
 }
 
 function buildPrompt(
@@ -245,21 +245,14 @@ export default function picmFactoryExtension(
     description: "Render final Specialist Folder guidance from an approved generated recipe",
     promptSnippet: "Render route-derived final guidance after approving a Specialist Folder scaffold",
     promptGuidelines: [
-      "After approving a Specialist Folder scaffold, pass the exact recipe path, inputs, expected artifact, inspect/edit/approve requirement, next-action source, and visible uncertainty categories derived from its approved generated routes, then use the returned text as the final first-run guidance.",
+      "After approved Specialist config and recipe writes, call with no arguments and use the returned text as the final first-run guidance.",
     ],
-    parameters: Type.Object({
-      recipePath: Type.String({ minLength: 1 }),
-      inputs: Type.Array(Type.String({ minLength: 1 }), { minItems: 1 }),
-      expectedArtifact: Type.String({ minLength: 1 }),
-      requiresInspectEditApprove: Type.Boolean(),
-      nextActionSource: Type.String({ minLength: 1 }),
-      visibleUncertainty: Type.Array(Type.String({ minLength: 1 }), { minItems: 1 }),
-    }),
-    async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
+    parameters: Type.Object({}),
+    async execute(_toolCallId, _params, _signal, _onUpdate, ctx) {
       if (!ctx || coordinator.workflowCommand(ctx) !== "picm-new") {
         throw new Error("SPECIALIST_GUIDANCE_NOT_AUTHORIZED: invoke /picm-new before rendering final guidance");
       }
-      const guidance = renderSpecialistFirstRunGuidance(params);
+      const guidance = renderSpecialistFirstRunGuidance(coordinator.specialistRouteSemantics(ctx));
       return { content: [{ type: "text", text: guidance }], details: { guidance } };
     },
   });
