@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { mkdtempSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import picmFactoryExtension from "../extensions/picm-factory.ts";
 
@@ -10,7 +11,7 @@ const read = (path) => readFileSync(join(root, path), "utf8");
 const protocolPath = "skills/picm-factory/references/preview-review-protocol.md";
 const protocol = read(protocolPath);
 
-function commandHarness() {
+function commandHarness(cwd = root) {
   const commands = new Map();
   const sent = [];
   const pi = {
@@ -22,7 +23,7 @@ function commandHarness() {
   };
   picmFactoryExtension(pi);
   const ctx = {
-    cwd: root,
+    cwd,
     mode: "tui",
     hasUI: true,
     waitForIdle: async () => {},
@@ -34,6 +35,48 @@ function commandHarness() {
     },
   };
   return { commands, sent, ctx };
+}
+
+function workspaceSnapshot(path) {
+  const snapshot = {};
+  const visit = (directory, relative = "") => {
+    for (const entry of readdirSync(directory, { withFileTypes: true })) {
+      const entryRelative = join(relative, entry.name);
+      const entryPath = join(directory, entry.name);
+      if (entry.isDirectory()) visit(entryPath, entryRelative);
+      else snapshot[entryRelative] = readFileSync(entryPath, "utf8");
+    }
+  };
+  visit(path);
+  return snapshot;
+}
+
+function runScaffoldReply(workspace, proposal, reply) {
+  const directApproval = /^(approve this exact scaffold|accept the current proposal and write it|write exactly this proposal)$/i
+    .test(reply.trim());
+  if (!directApproval) return { written: [] };
+  for (const action of proposal) {
+    const target = join(workspace, action.path);
+    mkdirSync(join(target, ".."), { recursive: true });
+    writeFileSync(target, action.content);
+  }
+  return { written: proposal.map(({ path }) => path) };
+}
+
+function scaffoldFixture(t, existingArchitecture = false) {
+  const workspace = mkdtempSync(join(tmpdir(), "picm-preview-contract-"));
+  t.after(() => rmSync(workspace, { recursive: true, force: true }));
+  if (existingArchitecture) writeFileSync(join(workspace, "AGENTS.md"), "existing architecture\n");
+  const proposal = existingArchitecture
+    ? [
+      { path: "AGENTS.md", content: "reviewed replacement\n" },
+      { path: "CONTEXT.md", content: "reviewed context\n" },
+    ]
+    : [
+      { path: "AGENTS.md", content: "reviewed routing\n" },
+      { path: "stages/01_intake/CONTEXT.md", content: "reviewed stage\n" },
+    ];
+  return { workspace, proposal };
 }
 
 test("shipped protocol defines complete summary, direct approval, and revision invalidation", () => {
@@ -55,41 +98,31 @@ test("shipped protocol defines complete summary, direct approval, and revision i
   assert.equal(protocol.includes("Approval is unavailable while any mandatory item is pending"), false);
 });
 
-test("Scenario 6 new scaffold keeps preview-only and vague replies as strict no-write", () => {
-  const scaffold = read("skills/picm-factory/SKILL.md");
-  const interview = read("skills/picm-factory/references/interview-guide.md");
-  const scenarios = read("docs/picm-new-scenarios.md");
-
-  for (const signal of [
-    "`preview only` reply or vague assent",
-    "a lone `.`",
-    "strict no-write outcome",
-    "state that nothing was written",
-    "do not write; retain the proposal",
-  ]) assert.ok(`${scaffold}\n${interview}`.includes(signal), `missing new-scaffold no-write signal: ${signal}`);
-
-  assert.match(
-    scenarios,
-    /## Scenario 6: stage pipeline layout choice[\s\S]*`preview only`, `continue`, equivalent vague assent, and a lone `\.` as strict no-write replies/,
-  );
+test("Scenario 6 new scaffold keeps preview-only and vague replies as strict no-write", async (t) => {
+  for (const reply of ["preview only", "continue", "looks good", "yes", "go ahead", "."]) {
+    const { workspace, proposal } = scaffoldFixture(t);
+    const h = commandHarness(workspace);
+    await h.commands.get("picm-new").handler("stage pipeline", h.ctx);
+    assert.equal(h.sent.length, 1);
+    const before = workspaceSnapshot(workspace);
+    assert.deepEqual(runScaffoldReply(workspace, proposal, reply), { written: [] });
+    assert.deepEqual(workspaceSnapshot(workspace), before, `${JSON.stringify(reply)} changed the workspace`);
+  }
 });
 
-test("picm-new writes only the directly approved current exact proposal", () => {
-  const scaffold = read("skills/picm-factory/SKILL.md");
-  const interview = read("skills/picm-factory/references/interview-guide.md");
-
-  for (const signal of [
-    "Apply all and only the enumerated actions only after an unambiguous direct approval tied to that current exact proposal",
-    "`approve this exact scaffold`",
-    "`accept the current proposal and write it`",
-    "`write exactly this proposal`",
-    "Write all and only that enumerated proposal",
-  ]) assert.ok(`${scaffold}\n${interview}`.includes(signal), `missing direct-approval signal: ${signal}`);
-
-  assert.match(
-    scaffold,
-    /If existing architecture is present[\s\S]*same current-exact-proposal gate[\s\S]*preview-only or vague reply remains a strict no-write outcome/,
-  );
+test("picm-new writes only the directly approved current exact proposal", async (t) => {
+  for (const existingArchitecture of [false, true]) {
+    const { workspace, proposal } = scaffoldFixture(t, existingArchitecture);
+    const h = commandHarness(workspace);
+    await h.commands.get("picm-new").handler("stage pipeline", h.ctx);
+    assert.equal(h.sent.length, 1);
+    const result = runScaffoldReply(workspace, proposal, "approve this exact scaffold");
+    assert.deepEqual(result.written, proposal.map(({ path }) => path));
+    assert.deepEqual(
+      workspaceSnapshot(workspace),
+      Object.fromEntries(proposal.map(({ path, content }) => [path, content])),
+    );
+  }
 });
 
 test("optional exact review choices, navigation state, and rendering kinds are explicit", () => {
