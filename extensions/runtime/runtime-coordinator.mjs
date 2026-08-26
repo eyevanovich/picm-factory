@@ -7,6 +7,7 @@ import {
   applyProposalBatch,
   prepareProposalBatch,
   proposalAudit,
+  proposalSummary,
 } from "./proposal-batch.mjs";
 
 const EXPLICIT_SCAN_COMMANDS = new Set(["picm-new", "picm-adopt", "picm-maintain", "picm-optimize"]);
@@ -460,7 +461,7 @@ export function createRuntimeCoordinator({
     const current = proposalBatches.get(sessionId);
     if (!current || current.cwd !== ctx.cwd || current.status === "applied") return undefined;
     const status = proposalResponseStatus(prompt);
-    if (!current.presented && status === "approved") {
+    if (!current.presentation && status === "approved") {
       return proposalAudit(current.batch, "approval-observed", { approval: "pending" });
     }
     if (status === "approved" && current.status === "pending") current.status = "approved";
@@ -505,7 +506,7 @@ export function createRuntimeCoordinator({
         command: workflow.command,
         batch,
         status: "pending",
-        presented: false,
+        presentation: undefined,
       });
       return {
         ok: true,
@@ -547,22 +548,21 @@ export function createRuntimeCoordinator({
           message: "digest does not match the current exact proposal batch",
         };
       }
-      const summary = typeof params.summary === "string" ? params.summary.trim() : "";
-      if (!summary) {
-        return {
-          ok: false,
-          code: "PICM_PROPOSAL_SUMMARY_REQUIRED",
-          message: "A rendered summary is required before requesting approval",
-        };
-      }
-      current.presented = true;
+      const summary = proposalSummary(current.batch);
+      const approvalPrompt = "Reply accept, approve, accept and write, or proceed to apply this exact proposal; otherwise request changes or cancel.";
+      current.presentation = {
+        proposalId: current.batch.id,
+        digest: current.batch.digest,
+        summary,
+        approvalPrompt,
+      };
       return {
         ok: true,
         action: "present",
         proposalId: current.batch.id,
         digest: current.batch.digest,
         summary,
-        approvalPrompt: "Reply accept, approve, accept and write, or proceed to apply this exact proposal; otherwise request changes or cancel.",
+        approvalPrompt,
         audit: proposalAudit(current.batch, "presented", { command: workflow.command }),
       };
     }

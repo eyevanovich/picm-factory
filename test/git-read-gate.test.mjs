@@ -1280,13 +1280,12 @@ test("approved adoption and maintenance batches apply mixed operations atomicall
         undefined,
         ctx,
       );
-      const present = async (prepared, summary = "Complete proposal summary") => batch.execute(
+      const present = async (prepared) => batch.execute(
         "present",
         {
           action: "present",
           proposalId: prepared.details.proposalId,
           digest: prepared.details.digest,
-          summary,
         },
         undefined,
         undefined,
@@ -1316,11 +1315,16 @@ test("approved adoption and maintenance batches apply mixed operations atomicall
         action: "present",
         proposalId: aborted.details.proposalId,
         digest: "wrong-digest",
-        summary: "Complete proposal summary",
       }, undefined, undefined, ctx);
       assert.equal(stalePresentation.details.ok, false);
       const presentedAbort = await present(aborted);
       assert.equal(presentedAbort.details.digest, aborted.details.digest);
+      assert.equal(presentedAbort.details.summary, [
+        `Exact proposal: ${aborted.details.proposalId}`,
+        `Digest: ${aborted.details.digest}`,
+        "Operations (4):",
+        JSON.stringify(operations(), null, 2),
+      ].join("\n"));
       await h.handlers.get("before_agent_start")({ prompt: "approve" }, ctx);
       let abortChecks = 0;
       const abortAfterFirstMutation = {

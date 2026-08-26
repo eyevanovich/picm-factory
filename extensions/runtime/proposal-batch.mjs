@@ -92,6 +92,22 @@ function auditOperations(operations) {
   return operations.map(({ type, path, from }) => ({ type, path, ...(from ? { from } : {}) }));
 }
 
+export function proposalSummary(batch) {
+  const operations = batch.operations.map(({ type, path, from, expectedContent, content }) => ({
+    type,
+    ...(from === undefined ? {} : { from }),
+    path,
+    ...(expectedContent === undefined ? {} : { expectedContent }),
+    ...(content === undefined ? {} : { content }),
+  }));
+  return [
+    `Exact proposal: ${batch.id}`,
+    `Digest: ${batch.digest}`,
+    `Operations (${operations.length}):`,
+    JSON.stringify(operations, null, 2),
+  ].join("\n");
+}
+
 function matchesExpected(buffer, expectedContent) {
   return Buffer.compare(buffer, Buffer.from(expectedContent, "utf8")) === 0;
 }
