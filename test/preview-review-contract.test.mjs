@@ -230,6 +230,47 @@ test("picm-new retries a reviewed operation after failed execution", async (t) =
   assert.equal(retry, undefined);
 });
 
+test("picm-new invalidates stale operations after a revision request", async (t) => {
+  const { workspace, proposal } = scaffoldFixture(t);
+  const h = commandHarness(workspace);
+  await h.commands.get("picm-new").handler("stage pipeline", h.ctx);
+  const staleOperation = { tool: "write", input: proposal[0] };
+  await h.tools.get("picm_scaffold_proposal").execute(
+    "proposal-a",
+    { action: "preview", operations: [staleOperation] },
+    undefined,
+    undefined,
+    h.ctx,
+  );
+  await h.handlers.get("input")({ text: "Change AGENTS.md to use the revised routing", source: "interactive" }, h.ctx);
+  await h.handlers.get("input")({ text: "approve this exact scaffold", source: "interactive" }, h.ctx);
+  const stale = await h.handlers.get("tool_call")({
+    toolName: "write",
+    toolCallId: "stale-write",
+    input: staleOperation.input,
+  }, h.ctx);
+  assert.equal(stale.block, true);
+
+  const revisedOperation = {
+    tool: "write",
+    input: { path: "AGENTS.md", content: "revised reviewed routing\n" },
+  };
+  await h.tools.get("picm_scaffold_proposal").execute(
+    "proposal-b",
+    { action: "preview", operations: [revisedOperation] },
+    undefined,
+    undefined,
+    h.ctx,
+  );
+  await h.handlers.get("input")({ text: "approve this exact scaffold", source: "interactive" }, h.ctx);
+  const revised = await h.handlers.get("tool_call")({
+    toolName: "write",
+    toolCallId: "revised-write",
+    input: revisedOperation.input,
+  }, h.ctx);
+  assert.equal(revised, undefined);
+});
+
 test("optional exact review choices, navigation state, and rendering kinds are explicit", () => {
   assert.deepEqual(
     [...protocol.matchAll(/^\d\. \*\*(View all|Select files|Return to summary)\*\*$/gm)].map((match) => match[1]),

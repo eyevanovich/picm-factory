@@ -36,6 +36,7 @@ const directScaffoldApprovals = new Set([
   "write exactly this proposal",
   "i approve the current exact proposal; write it now",
 ]);
+const retainedScaffoldReplies = new Set(["preview only", "continue", "looks good", "yes", "go ahead", "."]);
 const nonMutatingScaffoldTools = new Set(["read", "grep", "rg", "find", "ls", "picm_scan_control"]);
 
 const commandDescriptions: Record<CommandName, string> = {
@@ -200,6 +201,7 @@ export default function picmFactoryExtension(
       reservedBy?: string;
     }>;
     approved: boolean;
+    invalidated: boolean;
   }>();
   const sessionId = (ctx: ExtensionContext) => ctx.sessionManager.getSessionId();
 
@@ -393,7 +395,7 @@ export default function picmFactoryExtension(
         input: structuredClone(operation.input),
         consumed: false,
       }));
-      scaffoldProposals.set(sessionId(ctx), { previewId, operations, approved: false });
+      scaffoldProposals.set(sessionId(ctx), { previewId, operations, approved: false, invalidated: false });
       const result = { previewId, operations: params.operations };
       return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }], details: result };
     },
@@ -441,7 +443,17 @@ export default function picmFactoryExtension(
   pi.on("input", (event, ctx) => {
     const proposal = scaffoldProposals.get(sessionId(ctx));
     if (event.source === "extension" || !proposal) return;
-    if (proposal) proposal.approved = directScaffoldApprovals.has(event.text.trim().toLowerCase());
+    const reply = event.text.trim().toLowerCase();
+    if (directScaffoldApprovals.has(reply)) {
+      proposal.approved = !proposal.invalidated;
+      return;
+    }
+    proposal.approved = false;
+    const reviewNavigation = reply === "view all" || reply === "review files" ||
+      /^show (?:the )?diff(?: for .+)?$/.test(reply) || /^inspect (?:the )?(?:diff|file)(?: .+)?$/.test(reply);
+    if (!retainedScaffoldReplies.has(reply) && !reviewNavigation) {
+      proposal.invalidated = true;
+    }
   });
 
   pi.on("tool_call", async (event, ctx) => {
