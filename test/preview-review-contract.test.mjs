@@ -55,6 +55,43 @@ test("shipped protocol defines complete summary, direct approval, and revision i
   assert.equal(protocol.includes("Approval is unavailable while any mandatory item is pending"), false);
 });
 
+test("Scenario 6 new scaffold keeps preview-only and vague replies as strict no-write", () => {
+  const scaffold = read("skills/picm-factory/SKILL.md");
+  const interview = read("skills/picm-factory/references/interview-guide.md");
+  const scenarios = read("docs/picm-new-scenarios.md");
+
+  for (const signal of [
+    "`preview only` reply or vague assent",
+    "a lone `.`",
+    "strict no-write outcome",
+    "state that nothing was written",
+    "do not write; retain the proposal",
+  ]) assert.ok(`${scaffold}\n${interview}`.includes(signal), `missing new-scaffold no-write signal: ${signal}`);
+
+  assert.match(
+    scenarios,
+    /## Scenario 6: stage pipeline layout choice[\s\S]*`preview only`, `continue`, equivalent vague assent, and a lone `\.` as strict no-write replies/,
+  );
+});
+
+test("picm-new writes only the directly approved current exact proposal", () => {
+  const scaffold = read("skills/picm-factory/SKILL.md");
+  const interview = read("skills/picm-factory/references/interview-guide.md");
+
+  for (const signal of [
+    "Apply all and only the enumerated actions only after an unambiguous direct approval tied to that current exact proposal",
+    "`approve this exact scaffold`",
+    "`accept the current proposal and write it`",
+    "`write exactly this proposal`",
+    "Write all and only that enumerated proposal",
+  ]) assert.ok(`${scaffold}\n${interview}`.includes(signal), `missing direct-approval signal: ${signal}`);
+
+  assert.match(
+    scaffold,
+    /If existing architecture is present[\s\S]*same current-exact-proposal gate[\s\S]*preview-only or vague reply remains a strict no-write outcome/,
+  );
+});
+
 test("optional exact review choices, navigation state, and rendering kinds are explicit", () => {
   assert.deepEqual(
     [...protocol.matchAll(/^\d\. \*\*(View all|Select files|Return to summary)\*\*$/gm)].map((match) => match[1]),

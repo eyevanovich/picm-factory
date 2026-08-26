@@ -145,10 +145,14 @@ Before writing files:
    - no git repo: recommend `git init`; require explicit confirmation to proceed without git
    - dirty repo: show `git status --short`; require confirmation
    - clean repo: proceed after scaffold approval
-3. Preview file actions:
+3. Preview one current exact scaffold proposal:
+   - enumerate every create, append, update, and overwrite action
    - create missing files/folders
    - append/update existing safe files only with exact proposed changes
    - no silent overwrites
+   - `preview only`, review/navigation requests, profile or cadence choices, vague assent (`continue`, `looks good`, `yes`, or `go ahead`), and a lone `.` are strict no-write replies; keep the proposal pending and state that nothing was written
+   - write all and only the enumerated actions only after an unambiguous direct approval tied to the current exact proposal, such as `approve this exact scaffold`, `accept the current proposal and write it`, or `write exactly this proposal`
+   - a requested adjustment supersedes pending approval; refresh the proposal before accepting direct approval
 4. Ensure generated files contain no unresolved bracket placeholders.
 
 ## End state
