@@ -28,6 +28,11 @@ type CommandName = "picm-new" | "picm-adopt" | "picm-maintain" | "picm-optimize"
 
 const scanWorkflowEntryType = "picm-scan-workflow";
 const proposalBatchEntryType = "picm-proposal-batch";
+const directScaffoldApprovals = new Set([
+  "approve this exact scaffold",
+  "accept the current proposal and write it",
+  "write exactly this proposal",
+]);
 
 const commandDescriptions: Record<CommandName, string> = {
   "picm-new": "Create a workspace; optionally add a workflow description after the command",
@@ -182,6 +187,8 @@ export default function picmFactoryExtension(
     packageRoot,
     canonicalPackageRoot,
   });
+  const scaffoldWriteApproval = new Map<string, boolean>();
+  const sessionId = (ctx: ExtensionContext) => ctx.sessionManager.getSessionId();
 
   const registerBoundBuiltin = (
     toolName: "read" | "edit" | "write" | "grep" | "rg" | "find" | "ls",
@@ -386,9 +393,23 @@ export default function picmFactoryExtension(
     coordinator.startToolExecution(event, ctx);
   });
 
+  pi.on("input", (event, ctx) => {
+    if (event.source === "extension" || coordinator.currentWorkflowCommand(ctx) !== "picm-new") return;
+    scaffoldWriteApproval.set(sessionId(ctx), directScaffoldApprovals.has(event.text.trim().toLowerCase()));
+  });
+
   pi.on("tool_call", async (event, ctx) => {
     let admitted = false;
     try {
+      if (
+        coordinator.currentWorkflowCommand(ctx) === "picm-new" &&
+        (event.toolName === "write" || event.toolName === "edit") &&
+        !scaffoldWriteApproval.get(sessionId(ctx))
+      ) {
+        const reason = "[picm-factory] Blocked scaffold write: directly approve the current exact proposal first";
+        if (ctx.hasUI) ctx.ui.notify(reason, "warning");
+        return { block: true, reason };
+      }
       const decision = await coordinator.checkToolCall(event, ctx);
       if (!decision.allowed) {
         const reason = `[picm-factory] Blocked by PiCM scan gate: ${decision.reason}`;
@@ -492,6 +513,7 @@ export default function picmFactoryExtension(
   });
 
   pi.on("agent_settled", async (_event, ctx) => {
+    scaffoldWriteApproval.delete(sessionId(ctx));
     if (coordinator.settle(ctx)) recordClearedWorkflow(ctx);
   });
 

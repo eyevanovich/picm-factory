@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import picmFactoryExtension from "../extensions/picm-factory.ts";
@@ -13,15 +13,40 @@ const protocol = read(protocolPath);
 
 function commandHarness(cwd = root) {
   const commands = new Map();
+  const handlers = new Map();
+  const tools = new Map();
   const sent = [];
   const pi = {
     registerCommand(name, definition) { commands.set(name, definition); },
-    registerTool() {},
-    on() {},
+    registerTool(definition) { tools.set(definition.name, definition); },
+    on(name, handler) { handlers.set(name, handler); },
     appendEntry() {},
     sendUserMessage(message) { sent.push(message); },
   };
-  picmFactoryExtension(pi);
+  let command;
+  picmFactoryExtension(pi, {
+    createCoordinator: () => ({
+      admitToolExecution() {},
+      authorizeWorkflow(_ctx, nextCommand) { command = nextCommand; return { command: nextCommand }; },
+      beginBoundPathExecution() {},
+      checkToolCall: async () => ({ allowed: true }),
+      clearWorkflow() { command = undefined; return true; },
+      continueAdoptionAsMaintenance() {},
+      currentWorkflowCommand: () => command,
+      dispose: async () => {},
+      endToolExecution() {},
+      hasAdoptedStatus: async () => false,
+      isWorkflowCompleted: () => false,
+      maintenancePolicy() {},
+      rejectToolExecution() {},
+      resetCycle() {},
+      restoreWorkflow() {},
+      scanControl() {},
+      settle: () => false,
+      startToolExecution() {},
+      startup: async () => {},
+    }),
+  });
   const ctx = {
     cwd,
     mode: "tui",
@@ -34,7 +59,7 @@ function commandHarness(cwd = root) {
       select: async (_title, items) => items[0],
     },
   };
-  return { commands, sent, ctx };
+  return { commands, handlers, sent, tools, ctx };
 }
 
 function workspaceSnapshot(path) {
@@ -51,16 +76,17 @@ function workspaceSnapshot(path) {
   return snapshot;
 }
 
-function runScaffoldReply(workspace, proposal, reply) {
-  const directApproval = /^(approve this exact scaffold|accept the current proposal and write it|write exactly this proposal)$/i
-    .test(reply.trim());
-  if (!directApproval) return { written: [] };
+async function runScaffoldReply(h, proposal, reply) {
+  await h.handlers.get("input")({ text: reply, source: "interactive" }, h.ctx);
+  const written = [];
   for (const action of proposal) {
-    const target = join(workspace, action.path);
-    mkdirSync(join(target, ".."), { recursive: true });
-    writeFileSync(target, action.content);
+    const input = { path: action.path, content: action.content };
+    const decision = await h.handlers.get("tool_call")({ toolName: "write", toolCallId: action.path, input }, h.ctx);
+    if (decision?.block) continue;
+    await h.tools.get("write").execute(action.path, input, undefined, undefined, h.ctx);
+    written.push(action.path);
   }
-  return { written: proposal.map(({ path }) => path) };
+  return { written };
 }
 
 function scaffoldFixture(t, existingArchitecture = false) {
@@ -105,7 +131,7 @@ test("Scenario 6 new scaffold keeps preview-only and vague replies as strict no-
     await h.commands.get("picm-new").handler("stage pipeline", h.ctx);
     assert.equal(h.sent.length, 1);
     const before = workspaceSnapshot(workspace);
-    assert.deepEqual(runScaffoldReply(workspace, proposal, reply), { written: [] });
+    assert.deepEqual(await runScaffoldReply(h, proposal, reply), { written: [] });
     assert.deepEqual(workspaceSnapshot(workspace), before, `${JSON.stringify(reply)} changed the workspace`);
   }
 });
@@ -116,7 +142,7 @@ test("picm-new writes only the directly approved current exact proposal", async 
     const h = commandHarness(workspace);
     await h.commands.get("picm-new").handler("stage pipeline", h.ctx);
     assert.equal(h.sent.length, 1);
-    const result = runScaffoldReply(workspace, proposal, "approve this exact scaffold");
+    const result = await runScaffoldReply(h, proposal, "approve this exact scaffold");
     assert.deepEqual(result.written, proposal.map(({ path }) => path));
     assert.deepEqual(
       workspaceSnapshot(workspace),

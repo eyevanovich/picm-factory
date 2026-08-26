@@ -715,6 +715,8 @@ export function createRuntimeCoordinator({
     return workflowFor(ctx)?.command;
   }
 
+  const currentWorkflowCommand = workflowCommand;
+
   function isAutomatic(_ctx) {
     return false;
   }
@@ -1032,6 +1034,7 @@ export function createRuntimeCoordinator({
     clearWorkflow,
     claimInitialMaintenanceOffer,
     continueAdoptionAsMaintenance,
+    currentWorkflowCommand,
     dispose,
     endToolExecution,
     isWorkflowCompleted,
