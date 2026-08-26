@@ -92,6 +92,12 @@ async function runScaffoldReply(h, proposal, reply) {
     const decision = await h.handlers.get("tool_call")({ toolName: "write", toolCallId: action.path, input }, h.ctx);
     if (decision?.block) continue;
     await h.tools.get("write").execute(action.path, input, undefined, undefined, h.ctx);
+    await h.handlers.get("tool_execution_end")({
+      toolCallId: action.path,
+      toolName: "write",
+      result: {},
+      isError: false,
+    }, h.ctx);
     written.push(action.path);
   }
   return { written };
@@ -189,6 +195,39 @@ test("picm-new rejects unregistered mutations and alternate write-capable tools"
   assert.equal(unregistered.block, true);
   assert.equal(bash.block, true);
   assert.deepEqual(workspaceSnapshot(workspace), {});
+});
+
+test("picm-new retries a reviewed operation after failed execution", async (t) => {
+  const { workspace, proposal } = scaffoldFixture(t);
+  const h = commandHarness(workspace);
+  await h.commands.get("picm-new").handler("stage pipeline", h.ctx);
+  const operation = { tool: "write", input: proposal[0] };
+  await h.tools.get("picm_scaffold_proposal").execute(
+    "proposal",
+    { action: "preview", operations: [operation] },
+    undefined,
+    undefined,
+    h.ctx,
+  );
+  await h.handlers.get("input")({ text: "approve this exact scaffold", source: "interactive" }, h.ctx);
+  const first = await h.handlers.get("tool_call")({
+    toolName: "write",
+    toolCallId: "failed-write",
+    input: operation.input,
+  }, h.ctx);
+  assert.equal(first, undefined);
+  await h.handlers.get("tool_execution_end")({
+    toolCallId: "failed-write",
+    toolName: "write",
+    result: {},
+    isError: true,
+  }, h.ctx);
+  const retry = await h.handlers.get("tool_call")({
+    toolName: "write",
+    toolCallId: "retry-write",
+    input: operation.input,
+  }, h.ctx);
+  assert.equal(retry, undefined);
 });
 
 test("optional exact review choices, navigation state, and rendering kinds are explicit", () => {

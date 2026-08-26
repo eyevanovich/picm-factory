@@ -193,7 +193,12 @@ export default function picmFactoryExtension(
   });
   const scaffoldProposals = new Map<string, {
     previewId: string;
-    operations: Array<{ tool: "write" | "edit"; input: Record<string, unknown>; consumed: boolean }>;
+    operations: Array<{
+      tool: "write" | "edit";
+      input: Record<string, unknown>;
+      consumed: boolean;
+      reservedBy?: string;
+    }>;
     approved: boolean;
   }>();
   const sessionId = (ctx: ExtensionContext) => ctx.sessionManager.getSessionId();
@@ -441,12 +446,13 @@ export default function picmFactoryExtension(
 
   pi.on("tool_call", async (event, ctx) => {
     let admitted = false;
-    let matchedOperation: { consumed: boolean } | undefined;
+    let matchedOperation: { consumed: boolean; reservedBy?: string } | undefined;
     try {
       const proposal = scaffoldProposals.get(sessionId(ctx));
       if (proposal) {
         const operation = proposal?.operations.find((candidate) =>
-          !candidate.consumed && candidate.tool === event.toolName && isDeepStrictEqual(candidate.input, event.input)
+          !candidate.consumed && !candidate.reservedBy &&
+          candidate.tool === event.toolName && isDeepStrictEqual(candidate.input, event.input)
         );
         const maintenancePreview = event.toolName === "picm_maintenance_policy" && event.input?.action === "preview";
         const allowedControl = nonMutatingScaffoldTools.has(event.toolName) ||
@@ -466,7 +472,7 @@ export default function picmFactoryExtension(
         if (ctx.hasUI) ctx.ui.notify(reason, "warning");
         return { block: true, reason };
       }
-      if (matchedOperation) matchedOperation.consumed = true;
+      if (matchedOperation) matchedOperation.reservedBy = event.toolCallId;
       coordinator.admitToolExecution(event, ctx);
       admitted = true;
     } finally {
@@ -475,6 +481,12 @@ export default function picmFactoryExtension(
   });
 
   pi.on("tool_execution_end", (event, ctx) => {
+    const proposal = scaffoldProposals.get(sessionId(ctx));
+    const operation = proposal?.operations.find((candidate) => candidate.reservedBy === event.toolCallId);
+    if (operation) {
+      operation.reservedBy = undefined;
+      if (!event.isError) operation.consumed = true;
+    }
     coordinator.endToolExecution(event, ctx);
   });
 
