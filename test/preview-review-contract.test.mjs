@@ -116,18 +116,14 @@ test("skill and adoption references retain one summary-and-approval flow", () =>
   );
 });
 
-test("adopt dispatch emits the no-agent-files proposal contract", async () => {
+test("adopt dispatch routes proposal behavior to the adoption guide", async () => {
   const h = commandHarness();
   await h.commands.get("picm-adopt").handler("", h.ctx);
 
   assert.equal(h.sent.length, 1);
   const prompt = h.sent[0];
-  assert.match(prompt, /neither `AGENTS\.md` nor `CLAUDE\.md` exists/);
-  assert.match(prompt, /recommend `AGENTS\.md` as the default routing source/);
-  assert.match(prompt, /before presenting the final proposal, explicitly ask whether to draft a small `CLAUDE\.md` compatibility shim/);
-  assert.match(prompt, /accepted shim appears only in the draft/);
-  assert.match(prompt, /declining it leaves the remainder of the proposal unchanged/);
-  assert.match(prompt, /write neither file until the user directly approves the final proposal/);
+  assert.match(prompt, /load the `picm-factory` skill and its `SKILL\.md`/);
+  assert.match(prompt, /Load and follow `references\/adoption-guide\.md` before creating an adoption proposal/);
 });
 
 test("skill, adopt, coding, maintenance, optimization, help, and public guidance point to the protocol", () => {
