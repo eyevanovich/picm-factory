@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { EventEmitter } from "node:events";
 import {
+  cpSync,
   existsSync,
   linkSync,
   mkdirSync,
@@ -88,6 +89,22 @@ async function withFixture(run) {
     await run(fixture);
   } finally {
     rmSync(fixture.root, { recursive: true, force: true });
+  }
+}
+
+async function withMixedProposalFixture(run) {
+  const root = mkdtempSync(join(tmpdir(), "picm-mixed-proposal-batch-"));
+  cpSync(
+    join(process.cwd(), "test/fixtures/layout-profiles/custom-existing-structure/mixed-proposal-batch"),
+    root,
+    { recursive: true },
+  );
+  git(root, "init", "-q");
+  git(root, "add", ".");
+  try {
+    await run({ root });
+  } finally {
+    rmSync(root, { recursive: true, force: true });
   }
 }
 
@@ -937,7 +954,7 @@ test("bound built-in wrappers preserve ordinary read and write behavior on the h
     const h = extensionHarness();
     const ctx = h.context(root, "ordinary-binding-host-platform");
     const control = h.tools.get("picm_scan_control");
-    await h.commands.get("picm-adopt").handler("coding", ctx);
+    await h.commands.get("picm-new").handler("", ctx);
     await control.execute("preflight", { action: "preflight" }, undefined, undefined, ctx);
     await control.execute(
       "privacy",
@@ -1221,6 +1238,121 @@ async function defaultRunGit(cwd, args) {
     return { code: error.status ?? 1, stdout: error.stdout ?? "", stderr: error.stderr ?? "" };
   }
 }
+
+test("approved adoption and maintenance batches apply mixed operations atomically without Bash", async () => {
+  for (const [command, args] of [["picm-adopt", "coding"], ["picm-maintain", "strict"]]) {
+    await withMixedProposalFixture(async ({ root }) => {
+      const entries = [];
+      const h = extensionHarness({ entries });
+      const ctx = h.context(root, `mixed-batch-${command}`);
+      const control = h.tools.get("picm_scan_control");
+      const batch = h.tools.get("picm_proposal_batch");
+      await h.commands.get(command).handler(args, ctx);
+      await control.execute("preflight", { action: "preflight" }, undefined, undefined, ctx);
+      await control.execute("privacy", { action: "privacy", excludedPaths: [] }, undefined, undefined, ctx);
+      await control.execute("begin", { action: "begin" }, undefined, undefined, ctx);
+
+      const originalAgents = "# Existing Batch Fixture\n\nUse `routing/legacy-route.md` for workspace routing.\n\nBefore handing off a change, run `npm test`.\n";
+      const updatedAgents = "# Existing Batch Fixture\n\nUse `routing/current-route.md` for workspace routing.\n\nBefore handing off a change, run `npm run check`.\n";
+      const operations = (expectedDeletedContent = "# Obsolete note\n\nThis note is superseded by the approved routing proposal.\n") => [
+        { type: "modify", path: "AGENTS.md", expectedContent: originalAgents, content: updatedAgents },
+        { type: "create", path: "reference/approval-notes.md", content: "# Approval notes\n\nReview the current route before handoff.\n" },
+        { type: "delete", path: "reference/obsolete.md", expectedContent: expectedDeletedContent },
+        {
+          type: "move",
+          from: "routing/legacy-route.md",
+          path: "routing/current-route.md",
+          expectedContent: "# Legacy routing\n\nUse the existing specialist folders for task routing.\n",
+          content: "# Current routing\n\nUse the existing specialist folders for task routing.\n",
+        },
+      ];
+      const prepare = async (expectedDeletedContent) => batch.execute(
+        "prepare",
+        { action: "prepare", operations: operations(expectedDeletedContent) },
+        undefined,
+        undefined,
+        ctx,
+      );
+      const apply = async (proposalId, signal) => batch.execute(
+        "apply",
+        { action: "apply", proposalId },
+        signal,
+        undefined,
+        ctx,
+      );
+
+      assert.equal((await h.handlers.get("tool_call")({ toolName: "bash", input: { command: "rm AGENTS.md" } }, ctx)).block, true);
+      assert.equal((await h.handlers.get("tool_call")({ toolName: "write", input: { path: "AGENTS.md", content: "bypass" } }, ctx)).block, true);
+      assert.equal((await h.handlers.get("tool_call")({ toolName: "edit", input: { path: "AGENTS.md", edits: [] } }, ctx)).block, true);
+      assert.equal(await h.handlers.get("tool_call")({ toolName: "picm_proposal_batch", input: { action: "prepare" } }, ctx), undefined);
+
+      for (const response of ["looks good", "decline", "please adjust the new guide", "cancel"]) {
+        const prepared = await prepare();
+        await h.handlers.get("before_agent_start")({ prompt: response }, ctx);
+        const result = await apply(prepared.details.proposalId);
+        assert.equal(result.details.ok, false, `${command}: ${response} must remain no-write`);
+        assert.equal(readFileSync(join(root, "AGENTS.md"), "utf8"), originalAgents);
+        assert.equal(existsSync(join(root, "reference/approval-notes.md")), false);
+        assert.equal(readFileSync(join(root, "reference/obsolete.md"), "utf8"), "# Obsolete note\n\nThis note is superseded by the approved routing proposal.\n");
+        assert.equal(readFileSync(join(root, "routing/legacy-route.md"), "utf8"), "# Legacy routing\n\nUse the existing specialist folders for task routing.\n");
+      }
+
+      const aborted = await prepare();
+      await h.handlers.get("before_agent_start")({ prompt: "approve" }, ctx);
+      let abortChecks = 0;
+      const abortAfterFirstMutation = {
+        get aborted() {
+          abortChecks += 1;
+          return abortChecks >= 4;
+        },
+      };
+      await assert.rejects(
+        apply(aborted.details.proposalId, abortAfterFirstMutation),
+        /PICM_PROPOSAL_ABORTED/,
+      );
+      assert.equal(readFileSync(join(root, "AGENTS.md"), "utf8"), originalAgents);
+      assert.equal(existsSync(join(root, "reference/approval-notes.md")), false);
+      assert.equal(entries.some((entry) => entry.customType === "picm-proposal-batch" && entry.data.status === "aborted"), true);
+
+      const stale = await prepare();
+      await h.handlers.get("before_agent_start")({ prompt: "approve" }, ctx);
+      writeFileSync(join(root, "reference/obsolete.md"), "# Drifted note\n");
+      await assert.rejects(
+        apply(stale.details.proposalId),
+        /PICM_PROPOSAL_STALE/,
+      );
+      assert.equal(readFileSync(join(root, "AGENTS.md"), "utf8"), originalAgents);
+      assert.equal(existsSync(join(root, "reference/approval-notes.md")), false);
+      assert.equal(readFileSync(join(root, "routing/legacy-route.md"), "utf8"), "# Legacy routing\n\nUse the existing specialist folders for task routing.\n");
+      assert.equal(readFileSync(join(root, "reference/obsolete.md"), "utf8"), "# Drifted note\n");
+
+      const approved = await prepare("# Drifted note\n");
+      await h.handlers.get("before_agent_start")({ prompt: "accept and write" }, ctx);
+      const applying = apply(approved.details.proposalId);
+      const ending = control.execute("end", { action: "end" }, undefined, undefined, ctx);
+      const [applied, ended] = await Promise.all([applying, ending]);
+      assert.equal(applied.details.ok, true);
+      assert.equal(ended.details.scanSettled, true);
+      assert.equal(readFileSync(join(root, "AGENTS.md"), "utf8"), updatedAgents);
+      assert.equal(readFileSync(join(root, "reference/approval-notes.md"), "utf8"), "# Approval notes\n\nReview the current route before handoff.\n");
+      assert.equal(existsSync(join(root, "reference/obsolete.md")), false);
+      assert.equal(existsSync(join(root, "routing/legacy-route.md")), false);
+      assert.equal(readFileSync(join(root, "routing/current-route.md"), "utf8"), "# Current routing\n\nUse the existing specialist folders for task routing.\n");
+      assert.deepEqual(applied.details.operations, [
+        { type: "modify", path: "AGENTS.md" },
+        { type: "create", path: "reference/approval-notes.md" },
+        { type: "delete", path: "reference/obsolete.md" },
+        { type: "move", from: "routing/legacy-route.md", path: "routing/current-route.md" },
+      ]);
+      assert.equal(entries.some((entry) => entry.customType === "picm-proposal-batch" && entry.data.status === "applied"), true);
+
+      assert.equal((await h.handlers.get("tool_call")({ toolName: "read", input: { path: "AGENTS.md" } }, ctx)).block, true);
+      assert.equal((await h.handlers.get("tool_call")({ toolName: "picm_proposal_batch", input: { action: "apply" } }, ctx)).block, true);
+      await control.execute("begin", { action: "begin" }, undefined, undefined, ctx);
+      await control.execute("end", { action: "end" }, undefined, undefined, ctx);
+    });
+  }
+});
 
 test("extension gate is inactive outside explicit PiCM scan phases", async () => {
   await withFixture(async ({ root }) => {
@@ -1730,7 +1862,7 @@ test("ordinary edits fail closed if target swapped with symlink", async (t) => {
     const h = extensionHarness();
     const ctx = h.context(root, "ordinary-binding-edit");
     const control = h.tools.get("picm_scan_control");
-    await h.commands.get("picm-adopt").handler("coding", ctx);
+    await h.commands.get("picm-new").handler("", ctx);
     await control.execute("preflight", { action: "preflight" }, undefined, undefined, ctx);
     await control.execute(
       "privacy",
@@ -1818,7 +1950,7 @@ test("bound writes preserve create semantics across platforms", async () => {
     const h = extensionHarness();
     const ctx = h.context(root, "ordinary-binding-create");
     const control = h.tools.get("picm_scan_control");
-    await h.commands.get("picm-adopt").handler("coding", ctx);
+    await h.commands.get("picm-new").handler("", ctx);
     await control.execute("preflight", { action: "preflight" }, undefined, undefined, ctx);
     await control.execute(
       "privacy",
