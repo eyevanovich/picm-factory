@@ -3,6 +3,7 @@ import { createGitReadGate } from "./git-read-gate.mjs";
 import { createMaintenanceConfigStore } from "./maintenance-config-store.mjs";
 import { createMaintenanceController } from "./maintenance-controller.mjs";
 import { mergePrivacyExcludedPaths } from "./privacy-policy.mjs";
+import { identifyLayoutProfile } from "./layout-profile.mjs";
 import {
   applyProposalBatch,
   prepareProposalBatch,
@@ -314,6 +315,7 @@ export function createRuntimeCoordinator({
       }
       const inventory = await runtimeFor(ctx).gate.refreshInventory(path, scan.excludedPaths);
       requireCurrentWorkflow(sessionId, workflow);
+      const candidates = [...inventory.candidates].sort();
       return {
         ok: true,
         action,
@@ -322,7 +324,8 @@ export function createRuntimeCoordinator({
         command: workflow.command,
         worktree: inventory.worktree,
         isolated: inventory.isolated,
-        candidates: [...inventory.candidates].sort(),
+        candidates,
+        layoutProfile: identifyLayoutProfile(candidates),
         excludedPaths: [...scan.excludedPaths],
       };
     }
