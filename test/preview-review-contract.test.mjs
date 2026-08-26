@@ -116,20 +116,18 @@ test("skill and adoption references retain one summary-and-approval flow", () =>
   );
 });
 
-test("no-agent-files adoption keeps the Claude shim optional and draft-only", () => {
-  const adoptionGuide = read("skills/picm-factory/references/adoption-guide.md");
-  const fixtureGuide = read("docs/layout-fixture-qa.md");
+test("adopt dispatch emits the no-agent-files proposal contract", async () => {
+  const h = commandHarness();
+  await h.commands.get("picm-adopt").handler("", h.ctx);
 
-  for (const signal of [
-    "AGENTS.md` as the PiCM default routing source",
-    "Before creating the final proposal, explicitly ask",
-    "include the shim only in that draft",
-    "if declined, leave it out without changing the rest of the proposal",
-    "neither answer writes either file without direct approval of the final proposal",
-  ]) assert.ok(adoptionGuide.includes(signal), `missing no-agent-files adoption safeguard: ${signal}`);
-
-  assert.match(fixtureGuide, /existing-no-agent-files.*before making the final proposal.*explicitly asks/s);
-  assert.match(fixtureGuide, /shim is accepted, it appears only in the draft; declining it leaves the remaining proposal unchanged\. Neither choice writes a file\./);
+  assert.equal(h.sent.length, 1);
+  const prompt = h.sent[0];
+  assert.match(prompt, /neither `AGENTS\.md` nor `CLAUDE\.md` exists/);
+  assert.match(prompt, /recommend `AGENTS\.md` as the default routing source/);
+  assert.match(prompt, /before presenting the final proposal, explicitly ask whether to draft a small `CLAUDE\.md` compatibility shim/);
+  assert.match(prompt, /accepted shim appears only in the draft/);
+  assert.match(prompt, /declining it leaves the remainder of the proposal unchanged/);
+  assert.match(prompt, /write neither file until the user directly approves the final proposal/);
 });
 
 test("skill, adopt, coding, maintenance, optimization, help, and public guidance point to the protocol", () => {
