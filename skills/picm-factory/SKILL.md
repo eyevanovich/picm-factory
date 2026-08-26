@@ -70,7 +70,7 @@ Process:
 6. Recommend a layout profile from `references/layout-profiles.md`, explain why, then present alternatives. For mixed workflows, choose one primary profile and borrow secondary patterns sparingly.
 7. Draft the smallest scaffold that supports that first real run. Include required root routing/context and only the active stages, roles, specialist recipes, references, examples, artifact paths, and user-named scripts/tools needed now. Defer speculative structure until real use proves it useful. For Stage Pipeline workspaces, make each active stage contract answer: what it reads, what it does, what it writes, and where human review happens. Mention a script, MCP server/tool, or other integration in generated routing/contracts only when the user has named it; never invent an integration to fill a template.
 8. Near the final config preview, ask whether the user wants scheduled maintenance reminders: No configures manual maintenance; Yes asks for cadence in days, weeks, or months (defaulting to monthly). Do not present separate nudge versus automatic choices. If skipped/declined, leave maintenance manual with no policy object. Use `picm_maintenance_policy` with `action: "preview"` to calculate the exact object and include it in the existing `.picm/config.json` preview. Choosing cadence is not file-write approval.
-9. Preview files to create/update, including exact append/update proposals for existing safe files such as `README.md` or `.gitignore`.
+9. Preview files to create/update, including exact append/update proposals for existing safe files such as `README.md` or `.gitignore`. In a new scaffold config preview, show `"createdAt": "{{createdAt}}"` and explain that the approved write resolves only this marker to the write-time canonical ISO 8601 UTC timestamp. This is a value resolution in the already-reviewed `.picm/config.json` write, not an additional file or write action.
 10. After approval, write files.
 11. End with a tailored, user-facing first-run checklist for the selected layout. Separate user actions from automatic agent behavior: tell the user only what they need to initiate, inspect, edit, or approve, and describe context loading, task routing, tool use, and verification as what the agent should do. Do not instruct the user to manually read an auto-loaded routing file unless they asked to inspect it. Name where work begins, where the first output or handoff should land, what the human should inspect/edit before downstream work consumes it, what gaps/unknowns must stay visible, and when to run `/picm-maintain`.
 
@@ -107,7 +107,7 @@ Scaffold quality rules:
     "version": 1,
     "profile": "stage-pipeline",
     "generatedBy": "picm-factory",
-    "createdAt": "2026-05-24",
+    "createdAt": "2026-05-24T12:34:56.789Z",
     "paths": {
       "rootInstructions": "AGENTS.md",
       "rootContext": "CONTEXT.md",

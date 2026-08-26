@@ -487,6 +487,10 @@ export function createRuntimeCoordinator({
     return workflowFor(ctx)?.completed === true;
   }
 
+  function workflowCommand(ctx) {
+    return workflowFor(ctx)?.command;
+  }
+
   function isAutomatic(_ctx) {
     return false;
   }
@@ -794,6 +798,7 @@ export function createRuntimeCoordinator({
     hasAdoptedStatus,
     isWorkflowCompleted,
     maintenancePolicy,
+    workflowCommand,
     rejectToolExecution,
     resetCycle,
     restoreWorkflow,

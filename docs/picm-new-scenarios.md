@@ -38,6 +38,7 @@ Expected behavior:
 - accepts common package/editor noise such as `package.json`, lockfiles, `.pi/`, `.vscode/`, `.idea/`, and `.DS_Store`
 - runs or seeds the core interview
 - creates a minimal scaffold after approval, normally including `AGENTS.md`, `CONTEXT.md`, `.picm/config.json`, and layout-specific folders/files
+- previews `.picm/config.json` with `"createdAt": "{{createdAt}}"`, explains that the approved write resolves that value at write time, and writes a canonical ISO 8601 UTC timestamp without adding another reviewed file or write action
 - creates references/examples/input/output folders only when the interview justifies them
 
 ## Scenario 2: source-material-only folder
