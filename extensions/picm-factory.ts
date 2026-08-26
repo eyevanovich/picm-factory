@@ -132,8 +132,21 @@ function resolveNewScaffoldCreatedAt(params: any, cwd: string, command: string |
     if (!config || typeof config !== "object" || Array.isArray(config) || config.createdAt !== "{{createdAt}}") {
       return params;
     }
-    config.createdAt = canonicalNow();
-    return { ...params, content: `${JSON.stringify(config, null, 2)}\n` };
+    const createdAt = canonicalNow();
+    const marker = JSON.stringify("{{createdAt}}");
+    const candidates: string[] = [];
+    let offset = params.content.indexOf(marker);
+    while (offset !== -1) {
+      const content = `${params.content.slice(0, offset)}${JSON.stringify(createdAt)}${params.content.slice(offset + marker.length)}`;
+      try {
+        const candidate = JSON.parse(content);
+        if (candidate && typeof candidate === "object" && !Array.isArray(candidate) && candidate.createdAt === createdAt) {
+          candidates.push(content);
+        }
+      } catch {}
+      offset = params.content.indexOf(marker, offset + marker.length);
+    }
+    return candidates.length === 1 ? { ...params, content: candidates[0] } : params;
   } catch {
     return params;
   }

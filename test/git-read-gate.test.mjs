@@ -999,34 +999,27 @@ test("new scaffold config writes resolve createdAt at write time", async () => {
     );
     await control.execute("begin", { action: "begin" }, undefined, undefined, ctx);
 
+    const approvedContent = `{\n  "version": 1,\n  "description": "{{createdAt}}",\n  "largeInteger": 9007199254740993,\n  "profile": "specialist-folder",\n  "generatedBy": "picm-factory",\n  "createdAt": "{{createdAt}}",\n  "paths": { "rootInstructions": "AGENTS.md" }\n}`;
     const [call] = await preflightParallelToolCalls(h, ctx, [{
       id: "new-scaffold-config",
       toolName: "write",
       input: {
         path: ".picm/config.json",
-        content: JSON.stringify({
-          version: 1,
-          profile: "specialist-folder",
-          generatedBy: "picm-factory",
-          createdAt: "{{createdAt}}",
-          paths: { rootInstructions: "AGENTS.md" },
-        }, null, 2),
+        content: approvedContent,
       },
       tool: h.tools.get("write"),
     }]);
     const [result] = await Promise.all(executePreflightedToolCalls(h, ctx, [call]));
     assert.equal(result.isError, false);
 
-    const config = JSON.parse(readFileSync(join(root, ".picm", "config.json"), "utf8"));
+    const writtenContent = readFileSync(join(root, ".picm", "config.json"), "utf8");
+    const config = JSON.parse(writtenContent);
     assert.equal(config.createdAt.includes("{{createdAt}}"), false);
     assert.equal(new Date(config.createdAt).toISOString(), config.createdAt);
-    assert.deepEqual(config, {
-      version: 1,
-      profile: "specialist-folder",
-      generatedBy: "picm-factory",
-      createdAt: config.createdAt,
-      paths: { rootInstructions: "AGENTS.md" },
-    });
+    assert.equal(
+      writtenContent,
+      approvedContent.replace('"createdAt": "{{createdAt}}"', `"createdAt": "${config.createdAt}"`),
+    );
 
     const [legacyCall] = await preflightParallelToolCalls(h, ctx, [{
       id: "new-scaffold-legacy-config",
