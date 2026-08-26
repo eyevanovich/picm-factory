@@ -12,6 +12,20 @@ Add a non-blocking review suggestion for deletions, linked moves, material chang
 
 Exact review remains available on demand for every affected file or diff. Every persisted `privacy.excludedPaths` or standalone maintenance-policy control write still receives the complete concise summary and direct acceptance first. Then use the built-in exact TUI patch confirmation as the separate runtime write confirmation. For a standalone maintenance-policy apply, pass only `action: "apply"` and the accepted preview's `previewId`; direct-apply runtime compatibility remains unchanged but is not agent guidance. Neither control confirmation authorizes other project writes.
 
+## Standalone maintenance-policy control write
+
+Treat every maintenance-policy preview, including a one-day cadence, as no-write. Before applying its `previewId`, present the complete concise summary with every category below, using literal `None` for an empty category:
+
+- affected files and operations;
+- behavior or configuration changes;
+- linked moves;
+- preserved behavior;
+- known uncertainty;
+- review suggestions; and
+- privacy/configuration impact.
+
+For the privacy/configuration impact, explain that the accepted policy would durably record reminder timestamps in a non-ignored, regular, non-symlink `.picm/config.json` beneath a regular `.picm/` directory. Explain that it is advisory: nothing runs while Pi is closed or outside an eligible interactive TUI session; when due, it presents Run Now and Defer, and Run Now still enters the ordinary privacy-reviewed maintenance flow with normal write approvals. Explicit summary acceptance is no-write. Only after that acceptance may the agent call `apply` using exactly the preview's `previewId`; the tool's exact TUI patch confirmation, not summary acceptance, controls whether the policy is applied.
+
 ## Summary preview template
 
 Enumerate every affected file once and keep linked actions visibly connected. Use the literal `None` for every empty category.

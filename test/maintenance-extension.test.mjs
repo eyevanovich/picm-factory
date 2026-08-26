@@ -826,17 +826,20 @@ test("policy tool applies the exact accepted confirmation", async (t) => {
   assert.deepEqual(config.maintenance.interval, { value: 2, unit: "weeks" });
 });
 
-test("policy preview handoff applies the exact preview once and keeps it after decline", async (t) => {
+test("one-day policy preview is no-write and its accepted handoff applies exactly once", async (t) => {
   const cwd = fixture(t, { mode: "manual" });
   const h = harness({ confirm: false });
+  const beforePreview = readFileSync(join(cwd, ".picm/config.json"), "utf8");
   const preview = await h.tool.execute(
     "id",
-    { action: "preview", mode: "nudge", intervalValue: 1, intervalUnit: "months" },
+    { action: "preview", mode: "nudge", intervalValue: 1, intervalUnit: "days" },
     undefined,
     undefined,
     h.context(cwd),
   );
   assert.match(preview.details.previewId, /^picm-maintenance-preview:[0-9a-f-]+$/);
+  assert.deepEqual(preview.details.maintenance.interval, { value: 1, unit: "days" });
+  assert.equal(readFileSync(join(cwd, ".picm/config.json"), "utf8"), beforePreview);
   assert.deepEqual(JSON.parse(preview.content[0].text), {
     previewId: preview.details.previewId,
     expiresAt: preview.details.expiresAt,
@@ -872,6 +875,25 @@ test("policy preview handoff applies the exact preview once and keeps it after d
     h.tool.execute("id", { action: "apply", previewId: preview.details.previewId }, undefined, undefined, h.context(cwd)),
     /MAINTENANCE_PREVIEW_EXPIRED/,
   );
+});
+
+test("policy guidance requires a no-write complete summary before its exact confirmation", () => {
+  const h = harness();
+  const guidance = h.tool.promptGuidelines.join("\n");
+  for (const category of [
+    "affected files and operations",
+    "behavior or configuration changes",
+    "linked moves",
+    "preserved behavior",
+    "known uncertainty",
+    "review suggestions (or None)",
+    "privacy/configuration impact",
+  ]) assert.ok(guidance.includes(category), `missing ${category}`);
+  assert.match(guidance, /one-day cadence/);
+  assert.match(guidance, /durably records reminder timestamps/);
+  assert.match(guidance, /nothing runs while Pi is closed/);
+  assert.match(guidance, /summary acceptance without calling apply or writing/);
+  assert.match(guidance, /exact TUI patch confirmation remains the separate runtime write confirmation/);
 });
 
 test("policy preview handoff remains available after an apply failure", async (t) => {
