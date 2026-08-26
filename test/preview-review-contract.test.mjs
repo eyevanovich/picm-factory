@@ -87,6 +87,14 @@ test("review suggestions stay non-blocking while control-write confirmations rem
     "pass only `action: \"apply\"` and the accepted preview's `previewId`",
     "direct-apply runtime compatibility remains unchanged",
     "Neither control confirmation authorizes other project writes",
+    "## Standalone maintenance-policy control write",
+    "including a one-day cadence",
+    "privacy/configuration impact",
+    "Explicit summary acceptance is no-write",
+    "durably record reminder timestamps",
+    "nothing runs while Pi is closed",
+    "Run Now and Defer",
+    "exact TUI patch confirmation, not summary acceptance, controls whether the policy is applied",
   ]) assert.ok(protocol.includes(signal), `missing control-write signal: ${signal}`);
 });
 

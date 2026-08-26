@@ -253,7 +253,7 @@ export default function picmFactoryExtension(
     promptSnippet: "Preview or configure deterministic PiCM maintenance cadence",
     promptGuidelines: [
       "Use picm_maintenance_policy preview to calculate exact maintenance JSON before including it in a scaffold/adoption preview.",
-      "A preview returns a previewId. Before applying it as a standalone policy write, present and obtain acceptance of the complete concise .picm/config.json summary and explain the configuration impact. Then pass only action apply and that previewId so the exact timestamps are reused; the tool's exact TUI confirmation is the separate runtime write confirmation.",
+      "A standalone preview, including a one-day cadence, is no-write. Before applying it as a standalone policy write, present the complete concise .picm/config.json summary: affected files and operations, behavior or configuration changes, linked moves, preserved behavior, known uncertainty, review suggestions (or None), and privacy/configuration impact. Explain that the policy durably records reminder timestamps in a non-ignored regular .picm/config.json, but nothing runs while Pi is closed or outside an eligible interactive TUI session; a due reminder still requires Run Now and normal approval gates. Obtain explicit summary acceptance without calling apply or writing. Only after that acceptance, pass only action apply and that previewId so the exact timestamps are reused; the tool's exact TUI patch confirmation remains the separate runtime write confirmation that controls application.",
     ],
     parameters: Type.Object({
       action: StringEnum(["preview", "apply", "status"] as const),
