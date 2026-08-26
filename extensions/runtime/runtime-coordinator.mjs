@@ -1,8 +1,10 @@
 import { randomUUID } from "node:crypto";
+import { relative, sep } from "node:path";
 import { createGitReadGate } from "./git-read-gate.mjs";
 import { createMaintenanceConfigStore } from "./maintenance-config-store.mjs";
 import { createMaintenanceController } from "./maintenance-controller.mjs";
 import { mergePrivacyExcludedPaths } from "./privacy-policy.mjs";
+import { identifyLayoutProfile } from "./layout-profile.mjs";
 import {
   applyProposalBatch,
   prepareProposalBatch,
@@ -12,6 +14,15 @@ import {
 
 const EXPLICIT_SCAN_COMMANDS = new Set(["picm-new", "picm-adopt", "picm-maintain", "picm-optimize"]);
 const GUARDED_PATH_TOOLS = new Set(["read", "edit", "write", "grep", "rg", "find", "ls"]);
+
+function candidatesRelativeToWorkspace(candidates, worktree, cwd) {
+  const prefix = relative(worktree, cwd).split(sep).filter(Boolean).join("/");
+  if (!prefix) return candidates;
+  const rootedPrefix = `${prefix}/`;
+  return candidates
+    .filter((candidate) => candidate.startsWith(rootedPrefix))
+    .map((candidate) => candidate.slice(rootedPrefix.length));
+}
 
 function isRecord(value) {
   return value !== null && typeof value === "object" && !Array.isArray(value);
@@ -314,6 +325,7 @@ export function createRuntimeCoordinator({
       }
       const inventory = await runtimeFor(ctx).gate.refreshInventory(path, scan.excludedPaths);
       requireCurrentWorkflow(sessionId, workflow);
+      const candidates = [...inventory.candidates].sort();
       return {
         ok: true,
         action,
@@ -322,7 +334,10 @@ export function createRuntimeCoordinator({
         command: workflow.command,
         worktree: inventory.worktree,
         isolated: inventory.isolated,
-        candidates: [...inventory.candidates].sort(),
+        candidates,
+        layoutProfile: identifyLayoutProfile(
+          candidatesRelativeToWorkspace(candidates, inventory.worktree, ctx.cwd),
+        ),
         excludedPaths: [...scan.excludedPaths],
       };
     }

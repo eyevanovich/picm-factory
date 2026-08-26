@@ -79,6 +79,14 @@ Trace mode process:
 
 Trace mode should not require rigid syntax. Natural-language symptoms are valid; file mentions are optional direction.
 
+## Profile identification
+
+Identify the visible workspace profile before writing the report summary. Keep custom layouts valid and preserve their existing routing; profile recognition does not authorize a migration or rewrite.
+
+When `identity.md`, `rules.md`, `reference/`, and `workflows/` are all present for one reusable helper, explicitly identify **Specialist Folder** as the primary profile in the Summary, or strongly suggest it when the visible evidence is incomplete. Treat `examples.md` as optional: report it when present, but do not warn about its absence or use absence to reject the Specialist Folder profile.
+
+For a Specialist Folder, evaluate the existing root route to the identity, rules, reference material, and relevant workflow. Recommend the smallest Tier 1 or Tier 2 repair only when that route or local contract is actually unclear; do not replace working routing merely to match a canonical layout.
+
 ## Cold-agent walk test
 
 Run this bounded, advisory test during a general health check. Choose one representative task or ask the user which task to test, then approach the workspace from its root as if you have no prior conversation or memory. Do not require a specific folder name, numbering scheme, or contract heading.
@@ -261,6 +269,9 @@ Use this format for general health checks:
 # PiCM Maintenance Report
 
 ## Summary
+
+- Primary profile: [identified profile, such as **Specialist Folder**, or a strong profile suggestion with supporting signals]
+- Profile signals: [visible evidence; for a Specialist Folder, identify `identity.md`, `rules.md`, `reference/`, and `workflows/`; mention `examples.md` only when present]
 
 ## Pass
 
