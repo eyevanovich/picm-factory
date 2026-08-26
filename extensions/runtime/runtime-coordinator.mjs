@@ -99,6 +99,7 @@ export function createRuntimeCoordinator({
   function authorizeWorkflow(ctx, command) {
     const sessionId = sessionIdFor(ctx);
     clearActiveScan(ctx);
+    proposalBatches.delete(sessionId);
     const workflow = {
       cwd: ctx.cwd,
       command,

@@ -1297,6 +1297,23 @@ test("approved adoption and maintenance batches apply mixed operations atomicall
       assert.equal((await h.handlers.get("tool_call")({ toolName: "edit", input: { path: "AGENTS.md", edits: [] } }, ctx)).block, true);
       assert.equal(await h.handlers.get("tool_call")({ toolName: "picm_proposal_batch", input: { action: "prepare" } }, ctx), undefined);
 
+      const priorWorkflow = await prepare();
+      await present(priorWorkflow);
+      await h.handlers.get("before_agent_start")({ prompt: "approve" }, ctx);
+      await h.commands.get(command).handler(args, ctx);
+      await control.execute("preflight", { action: "preflight" }, undefined, undefined, ctx);
+      await control.execute("privacy", { action: "privacy", excludedPaths: ["AGENTS.md"] }, undefined, undefined, ctx);
+      await control.execute("begin", { action: "begin" }, undefined, undefined, ctx);
+      const staleWorkflowApply = await apply(priorWorkflow.details.proposalId);
+      assert.equal(staleWorkflowApply.details.ok, false);
+      assert.equal(staleWorkflowApply.details.code, "PICM_PROPOSAL_NOT_PREPARED");
+      assert.equal(readFileSync(join(root, "AGENTS.md"), "utf8"), originalAgents);
+
+      await h.commands.get(command).handler(args, ctx);
+      await control.execute("preflight", { action: "preflight" }, undefined, undefined, ctx);
+      await control.execute("privacy", { action: "privacy", excludedPaths: [] }, undefined, undefined, ctx);
+      await control.execute("begin", { action: "begin" }, undefined, undefined, ctx);
+
       for (const response of ["looks good", "decline", "please adjust the new guide", "cancel"]) {
         const prepared = await prepare();
         await h.handlers.get("before_agent_start")({ prompt: response }, ctx);
