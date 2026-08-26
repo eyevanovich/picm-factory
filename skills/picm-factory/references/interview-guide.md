@@ -151,7 +151,8 @@ Before writing files:
    - append/update existing safe files only with exact proposed changes
    - no silent overwrites
    - `preview only`, review/navigation requests, profile or cadence choices, vague assent (`continue`, `looks good`, `yes`, or `go ahead`), and a lone `.` are strict no-write replies; keep the proposal pending and state that nothing was written
-   - write all and only the enumerated actions only after an unambiguous direct approval tied to the current exact proposal, such as `approve this exact scaffold`, `accept the current proposal and write it`, or `write exactly this proposal`
+   - register all exact `write` and `edit` inputs with `picm_scaffold_proposal` before showing the preview
+   - write all and only the registered actions only after one of the explicit approval forms listed in the main skill
    - a requested adjustment supersedes pending approval; refresh the proposal before accepting direct approval
 4. Ensure generated files contain no unresolved bracket placeholders.
 

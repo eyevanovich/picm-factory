@@ -77,6 +77,14 @@ function workspaceSnapshot(path) {
 }
 
 async function runScaffoldReply(h, proposal, reply) {
+  await h.tools.get("picm_scaffold_proposal").execute(
+    "proposal",
+    { action: "preview", operations: proposal.map(({ path, content }) => ({ tool: "write", input: { path, content } })) },
+    undefined,
+    undefined,
+    h.ctx,
+  );
+  await h.handlers.get("agent_settled")({}, h.ctx);
   await h.handlers.get("input")({ text: reply, source: "interactive" }, h.ctx);
   const written = [];
   for (const action of proposal) {
@@ -149,6 +157,38 @@ test("picm-new writes only the directly approved current exact proposal", async 
       Object.fromEntries(proposal.map(({ path, content }) => [path, content])),
     );
   }
+});
+
+test("picm-new rejects unregistered mutations and alternate write-capable tools", async (t) => {
+  const { workspace, proposal } = scaffoldFixture(t);
+  const h = commandHarness(workspace);
+  await h.commands.get("picm-new").handler("stage pipeline", h.ctx);
+  await h.tools.get("picm_scaffold_proposal").execute(
+    "proposal",
+    { action: "preview", operations: proposal.map(({ path, content }) => ({ tool: "write", input: { path, content } })) },
+    undefined,
+    undefined,
+    h.ctx,
+  );
+  await h.handlers.get("agent_settled")({}, h.ctx);
+  await h.handlers.get("input")({ text: "continue", source: "interactive" }, h.ctx);
+  const bash = await h.handlers.get("tool_call")({
+    toolName: "bash",
+    toolCallId: "bash-bypass",
+    input: { command: "touch UNREVIEWED.md" },
+  }, h.ctx);
+  await h.handlers.get("input")(
+    { text: "I approve the current exact proposal; write it now", source: "interactive" },
+    h.ctx,
+  );
+  const unregistered = await h.handlers.get("tool_call")({
+    toolName: "write",
+    toolCallId: "unregistered",
+    input: { path: "UNREVIEWED.md", content: "not reviewed\n" },
+  }, h.ctx);
+  assert.equal(unregistered.block, true);
+  assert.equal(bash.block, true);
+  assert.deepEqual(workspaceSnapshot(workspace), {});
 });
 
 test("optional exact review choices, navigation state, and rendering kinds are explicit", () => {
