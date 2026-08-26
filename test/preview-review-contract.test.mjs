@@ -24,6 +24,7 @@ function commandHarness(cwd = root) {
     sendUserMessage(message) { sent.push(message); },
   };
   let command;
+  let completed = false;
   picmFactoryExtension(pi, {
     createCoordinator: () => ({
       admitToolExecution() {},
@@ -36,13 +37,17 @@ function commandHarness(cwd = root) {
       dispose: async () => {},
       endToolExecution() {},
       hasAdoptedStatus: async () => false,
-      isWorkflowCompleted: () => false,
+      isWorkflowCompleted: () => completed,
       maintenancePolicy() {},
       rejectToolExecution() {},
       resetCycle() {},
       restoreWorkflow() {},
       scanControl() {},
-      settle: () => false,
+      settle: () => {
+        if (!completed) return false;
+        command = undefined;
+        return true;
+      },
       startToolExecution() {},
       startup: async () => {},
     }),
@@ -59,7 +64,7 @@ function commandHarness(cwd = root) {
       select: async (_title, items) => items[0],
     },
   };
-  return { commands, handlers, sent, tools, ctx };
+  return { commands, handlers, sent, tools, ctx, completeWorkflow: () => { completed = true; } };
 }
 
 function workspaceSnapshot(path) {
@@ -269,6 +274,52 @@ test("picm-new invalidates stale operations after a revision request", async (t)
     input: revisedOperation.input,
   }, h.ctx);
   assert.equal(revised, undefined);
+});
+
+test("picm-new detects a revision appended to review navigation", async (t) => {
+  const { workspace, proposal } = scaffoldFixture(t);
+  const h = commandHarness(workspace);
+  await h.commands.get("picm-new").handler("stage pipeline", h.ctx);
+  const operation = { tool: "write", input: proposal[0] };
+  await h.tools.get("picm_scaffold_proposal").execute(
+    "proposal",
+    { action: "preview", operations: [operation] },
+    undefined,
+    undefined,
+    h.ctx,
+  );
+  await h.handlers.get("input")(
+    { text: "show diff for AGENTS.md and change CONTEXT.md", source: "interactive" },
+    h.ctx,
+  );
+  await h.handlers.get("input")({ text: "approve this exact scaffold", source: "interactive" }, h.ctx);
+  const decision = await h.handlers.get("tool_call")({
+    toolName: "write",
+    toolCallId: "stale-navigation-write",
+    input: operation.input,
+  }, h.ctx);
+  assert.equal(decision.block, true);
+});
+
+test("completed picm-new releases ordinary tools from scaffold approval", async (t) => {
+  const { workspace, proposal } = scaffoldFixture(t);
+  const h = commandHarness(workspace);
+  await h.commands.get("picm-new").handler("stage pipeline", h.ctx);
+  await h.tools.get("picm_scaffold_proposal").execute(
+    "proposal",
+    { action: "preview", operations: [{ tool: "write", input: proposal[0] }] },
+    undefined,
+    undefined,
+    h.ctx,
+  );
+  h.completeWorkflow();
+  await h.handlers.get("agent_settled")({}, h.ctx);
+  const decision = await h.handlers.get("tool_call")({
+    toolName: "bash",
+    toolCallId: "ordinary-bash",
+    input: { command: "pwd" },
+  }, h.ctx);
+  assert.equal(decision, undefined);
 });
 
 test("optional exact review choices, navigation state, and rendering kinds are explicit", () => {
