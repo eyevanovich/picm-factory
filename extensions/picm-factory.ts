@@ -369,7 +369,10 @@ export default function picmFactoryExtension(
       action: "adoption-complete",
       initialMaintenance,
     });
-    if (ctx.mode !== "tui" || !await coordinator.claimInitialMaintenanceOffer(ctx)) return finish("finished");
+    if (ctx.mode !== "tui") return finish("finished");
+    const claimedWorkflow = await coordinator.claimInitialMaintenanceOffer(ctx);
+    if (!claimedWorkflow) return finish("finished");
+    pi.appendEntry(scanWorkflowEntryType, { status: "authorized", ...claimedWorkflow });
 
     const choice = await ctx.ui.select(
       "Would you like to run an initial maintenance pass now (recommended)?",

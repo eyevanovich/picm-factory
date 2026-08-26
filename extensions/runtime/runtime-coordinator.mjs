@@ -493,11 +493,11 @@ export function createRuntimeCoordinator({
   async function claimInitialMaintenanceOffer(ctx) {
     const workflow = workflowFor(ctx);
     if (!workflow || workflow.initialMaintenanceOffered || !await hasNewlyAdoptedStatus(ctx)) {
-      return false;
+      return undefined;
     }
-    if (workflowFor(ctx) !== workflow || workflow.initialMaintenanceOffered) return false;
+    if (workflowFor(ctx) !== workflow || workflow.initialMaintenanceOffered) return undefined;
     workflow.initialMaintenanceOffered = true;
-    return true;
+    return workflowState(workflow);
   }
 
   async function continueAdoptionAsMaintenance(ctx) {

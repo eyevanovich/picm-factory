@@ -1060,6 +1060,40 @@ test("newly adopted workspaces offer initial maintenance once; Finish preserves 
   assert.equal(readFileSync(join(cwd, ".picm/config.json"), "utf8"), afterAdoption);
 });
 
+test("initial maintenance offer is persisted before the selector opens", async (t) => {
+  const cwd = fixture(t, oldDue("nudge"));
+  const entries = [];
+  let persistedClaim;
+  let interruptedEntries;
+  const initial = harness({
+    entries,
+    selectHandler: () => {
+      persistedClaim = entries.at(-1)?.data;
+      interruptedEntries = structuredClone(entries);
+      return undefined;
+    },
+  });
+  const ctx = initial.context(cwd, "tui", "persisted-initial-maintenance-offer");
+
+  await initial.commands.get("picm-adopt").handler("", ctx);
+  await initial.scanControl.execute("id", { action: "preflight" }, undefined, undefined, ctx);
+  await initial.scanControl.execute("id", { action: "privacy", excludedPaths: [] }, undefined, undefined, ctx);
+  setAdoptionStatus(cwd, { status: "adopted" });
+  await initial.scanControl.execute("id", { action: "begin" }, undefined, undefined, ctx);
+  await initial.scanControl.execute("id", { action: "end" }, undefined, undefined, ctx);
+  await initial.scanControl.execute("id", { action: "adoption-complete" }, undefined, undefined, ctx);
+
+  assert.equal(persistedClaim?.status, "authorized");
+  assert.equal(persistedClaim?.initialMaintenanceOffered, true);
+
+  const restored = harness({ entries: interruptedEntries, selectResult: "Finish" });
+  const restoredCtx = restored.context(cwd, "tui", "persisted-initial-maintenance-offer");
+  await restored.handlers.get("session_start")({ reason: "resume" }, restoredCtx);
+  await restored.scanControl.execute("id", { action: "adoption-complete" }, undefined, undefined, restoredCtx);
+
+  assert.deepEqual(restored.selections, []);
+});
+
 test("repeated privacy review cannot overwrite the pre-adoption baseline", async (t) => {
   const cwd = fixture(t, oldDue("nudge"));
   const h = harness({ selectResult: "Finish" });
