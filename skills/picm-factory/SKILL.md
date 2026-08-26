@@ -170,7 +170,7 @@ Routing policy:
 - If only `CLAUDE.md` exists, use it as source of truth when adequate. Do not replace it with `AGENTS.md` by default.
 - If only `AGENTS.md` exists, use it as source of truth when adequate.
 - If both exist, preserve both and check whether they cooperate or conflict. Offer coexistence optimization only as an approved edit.
-- If neither exists, recommend creating root `AGENTS.md` and ask whether to also add a small `CLAUDE.md` shim for future Claude Code compatibility.
+- If neither exists, follow the missing-routing proposal and compatibility-shim choice in `references/adoption-guide.md`.
 
 Do not create, rewrite, merge, rename, move, or delete any visible routing/context/workflow files without a current complete concise summary, clear deletion or impact flags where applicable, user iteration, and direct explicit approval. Do not write `.picm/` files from an option selection alone; apply `references/preview-review-protocol.md` first.
 

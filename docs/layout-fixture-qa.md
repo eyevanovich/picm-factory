@@ -495,7 +495,8 @@ Expected behavior:
 - Classifies routing quality rather than assuming a present file is adequate.
 - Uses an adequate existing `CLAUDE.md` or `AGENTS.md` as the routing source of truth instead of proposing replacement.
 - If both files exist, checks coexistence/conflict and offers optimization only as an approved optional edit.
-- If neither file exists, recommends `AGENTS.md` as the PiCM default and asks whether to add a `CLAUDE.md` compatibility shim.
+- For `custom-existing-structure/existing-no-agent-files`, recommends `AGENTS.md` as the default routing source and, before making the final proposal, explicitly asks whether to draft a `CLAUDE.md` compatibility shim.
+- If the shim is accepted, it appears only in the draft; declining it leaves the remaining proposal unchanged. Neither choice writes a file.
 - Does not rewrite, merge, rename, move, delete, or create visible files without a complete concise summary, clear impact flags where applicable, user iteration, and direct explicit approval.
 - Does not treat option selection as write approval; if the user asks for preview or says not to write yet, it stops after preview and waits for direct explicit approval of the current summary before writing even `.picm/` files.
 - Separates readiness labels: `Ready`, `Ready with warnings`, `Needs routing before adoption`, and `Scanned only`.

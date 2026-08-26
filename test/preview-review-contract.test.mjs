@@ -116,6 +116,16 @@ test("skill and adoption references retain one summary-and-approval flow", () =>
   );
 });
 
+test("adopt dispatch routes proposal behavior to the adoption guide", async () => {
+  const h = commandHarness();
+  await h.commands.get("picm-adopt").handler("", h.ctx);
+
+  assert.equal(h.sent.length, 1);
+  const prompt = h.sent[0];
+  assert.match(prompt, /load the `picm-factory` skill and its `SKILL\.md`/);
+  assert.match(prompt, /Load and follow `references\/adoption-guide\.md` before creating an adoption proposal/);
+});
+
 test("skill, adopt, coding, maintenance, optimization, help, and public guidance point to the protocol", () => {
   const expected = {
     "skills/picm-factory/SKILL.md": [protocolPath.split("/").at(-1), "Before every proposal batch"],
