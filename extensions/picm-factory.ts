@@ -11,7 +11,7 @@ import {
 } from "@earendil-works/pi-coding-agent";
 import { StringEnum } from "@earendil-works/pi-ai";
 import { realpathSync } from "node:fs";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { Type } from "typebox";
 import {
   BALANCED_MAINTENANCE_GUIDANCE,
@@ -21,6 +21,7 @@ import {
 } from "./runtime/coding-maintenance-depth.mjs";
 import { packageRootFromImportMeta } from "./runtime/git-read-gate.mjs";
 import { executeBoundGrep } from "./runtime/path-execution-binding.mjs";
+import { canonicalNow } from "./runtime/maintenance-policy.mjs";
 import { createRuntimeCoordinator } from "./runtime/runtime-coordinator.mjs";
 
 type CommandName = "picm-new" | "picm-adopt" | "picm-maintain" | "picm-optimize" | "picm-help";
@@ -118,6 +119,26 @@ type PicmFactoryExtensionOptions = {
   grepExecutionOptions?: Parameters<typeof executeBoundGrep>[3];
 };
 
+function resolveNewScaffoldCreatedAt(params: any, cwd: string, command: string | undefined) {
+  if (
+    command !== "picm-new" ||
+    typeof params?.path !== "string" ||
+    typeof params.content !== "string" ||
+    resolve(cwd, params.path) !== join(cwd, ".picm", "config.json")
+  ) return params;
+
+  try {
+    const config = JSON.parse(params.content);
+    if (!config || typeof config !== "object" || Array.isArray(config) || config.createdAt !== "{{createdAt}}") {
+      return params;
+    }
+    config.createdAt = canonicalNow();
+    return { ...params, content: `${JSON.stringify(config, null, 2)}\n` };
+  } catch {
+    return params;
+  }
+}
+
 export default function picmFactoryExtension(
   pi: ExtensionAPI,
   options: PicmFactoryExtensionOptions = {},
@@ -141,8 +162,11 @@ export default function picmFactoryExtension(
         if (binding && (toolName === "grep" || toolName === "rg")) {
           return executeBoundGrep(binding, params, signal, options.grepExecutionOptions);
         }
+        const resolvedParams = toolName === "write"
+          ? resolveNewScaffoldCreatedAt(params, ctx.cwd, coordinator.workflowCommand(ctx))
+          : params;
         const tool = createTool(ctx.cwd, binding ? { operations: binding.operations } : undefined);
-        return tool.execute(toolCallId, params, signal, onUpdate, ctx);
+        return tool.execute(toolCallId, resolvedParams, signal, onUpdate, ctx);
       },
     });
   };

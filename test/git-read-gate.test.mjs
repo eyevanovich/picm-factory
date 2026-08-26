@@ -983,6 +983,69 @@ test("bound built-in wrappers preserve ordinary read and write behavior on the h
   });
 });
 
+test("new scaffold config writes resolve createdAt at write time", async () => {
+  await withFixture(async ({ root }) => {
+    const h = extensionHarness();
+    const ctx = h.context(root, "new-scaffold-created-at");
+    const control = h.tools.get("picm_scan_control");
+    await h.commands.get("picm-new").handler("", ctx);
+    await control.execute("preflight", { action: "preflight" }, undefined, undefined, ctx);
+    await control.execute(
+      "privacy",
+      { action: "privacy", excludedPaths: [], persist: false },
+      undefined,
+      undefined,
+      ctx,
+    );
+    await control.execute("begin", { action: "begin" }, undefined, undefined, ctx);
+
+    const [call] = await preflightParallelToolCalls(h, ctx, [{
+      id: "new-scaffold-config",
+      toolName: "write",
+      input: {
+        path: ".picm/config.json",
+        content: JSON.stringify({
+          version: 1,
+          profile: "specialist-folder",
+          generatedBy: "picm-factory",
+          createdAt: "{{createdAt}}",
+          paths: { rootInstructions: "AGENTS.md" },
+        }, null, 2),
+      },
+      tool: h.tools.get("write"),
+    }]);
+    const [result] = await Promise.all(executePreflightedToolCalls(h, ctx, [call]));
+    assert.equal(result.isError, false);
+
+    const config = JSON.parse(readFileSync(join(root, ".picm", "config.json"), "utf8"));
+    assert.equal(config.createdAt.includes("{{createdAt}}"), false);
+    assert.equal(new Date(config.createdAt).toISOString(), config.createdAt);
+    assert.deepEqual(config, {
+      version: 1,
+      profile: "specialist-folder",
+      generatedBy: "picm-factory",
+      createdAt: config.createdAt,
+      paths: { rootInstructions: "AGENTS.md" },
+    });
+
+    const [legacyCall] = await preflightParallelToolCalls(h, ctx, [{
+      id: "new-scaffold-legacy-config",
+      toolName: "write",
+      input: {
+        path: ".picm/config.json",
+        content: JSON.stringify({ createdAt: "2026-08-24", migration: "preserve" }),
+      },
+      tool: h.tools.get("write"),
+    }]);
+    const [legacyResult] = await Promise.all(executePreflightedToolCalls(h, ctx, [legacyCall]));
+    assert.equal(legacyResult.isError, false);
+    assert.deepEqual(
+      JSON.parse(readFileSync(join(root, ".picm", "config.json"), "utf8")),
+      { createdAt: "2026-08-24", migration: "preserve" },
+    );
+  });
+});
+
 test("allows only canonical shipped PiCM skill resources from the package root", async () => {
   await withFixture(async ({ root, packageRoot }) => {
     const gate = createGitReadGate({ cwd: root, packageRoot });
