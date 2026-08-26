@@ -116,7 +116,8 @@ test("security-adoption fixture remains unchanged while safeguards precede write
       { toolCallId: "previewed-write", toolName: "write", input: { path: "CONTEXT.md" } },
       h.ctx,
     );
-    assert.equal(firstWriteOpportunity, undefined);
+    assert.equal(firstWriteOpportunity.block, true);
+    assert.match(firstWriteOpportunity.reason, /Use picm_proposal_batch/);
     assert.deepEqual(workspaceSnapshot(fixture), before);
   } finally {
     await h.handlers.get("session_shutdown")({}, h.ctx);

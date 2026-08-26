@@ -1555,6 +1555,13 @@ test("privacy-reviewed scan authorization and exclusions survive resuming the sa
       resumedCtx,
     );
 
+    await resumed.tools.get("picm_scan_control").execute(
+      "id",
+      { action: "begin" },
+      undefined,
+      undefined,
+      resumedCtx,
+    );
     const restored = await resumed.tools.get("picm_scan_control").execute(
       "id",
       { action: "status" },
@@ -1563,7 +1570,7 @@ test("privacy-reviewed scan authorization and exclusions survive resuming the sa
       resumedCtx,
     );
     assert.equal(restored.details.authorized, true);
-    assert.equal(restored.details.active, false);
+    assert.equal(restored.details.active, true);
     assert.equal(restored.details.preflightComplete, true);
     assert.equal(restored.details.privacyReviewed, true);
     assert.deepEqual(restored.details.excludedPaths, ["safe-dir"]);
@@ -1590,6 +1597,13 @@ test("resumed scan authorization does not expire by elapsed time", async () => {
     }] });
     const ctx = h.context(root, "long-lived-session");
     await h.handlers.get("session_start")({ reason: "resume" }, ctx);
+    await h.tools.get("picm_scan_control").execute(
+      "id",
+      { action: "begin" },
+      undefined,
+      undefined,
+      ctx,
+    );
     const status = await h.tools.get("picm_scan_control").execute(
       "id",
       { action: "status" },

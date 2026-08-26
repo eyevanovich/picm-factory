@@ -542,6 +542,7 @@ test("a maintenance reset conflict leaves the losing workflow incomplete with re
   assert.match(h.notifications.at(-1).message, /Maintenance cycle was not reset/);
 
   const incomplete = results[0].details.ok ? second : first;
+  await h.scanControl.execute("begin", { action: "begin" }, undefined, undefined, incomplete);
   const status = await h.scanControl.execute("status", { action: "status" }, undefined, undefined, incomplete);
   assert.equal(status.details.completed, false);
   assert.equal(status.details.maintenanceResetAttempted, false);
@@ -569,6 +570,7 @@ test("an already-aborted maintenance completion leaves the scheduled cycle and w
 
   assert.equal(readFileSync(join(cwd, ".picm/config.json"), "utf8"), before);
   assert.equal(h.widgets.has("picm-maintenance-reminder"), true);
+  await h.scanControl.execute("begin", { action: "begin" }, undefined, undefined, ctx);
   const status = await h.scanControl.execute("status", { action: "status" }, undefined, undefined, ctx);
   assert.equal(status.details.completed, false);
   assert.equal(status.details.maintenanceResetAttempted, false);
@@ -606,6 +608,7 @@ test("an abort during the config rename leaves maintenance completion incomplete
     /PICM_SCAN_ABORTED/,
   );
   assert.equal(readFileSync(join(cwd, ".picm/config.json"), "utf8"), before);
+  await h.scanControl.execute("begin", { action: "begin" }, undefined, undefined, ctx);
   const status = await h.scanControl.execute("status", { action: "status" }, undefined, undefined, ctx);
   assert.equal(status.details.completed, false);
   assert.equal(status.details.maintenanceResetAttempted, false);
