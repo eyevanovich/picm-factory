@@ -62,7 +62,7 @@ Ask only when relevant.
 
 ### Stage Pipeline placement
 
-Use after the user confirms Stage Pipeline and before choosing root stage paths. If the command arguments contain an explicitly seeded placement (root-numbered folders or nested `stages/`), retain it, skip the question, and use it in the exact preview and generated paths. Otherwise ask whether stages should be root-numbered or nested under `stages/`. Only after the user says they have no preference may root-numbered become the documented default.
+Use the **Placement decision** under Stage Pipeline in `layout-profiles.md` after the user confirms the profile and before choosing stage paths.
 
 ### Operator profile
 
