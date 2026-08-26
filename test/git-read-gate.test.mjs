@@ -108,6 +108,16 @@ async function withMixedProposalFixture(run) {
   }
 }
 
+function createCuratedAdoptionFixture() {
+  const root = mkdtempSync(join(tmpdir(), "picm-curated-adoption-"));
+  cpSync(resolve("test", "fixtures", "coding-repository", "existing-doc-duplication"), root, {
+    recursive: true,
+  });
+  git(root, "init", "-q");
+  git(root, "add", ".");
+  return root;
+}
+
 function extensionHarness({
   entries = [],
   sendError,
@@ -1525,6 +1535,58 @@ test("explicit PiCM commands enforce privacy review, session scope, and durable 
     await control.execute("complete", { action: "complete" }, undefined, undefined, ctx);
     assert.equal(await h.handlers.get("tool_call")({ toolName: "bash", input: { command: "git diff" } }, ctx), undefined);
   });
+});
+
+test("Curated coding adoption reopens a protected phase before inspection and completes without writes", async (t) => {
+  const root = createCuratedAdoptionFixture();
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+
+  const h = extensionHarness();
+  const ctx = h.context(root, "curated-adoption-lifecycle");
+  const control = h.tools.get("picm_scan_control");
+  await h.commands.get("picm-adopt").handler("coding", ctx);
+  await control.execute("preflight", { action: "preflight" }, undefined, undefined, ctx);
+  await control.execute("privacy", { action: "privacy", excludedPaths: [] }, undefined, undefined, ctx);
+
+  await control.execute("begin", { action: "begin" }, undefined, undefined, ctx);
+  const initialInventory = await control.execute("inventory", { action: "inventory" }, undefined, undefined, ctx);
+  assert.equal(initialInventory.details.candidates.includes("AGENTS.md"), true);
+  await control.execute("end", { action: "end" }, undefined, undefined, ctx);
+
+  const closedPhaseRead = await h.handlers.get("tool_call")(
+    { toolName: "read", input: { path: "docs/ARCHITECTURE.md" } },
+    ctx,
+  );
+  assert.equal(closedPhaseRead.block, true);
+  assert.match(closedPhaseRead.reason, /Begin the privacy-reviewed PiCM scan/);
+
+  await control.execute("begin", { action: "begin" }, undefined, undefined, ctx);
+  const inspectionInventory = await control.execute("inventory", { action: "inventory" }, undefined, undefined, ctx);
+  assert.equal(inspectionInventory.details.candidates.includes("docs/ARCHITECTURE.md"), true);
+  const reads = await preflightParallelToolCalls(h, ctx, [
+    {
+      id: "curated-architecture",
+      toolName: "read",
+      input: { path: "docs/ARCHITECTURE.md" },
+      tool: h.tools.get("read"),
+    },
+    {
+      id: "curated-development",
+      toolName: "read",
+      input: { path: "docs/development.md" },
+      tool: h.tools.get("read"),
+    },
+  ]);
+  assert.equal(reads.every((call) => call.blocked === undefined), true);
+  const results = await Promise.all(executePreflightedToolCalls(h, ctx, reads));
+  assert.equal(results.every((result) => result.isError === false), true);
+  assert.match(results[0].result.content[0].text, /Architecture/);
+  assert.match(results[1].result.content[0].text, /src\/index\.js/);
+
+  await control.execute("end", { action: "end" }, undefined, undefined, ctx);
+  const complete = await control.execute("complete", { action: "complete" }, undefined, undefined, ctx);
+  assert.equal(complete.details.completed, true);
+  assert.equal(existsSync(join(root, ".picm", "config.json")), false);
 });
 
 test("privacy-reviewed scan authorization and exclusions survive resuming the same session", async () => {

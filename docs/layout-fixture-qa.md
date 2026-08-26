@@ -145,11 +145,12 @@ Run read-only against `existing-doc-duplication` and choose Curated.
 
 Expected behavior:
 
+- Ends the initial protected scan before mapping/depth choices, then begins a new protected inspection phase before reading Curated documentation or other project resources. The normal path produces no PiCM gate-blocked warning; it ends that phase before reporting the proposal and calls `complete` after a declined proposal.
 - Identifies `AGENTS.md`, `CLAUDE.md`, `docs/ARCHITECTURE.md`, and `docs/development.md` as overlapping/conflicting guidance.
 - Treats `src/main.js` as the evidence-backed entry point and calls the `src/index.js` references stale/uncertain without rewriting anything.
 - Proposes canonical fact homes and thin compatibility pointers.
 - Separately highlights proposed rewrites, merges, moves, archive candidates, or deletions.
-- Treats choosing Curated as permission to draft a proposal, not permission to apply it.
+- Treats choosing Curated as permission to draft a proposal, not permission to apply it; declining the proposal leaves the fixture unchanged.
 
 ### Protected privacy and Git-exclude boundary
 
