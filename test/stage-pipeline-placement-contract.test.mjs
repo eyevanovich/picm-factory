@@ -61,6 +61,8 @@ test("negated root cue preserves an explicit nested override", async () => {
 test("negated or conflicting placement cues remain unresolved", async () => {
   for (const args of [
     "Stage Pipeline; do not use root-numbered folders",
+    "Stage Pipeline; root-numbered folders are not acceptable",
+    "Stage Pipeline; nested stages would be unacceptable",
     "Stage Pipeline; either root-numbered folders or nested stages",
   ]) {
     const h = harness();
@@ -68,6 +70,16 @@ test("negated or conflicting placement cues remain unresolved", async () => {
     assert.match(h.sent[0], /placement is unresolved/);
     assert.doesNotMatch(h.sent[0], /placement seed:/);
   }
+});
+
+test("postfix affirmative placement is preserved", async () => {
+  const h = harness();
+  await h.commands.get("picm-new").handler(
+    "Stage Pipeline; nested stages are preferred",
+    h.context(),
+  );
+  assert.match(h.sent[0], /placement seed: nested under `stages\/`/);
+  assert.doesNotMatch(h.sent[0], /placement is unresolved/);
 });
 
 test("TUI placement dispatch retains privacy-first ordering", async () => {

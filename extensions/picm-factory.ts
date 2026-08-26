@@ -90,16 +90,28 @@ function buildMaintenanceContinuationPrompt(depth: "strict" | "balanced") {
   return `Initial maintenance continuation — successful adoption selected an initial maintenance pass. The adoption privacy review and its confirmed exclusions remain active for this conversation. Do not repeat preflight or the privacy question. Begin a new protected scan phase with \`picm_scan_control\` action \`begin\`, then run profile-appropriate maintenance using protected inventory and guarded reads.\n\nMode: maintain\nInitial maintenance run depth: ${depth}. Apply this depth to this run only. Do not mutate \`capabilities.codebaseMap.maintenancePreset\`.\n\n${maintenanceOptimizationIntake}\n\nBefore applying a proposal batch, follow the skill's shipped summary-preview and optional-diff-review protocol. Present the complete current summary, including non-blocking review suggestions for material or uncertain changes, then treat an unambiguous direct approval such as accept, approve, accept and write, or proceed as approval to write only that exact proposal. Do not require a separate summary-acceptance step or review menu. Keep exact review available on demand for view all, review files, and show diff for a path. When the user requests a draft adjustment, revise the current proposal conversationally, preserve applicable unchanged-path review state, and invite direct approval or diff inspection of the revision.\n\nAfter the final maintenance scan \`end\`, call \`picm_scan_control\` with \`action: "complete"\` before reporting, saving session state, or using any other agent tool.`;
 }
 
+function hasAffirmativePlacementClause(args: string, cue: RegExp): boolean {
+  const negative = /\b(?:no|not|never|avoid|reject|without|unacceptable|isn't|cannot|can't|don't)\b|\bdo not\b/;
+  const affirmativeBefore = /\b(?:use|choose|want|prefer|select|place|keep)\s+(?:the\s+)?$/;
+  const affirmativeAfter = /^\s+(?:is|are|would be)\s+(?:preferred|selected|chosen|wanted|required|acceptable|okay|fine)\b/;
+  return args.split(/\s*(?:[;,\n]|\bbut\b|\band\b)\s*/).some((clause) => {
+    const match = cue.exec(clause);
+    if (!match || negative.test(clause)) return false;
+    const before = clause.slice(0, match.index).trim();
+    const after = clause.slice(match.index + match[0].length);
+    return before === "" && after.trim() === "" ||
+      affirmativeBefore.test(before) ||
+      affirmativeAfter.test(after);
+  });
+}
+
 function buildStagePlacementContext(command: CommandName, args: string): string {
   if (command !== "picm-new") return "";
   const normalized = args.toLowerCase();
   const rootCue = /\broot[- ]numbered(?: folders?)?\b/;
   const nestedCue = /\bnested (?:under )?(?:the )?stages\b|\bstages\//;
-  const negation = "(?:do not|don't|not|avoid|without)\\s+(?:(?:use|choose|want|prefer|select)\\s+)?(?:the\\s+)?";
-  const rootIsAffirmative = rootCue.test(normalized) &&
-    !new RegExp(`${negation}${rootCue.source}`).test(normalized);
-  const nestedIsAffirmative = nestedCue.test(normalized) &&
-    !new RegExp(`${negation}(?:${nestedCue.source})`).test(normalized);
+  const rootIsAffirmative = hasAffirmativePlacementClause(normalized, rootCue);
+  const nestedIsAffirmative = hasAffirmativePlacementClause(normalized, nestedCue);
   const seededPlacement = rootIsAffirmative === nestedIsAffirmative
     ? undefined
     : rootIsAffirmative
