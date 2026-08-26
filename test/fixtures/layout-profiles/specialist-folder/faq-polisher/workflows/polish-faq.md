@@ -18,4 +18,4 @@ Create the reviewable polished FAQ draft at `review/polished-faq.md`; create tha
 
 ## Review gate and next action
 
-A human must inspect, edit, and approve `review/polished-faq.md`. Keep unsupported claims and unresolved questions visible there. The next use of this specialist reads from the approved edited draft, not chat memory.
+A human must inspect, edit, and approve `review/polished-faq.md`. Keep unsupported claims and unresolved questions visible there. The next use of this specialist reads from the approved edited `review/polished-faq.md`, not chat memory.

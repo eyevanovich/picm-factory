@@ -37,6 +37,11 @@ test("picm-new emits final guidance derived from the reported Specialist fixture
 
   await h.commands.get("picm-new").handler("Create the FAQ polisher Specialist Folder", context);
   assert.equal(h.sent.length, 1);
+  assert.match(
+    h.sent[0],
+    /call `picm_specialist_first_run_guidance` with the exact first recipe path and approved recipe content/,
+  );
+  assert.match(h.sent[0], /use its returned text as the final first-run guidance/);
 
   const recipePath = "workflows/polish-faq.md";
   const recipe = readFileSync(join(fixture, recipePath), "utf8");
@@ -55,6 +60,33 @@ test("picm-new emits final guidance derived from the reported Specialist fixture
   assert.match(guidance, /Expected artifact: `review\/polished-faq\.md`/);
   assert.match(guidance, /Inspect, edit, and explicitly approve `review\/polished-faq\.md`/);
   assert.match(guidance, /unsupported claims and unresolved questions visible/);
-  assert.match(guidance, /next specialist action reads from the approved edited `review\/polished-faq\.md`/);
+  assert.match(guidance, /next specialist action reads from the approved `review\/polished-faq\.md`/);
   assert.match(guidance, /Run `\/picm-maintain` after the first real use/);
+});
+
+test("Specialist guidance renders the recipe's distinct next-action route", async () => {
+  const h = harness();
+  const result = await h.tools.get("picm_specialist_first_run_guidance").execute(
+    "guidance",
+    {
+      recipePath: "workflows/review.md",
+      recipe: `# Review
+
+## Inputs
+
+- A submitted draft.
+
+## Expected artifact
+
+Create \`review/draft.md\`.
+
+## Review gate and next action
+
+A human must inspect, edit, and approve \`review/draft.md\`. Keep unresolved claims visible there. The next action reads from the approved \`queue/approved.md\`.
+`,
+    },
+  );
+
+  assert.match(result.content[0].text, /Expected artifact: `review\/draft\.md`/);
+  assert.match(result.content[0].text, /next specialist action reads from the approved `queue\/approved\.md`/);
 });

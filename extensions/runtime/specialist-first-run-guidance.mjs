@@ -19,9 +19,9 @@ export function renderSpecialistFirstRunGuidance({ recipePath, recipe }) {
   const artifact = artifactSection.match(/`([^`]+)`/)?.[1];
   const hasReviewGate = /\binspect\b/i.test(reviewSection) && /\bedit\b/i.test(reviewSection) && /\bapprove\b/i.test(reviewSection);
   const uncertainty = reviewSection.match(/Keep (.+?) visible(?: there|\.)/i)?.[1];
-  const hasNextAction = /\bnext\b[\s\S]*\breads? from\b/i.test(reviewSection);
+  const nextActionSource = reviewSection.match(/\bnext\b[^.]*?\breads? from\b[^`]*`([^`]+)`/i)?.[1];
 
-  if (inputs.length === 0 || !artifact || !hasReviewGate || !uncertainty || !hasNextAction) {
+  if (inputs.length === 0 || !artifact || !hasReviewGate || !uncertainty || !nextActionSource) {
     throw new Error("SPECIALIST_GUIDANCE_INCOMPLETE: approved recipe must name inputs, an artifact, an inspect/edit/approve gate, visible uncertainty, and the next-action source");
   }
 
@@ -30,7 +30,7 @@ export function renderSpecialistFirstRunGuidance({ recipePath, recipe }) {
     `Inputs: ${inputs.join("; ")}`,
     `Expected artifact: \`${artifact}\`.`,
     `Inspect, edit, and explicitly approve \`${artifact}\` before another specialist action. Keep ${uncertainty} visible.`,
-    `The next specialist action reads from the approved edited \`${artifact}\`, not chat memory.`,
+    `The next specialist action reads from the approved \`${nextActionSource}\`, not chat memory.`,
     "Run `/picm-maintain` after the first real use or when the specialist workflow, routing, or stable guidance changes.",
   ].join("\n");
 }
