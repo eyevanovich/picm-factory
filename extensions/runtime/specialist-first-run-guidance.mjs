@@ -4,17 +4,6 @@ function section(markdown, headings) {
   return match?.[1]?.trim() ?? "";
 }
 
-export function generatedSpecialistInputRoutes(inputs) {
-  if (!Array.isArray(inputs)) return [];
-  return inputs.flatMap((input) => {
-    if (typeof input !== "string") return [];
-    const runtimeInput = /\b(?:future|per-run|for this run|supplied|provided|current draft|user input)\b/i.test(input);
-    const generatedInput = /\b(?:reusable|stable|shared|generated)\b/i.test(input);
-    if (runtimeInput || !generatedInput) return [];
-    return [...input.matchAll(/`([^`]+)`/g)].map((match) => match[1]);
-  });
-}
-
 export function parseSpecialistFirstRunRecipe(recipePath, recipe) {
   if (typeof recipePath !== "string" || !recipePath.trim() || typeof recipe !== "string" || !recipe.trim()) {
     throw new Error("SPECIALIST_RECIPE_INCOMPLETE: approved recipe path and content are required");
@@ -33,9 +22,8 @@ export function parseSpecialistFirstRunRecipe(recipePath, recipe) {
   const expectedArtifact = artifactSection.match(/`([^`]+)`/)?.[1];
   const requiresInspectEditApprove = /\binspect\b/i.test(reviewSection) && /\bedit\b/i.test(reviewSection) && /\bapprove\b/i.test(reviewSection);
   const nextActionSource = reviewSection.match(/\bnext\b[^.]*?\b(?:reads? from|uses?|consumes?)\b[^`]*`([^`]+)`/i)?.[1];
-  const uncertaintyText = reviewSection.match(/\b(?:Keep|Leave|Preserve|Flag)\s+([^.!?\n]+)/i)?.[1];
-  const visibleUncertainty = uncertaintyText
-    ?.split(/\s+and\s+|,\s*/)
+  const visibleUncertainty = [...reviewSection.matchAll(/\b(?:Keep|Leave|Preserve|Flag)\s+([^.!?\n]+)/gi)]
+    .flatMap((match) => match[1].split(/\s+and\s+|,\s*/))
     .map((value) => value.replace(/\s+(?:visible(?:\s+there)?|in (?:the )?review notes)$/i, "").trim())
     .filter(Boolean);
   const semantics = { recipePath, inputs, expectedArtifact, requiresInspectEditApprove, nextActionSource, visibleUncertainty };

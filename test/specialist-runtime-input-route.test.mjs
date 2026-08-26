@@ -1,11 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import {
-  generatedSpecialistInputRoutes,
-  parseSpecialistFirstRunRecipe,
-} from "../extensions/runtime/specialist-first-run-guidance.mjs";
+import { parseSpecialistFirstRunRecipe } from "../extensions/runtime/specialist-first-run-guidance.mjs";
 
-test("runtime inputs remain route references while reusable inputs require generation", () => {
+test("recipe parsing preserves runtime and generated input routes", () => {
   const semantics = parseSpecialistFirstRunRecipe(
     "workflows/polish.md",
     `# Polish
@@ -24,13 +21,17 @@ Create \`review/polished.md\`.
 Inspect, edit, and approve \`review/polished.md\`. Keep unsupported claims visible. The next action reads from \`review/polished.md\`.
 `,
   );
-  assert.deepEqual(generatedSpecialistInputRoutes(semantics.inputs), ["knowledge/style.md"]);
+  assert.deepEqual(semantics.inputs, [
+    "The future draft at `reference/faq.md`.",
+    "Reusable guidance at `knowledge/style.md`.",
+  ]);
 });
 
 test("uncertainty clauses normalize supported visibility wording", () => {
   for (const review of [
     "Flag unsupported claims and unresolved questions in the review notes.",
     "Keep unsupported claims visible and unresolved questions in review notes.",
+    "Flag unsupported claims. Leave unresolved questions in the review notes.",
   ]) {
     const semantics = parseSpecialistFirstRunRecipe(
       "workflows/review.md",
