@@ -83,7 +83,7 @@ Use when:
 
 Only create `examples.md` when real golden examples or anti-examples are available or the user explicitly wants an example area. Otherwise mention that examples should be added after the first real run.
 
-First-run ending guidance for this profile should name the first workflow/task recipe to run, the first result/draft to inspect, and the decision point after review: keep corrections as one-off output edits, or promote stable lessons into `rules.md`, `examples.md`, or `reference/` when they should affect future runs.
+After an approved scaffold, derive first-run ending guidance only from its approved generated routes. Name the exact first workflow/task recipe path, the inputs it reads, and the expected artifact it produces. Require an explicit human gate to inspect, edit, and explicitly approve that artifact before any subsequent specialist action; name the approved artifact as the route the next action reads from. Keep any uncertainty, unsupported claims, missing information, blockers, or low-confidence points named by that recipe visible in the artifact or review notes. After review, distinguish one-off artifact edits from durable lessons that belong in an approved existing `rules.md`, `examples.md`, or `reference/` route; never invent optional folders, recipes, or operations. Recommend `/picm-maintain` after the first real use or when the specialist workflow, routing, or stable guidance changes.
 
 Examples from references:
 
