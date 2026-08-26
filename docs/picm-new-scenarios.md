@@ -122,10 +122,12 @@ Expected behavior:
 
 ## Scenario 6: stage pipeline layout choice
 
-Expected behavior when Stage Pipeline is recommended:
+Expected behavior when Stage Pipeline is confirmed:
 
-- asks whether stages should be root numbered folders or nested under `stages/`
-- defaults to root numbered folders when the user has no preference
+- before choosing root stage paths, retains an explicitly seeded placement and skips the question; for example, `Use root numbered folders` keeps `01_intake/`, while `use nested stages` keeps `stages/01_intake/`
+- otherwise asks whether stages should be root-numbered or nested under `stages/`
+- chooses root-numbered only after the user says they have no preference
+- uses the selected placement consistently in the exact preview, generated paths, config path hints, and first-run checklist
 - uses local `CONTEXT.md` files for stage-specific context
 - creates local `AGENTS.md` only if a stage needs hard local behavior rules or independent Pi/subagent cwd execution
 

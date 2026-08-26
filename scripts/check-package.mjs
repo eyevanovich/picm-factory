@@ -34,6 +34,7 @@ const required = [
   "test/maintenance-controller.test.mjs",
   "test/maintenance-extension.test.mjs",
   "test/preview-review-contract.test.mjs",
+  "test/stage-pipeline-placement-contract.test.mjs",
   "test/optimization-contract.test.mjs",
   "test/privacy-policy.test.mjs",
   "extensions/picm-factory.ts",
