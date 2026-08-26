@@ -1299,6 +1299,8 @@ test("approved adoption and maintenance batches apply mixed operations atomicall
 
       const aborted = await prepare();
       await h.handlers.get("before_agent_start")({ prompt: "approve" }, ctx);
+      assert.equal((await apply(aborted.details.proposalId)).details.ok, false);
+      await h.handlers.get("before_agent_start")({ prompt: aborted.details.approvalPrompt }, ctx);
       let abortChecks = 0;
       const abortAfterFirstMutation = {
         get aborted() {
@@ -1315,7 +1317,7 @@ test("approved adoption and maintenance batches apply mixed operations atomicall
       assert.equal(entries.some((entry) => entry.customType === "picm-proposal-batch" && entry.data.status === "aborted"), true);
 
       const stale = await prepare();
-      await h.handlers.get("before_agent_start")({ prompt: "approve" }, ctx);
+      await h.handlers.get("before_agent_start")({ prompt: stale.details.approvalPrompt }, ctx);
       writeFileSync(join(root, "reference/obsolete.md"), "# Drifted note\n");
       await assert.rejects(
         apply(stale.details.proposalId),
@@ -1327,7 +1329,7 @@ test("approved adoption and maintenance batches apply mixed operations atomicall
       assert.equal(readFileSync(join(root, "reference/obsolete.md"), "utf8"), "# Drifted note\n");
 
       const approved = await prepare("# Drifted note\n");
-      await h.handlers.get("before_agent_start")({ prompt: "accept and write" }, ctx);
+      await h.handlers.get("before_agent_start")({ prompt: approved.details.approvalPrompt }, ctx);
       const applying = apply(approved.details.proposalId);
       const ending = control.execute("end", { action: "end" }, undefined, undefined, ctx);
       const [applied, ended] = await Promise.all([applying, ending]);
@@ -1348,6 +1350,14 @@ test("approved adoption and maintenance batches apply mixed operations atomicall
 
       assert.equal((await h.handlers.get("tool_call")({ toolName: "read", input: { path: "AGENTS.md" } }, ctx)).block, true);
       assert.equal((await h.handlers.get("tool_call")({ toolName: "picm_proposal_batch", input: { action: "apply" } }, ctx)).block, true);
+      await assert.rejects(
+        control.execute("status", { action: "status" }, undefined, undefined, ctx),
+        /PICM_SCAN_SETTLED/,
+      );
+      await assert.rejects(
+        control.execute("privacy", { action: "privacy", excludedPaths: [] }, undefined, undefined, ctx),
+        /PICM_SCAN_SETTLED/,
+      );
       await control.execute("begin", { action: "begin" }, undefined, undefined, ctx);
       await control.execute("end", { action: "end" }, undefined, undefined, ctx);
     });

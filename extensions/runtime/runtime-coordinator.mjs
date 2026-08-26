@@ -188,6 +188,9 @@ export function createRuntimeCoordinator({
     const { action, path, excludedPaths = [], persist = false } = params;
     const sessionId = sessionIdFor(ctx);
     const workflow = workflowFor(ctx);
+    if (workflow?.scanSettled && !workflow.completed && action !== "begin" && action !== "complete") {
+      throw new Error("PICM_SCAN_SETTLED: after ending a scan, only begin for the next phase or complete is allowed");
+    }
     if (workflow?.completed && action !== "status" && action !== "complete") {
       throw new Error("PICM_SCAN_COMPLETE: wait for the completed workflow to settle before starting another scan action");
     }
@@ -440,11 +443,11 @@ export function createRuntimeCoordinator({
     return queueScanOperation(ctx, () => runScanControl(ctx, params, execution));
   }
 
-  function proposalResponseStatus(prompt) {
+  function proposalResponseStatus(prompt, approvalPrompt) {
     const text = typeof prompt === "string"
       ? prompt.trim().toLowerCase().replace(/[.!]+$/g, "").replace(/\s+/g, " ")
       : "";
-    if (/^(?:i )?(?:accept|approve|proceed)(?: (?:this|the|current|exact|proposal|batch|changes|it))*?(?: (?:and|to) (?:write|apply))?$/.test(text)) {
+    if (text === approvalPrompt.toLowerCase()) {
       return "approved";
     }
     if (/\b(?:cancel|stop|decline|withdraw|never mind|do not apply|don't apply)\b/.test(text)) return "cancelled";
@@ -456,7 +459,7 @@ export function createRuntimeCoordinator({
     const sessionId = sessionIdFor(ctx);
     const current = proposalBatches.get(sessionId);
     if (!current || current.cwd !== ctx.cwd || current.status === "applied") return undefined;
-    const status = proposalResponseStatus(prompt);
+    const status = proposalResponseStatus(prompt, current.approvalPrompt);
     if (status === "approved" && current.status === "pending") current.status = "approved";
     else if (status !== "pending") current.status = status;
     else if (current.status !== "revision-required" && current.status !== "cancelled") current.status = "pending";
@@ -494,13 +497,21 @@ export function createRuntimeCoordinator({
         operations: params.operations,
       });
       requireCurrentWorkflow(sessionId, workflow);
-      proposalBatches.set(sessionId, { cwd: ctx.cwd, command: workflow.command, batch, status: "pending" });
+      const approvalPrompt = `Approve proposal ${batch.id}`;
+      proposalBatches.set(sessionId, {
+        cwd: ctx.cwd,
+        command: workflow.command,
+        batch,
+        status: "pending",
+        approvalPrompt,
+      });
       return {
         ok: true,
         action: "prepare",
         proposalId: batch.id,
         digest: batch.digest,
         operations: batch.auditOperations,
+        approvalPrompt,
         audit: proposalAudit(batch, "prepared", { command: workflow.command }),
       };
     }
