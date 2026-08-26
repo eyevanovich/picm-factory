@@ -43,7 +43,14 @@ test("picm-new emits final guidance derived from the reported Specialist fixture
     ...h,
     context: ctx,
     args: "Create the FAQ polisher Specialist Folder",
-    recipePath: "workflows/polish-faq.md",
+    routeSemantics: {
+      recipePath: "workflows/polish-faq.md",
+      inputs: ["The rough FAQ answer supplied for this run.", "`reference/faq-style.md` for reusable style guidance."],
+      expectedArtifact: "review/polished-faq.md",
+      requiresInspectEditApprove: true,
+      nextActionSource: "review/polished-faq.md",
+      visibleUncertainty: ["unsupported claims", "unresolved questions"],
+    },
   });
 
   assert.match(guidance, /Start with `workflows\/polish-faq\.md`/);
@@ -56,7 +63,7 @@ test("picm-new emits final guidance derived from the reported Specialist fixture
   assert.match(guidance, /Run `\/picm-maintain` after the first real use/);
 });
 
-test("Specialist guidance renders the recipe's distinct next-action route", async () => {
+test("Specialist guidance accepts semantic variants and a distinct next-action route", async () => {
   const h = harness();
   const ctx = context(process.cwd(), "distinct-specialist-route-test");
   await h.commands.get("picm-new").handler("Create a Specialist Folder", ctx);
@@ -64,20 +71,11 @@ test("Specialist guidance renders the recipe's distinct next-action route", asyn
     "guidance",
     {
       recipePath: "workflows/review.md",
-      recipe: `# Review
-
-## Inputs
-
-- A submitted draft.
-
-## Expected artifact
-
-Create \`review/draft.md\`.
-
-## Review gate and next action
-
-A human must inspect, edit, and approve \`review/draft.md\`. Keep unresolved claims visible there. The next action reads from the approved \`queue/approved.md\`.
-`,
+      inputs: ["A submitted draft."],
+      expectedArtifact: "review/draft.md",
+      requiresInspectEditApprove: true,
+      nextActionSource: "queue/approved.md",
+      visibleUncertainty: ["unresolved questions in the review notes"],
     },
     undefined,
     undefined,
@@ -86,4 +84,5 @@ A human must inspect, edit, and approve \`review/draft.md\`. Keep unresolved cla
 
   assert.match(result.content[0].text, /Expected artifact: `review\/draft\.md`/);
   assert.match(result.content[0].text, /next specialist action reads from the approved `queue\/approved\.md`/);
+  assert.match(result.content[0].text, /unresolved questions in the review notes visible/);
 });
