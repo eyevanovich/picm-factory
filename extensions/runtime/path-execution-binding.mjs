@@ -768,12 +768,24 @@ export function createPathExecutionBinding(plan, limitOverrides) {
               }
               return fsPromises.writeFile(target, content, "utf8");
             },
+            unlink: async (path) => {
+              const { target, st } = await assertSafeFile(path);
+              if (!st.isFile()) fail("target is not a regular file");
+              return fsPromises.unlink(target);
+            },
           }
         : plan.toolName === "write"
           ? {
               mkdir: async (dir, options) => {
                 const target = await assertBoundTarget(dir, { allowAncestor: true });
                 return fsPromises.mkdir(target, { recursive: true, ...options });
+              },
+              lstat: async (path) => {
+                const target = await assertBoundTarget(path);
+                const st = await fsPromises.lstat(target);
+                if (st.isSymbolicLink()) fail("target became a symlink");
+                if (st.isFile() && st.nlink > 1) fail("validated target has multiple hard links");
+                return st;
               },
               writeFile: async (path, content) => {
                 const target = await assertBoundTarget(path);
@@ -785,6 +797,14 @@ export function createPathExecutionBinding(plan, limitOverrides) {
                   if (e.code !== "ENOENT") throw e;
                 }
                 return fsPromises.writeFile(target, content, "utf8");
+              },
+              unlink: async (path) => {
+                const target = await assertBoundTarget(path);
+                const st = await fsPromises.lstat(target);
+                if (st.isSymbolicLink()) fail("target became a symlink");
+                if (!st.isFile()) fail("target is not a regular file");
+                if (st.nlink > 1) fail("validated target has multiple hard links");
+                return fsPromises.unlink(target);
               },
             }
           : plan.toolName === "grep" || plan.toolName === "rg"

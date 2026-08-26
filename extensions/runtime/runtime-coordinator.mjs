@@ -3,6 +3,12 @@ import { createGitReadGate } from "./git-read-gate.mjs";
 import { createMaintenanceConfigStore } from "./maintenance-config-store.mjs";
 import { createMaintenanceController } from "./maintenance-controller.mjs";
 import { mergePrivacyExcludedPaths } from "./privacy-policy.mjs";
+import {
+  applyProposalBatch,
+  prepareProposalBatch,
+  proposalAudit,
+  proposalSummary,
+} from "./proposal-batch.mjs";
 
 const EXPLICIT_SCAN_COMMANDS = new Set(["picm-new", "picm-adopt", "picm-maintain", "picm-optimize"]);
 const GUARDED_PATH_TOOLS = new Set(["read", "edit", "write", "grep", "rg", "find", "ls"]);
@@ -37,6 +43,7 @@ export function createRuntimeCoordinator({
   const scanControlQueues = new Map();
   const policyPreviews = new Map();
   const activeToolBindings = new Map();
+  const proposalBatches = new Map();
 
   const sessionIdFor = (ctx) =>
     ctx.sessionManager?.getSessionId?.() ??
@@ -51,6 +58,7 @@ export function createRuntimeCoordinator({
     if ((workflow && workflow.cwd !== ctx.cwd) || (scan && scan.cwd !== ctx.cwd)) {
       scanWorkflows.delete(sessionId);
       activeScans.delete(sessionId);
+      proposalBatches.delete(sessionId);
       return undefined;
     }
     return workflow;
@@ -65,6 +73,7 @@ export function createRuntimeCoordinator({
     const sessionId = sessionIdFor(ctx);
     const hadWorkflow = scanWorkflows.delete(sessionId);
     const hadActiveScan = activeScans.delete(sessionId);
+    proposalBatches.delete(sessionId);
     return hadWorkflow || hadActiveScan;
   }
 
@@ -90,6 +99,7 @@ export function createRuntimeCoordinator({
   function authorizeWorkflow(ctx, command) {
     const sessionId = sessionIdFor(ctx);
     clearActiveScan(ctx);
+    proposalBatches.delete(sessionId);
     const workflow = {
       cwd: ctx.cwd,
       command,
@@ -180,6 +190,9 @@ export function createRuntimeCoordinator({
     const { action, path, excludedPaths = [], persist = false } = params;
     const sessionId = sessionIdFor(ctx);
     const workflow = workflowFor(ctx);
+    if (workflow?.scanSettled && !workflow.completed && action !== "begin" && action !== "complete") {
+      throw new Error("PICM_SCAN_SETTLED: after ending a scan, only begin for the next phase or complete is allowed");
+    }
     if (workflow?.completed && action !== "status" && action !== "complete") {
       throw new Error("PICM_SCAN_COMPLETE: wait for the completed workflow to settle before starting another scan action");
     }
@@ -412,7 +425,7 @@ export function createRuntimeCoordinator({
     };
   }
 
-  async function scanControl(ctx, params, execution) {
+  async function queueScanOperation(ctx, operation) {
     const sessionId = sessionIdFor(ctx);
     const prior = scanControlQueues.get(sessionId) ?? Promise.resolve();
     let release;
@@ -421,11 +434,184 @@ export function createRuntimeCoordinator({
     scanControlQueues.set(sessionId, queued);
     await prior;
     try {
-      return await runScanControl(ctx, params, execution);
+      return await operation();
     } finally {
       release();
       if (scanControlQueues.get(sessionId) === queued) scanControlQueues.delete(sessionId);
     }
+  }
+
+  async function scanControl(ctx, params, execution) {
+    return queueScanOperation(ctx, () => runScanControl(ctx, params, execution));
+  }
+
+  function proposalResponseStatus(prompt) {
+    const text = typeof prompt === "string"
+      ? prompt.trim().toLowerCase().replace(/[.!]+$/g, "").replace(/\s+/g, " ")
+      : "";
+    if (/^(?:i )?(?:accept|approve|proceed)(?: (?:this|the|current|exact|proposal|batch|changes|it))*?(?: (?:and|to) (?:write|apply))?$/.test(text)) {
+      return "approved";
+    }
+    if (/\b(?:cancel|stop|decline|withdraw|never mind|do not apply|don't apply)\b/.test(text)) return "cancelled";
+    if (/\b(?:change|adjust|revise|rewrite|replace|instead|remove|add|move|delete)\b/.test(text)) return "revision-required";
+    return "pending";
+  }
+
+  function observeProposalResponse(ctx, prompt) {
+    const sessionId = sessionIdFor(ctx);
+    const current = proposalBatches.get(sessionId);
+    if (!current || current.cwd !== ctx.cwd || current.status === "applied") return undefined;
+    const status = proposalResponseStatus(prompt);
+    if (!current.presentation && status === "approved") {
+      return proposalAudit(current.batch, "approval-observed", { approval: "pending" });
+    }
+    if (status === "approved" && current.status === "pending") current.status = "approved";
+    else if (status !== "pending") current.status = status;
+    else if (current.status !== "revision-required" && current.status !== "cancelled") current.status = "pending";
+    return proposalAudit(current.batch, "approval-observed", { approval: current.status });
+  }
+
+  function activeProposalWorkflow(ctx) {
+    const workflow = workflowFor(ctx);
+    const scan = activeScans.get(sessionIdFor(ctx));
+    if (
+      !workflow ||
+      scan?.cwd !== ctx.cwd ||
+      (workflow.command !== "picm-adopt" && workflow.command !== "picm-maintain")
+    ) {
+      return undefined;
+    }
+    return { workflow, scan };
+  }
+
+  async function runProposalBatch(ctx, params, execution = {}) {
+    const active = activeProposalWorkflow(ctx);
+    if (!active) {
+      return {
+        ok: false,
+        code: "PICM_PROPOSAL_SCAN_NOT_ACTIVE",
+        message: "Begin an active /picm-adopt or /picm-maintain scan before preparing or applying a proposal batch",
+      };
+    }
+    const { workflow, scan } = active;
+    const sessionId = sessionIdFor(ctx);
+    if (params.action === "prepare") {
+      const batch = await prepareProposalBatch({
+        gate: runtimeFor(ctx).gate,
+        excludedPaths: scan.excludedPaths,
+        operations: params.operations,
+      });
+      requireCurrentWorkflow(sessionId, workflow);
+      proposalBatches.set(sessionId, {
+        cwd: ctx.cwd,
+        command: workflow.command,
+        batch,
+        status: "pending",
+        presentation: undefined,
+      });
+      return {
+        ok: true,
+        action: "prepare",
+        proposalId: batch.id,
+        digest: batch.digest,
+        operations: batch.auditOperations,
+        audit: proposalAudit(batch, "prepared", { command: workflow.command }),
+      };
+    }
+
+    const current = proposalBatches.get(sessionId);
+    if (!current || current.cwd !== ctx.cwd || current.command !== workflow.command) {
+      return {
+        ok: false,
+        code: "PICM_PROPOSAL_NOT_PREPARED",
+        message: "Prepare the current exact proposal batch before applying or cancelling it",
+      };
+    }
+    if (params.proposalId !== current.batch.id) {
+      return {
+        ok: false,
+        code: "PICM_PROPOSAL_STALE",
+        message: "proposalId does not match the current exact proposal batch",
+      };
+    }
+    if (params.action === "present") {
+      if (current.status !== "pending") {
+        return {
+          ok: false,
+          code: "PICM_PROPOSAL_REPLACEMENT_REQUIRED",
+          message: "Prepare a replacement batch after cancellation or a requested revision",
+        };
+      }
+      if (params.digest !== current.batch.digest) {
+        return {
+          ok: false,
+          code: "PICM_PROPOSAL_STALE",
+          message: "digest does not match the current exact proposal batch",
+        };
+      }
+      const summary = proposalSummary(current.batch);
+      const approvalPrompt = "Reply accept, approve, accept and write, or proceed to apply this exact proposal; otherwise request changes or cancel.";
+      current.presentation = {
+        proposalId: current.batch.id,
+        digest: current.batch.digest,
+        summary,
+        approvalPrompt,
+      };
+      return {
+        ok: true,
+        action: "present",
+        proposalId: current.batch.id,
+        digest: current.batch.digest,
+        summary,
+        approvalPrompt,
+        audit: proposalAudit(current.batch, "presented", { command: workflow.command }),
+      };
+    }
+    if (params.action === "cancel") {
+      current.status = "cancelled";
+      return {
+        ok: true,
+        action: "cancel",
+        proposalId: current.batch.id,
+        audit: proposalAudit(current.batch, "cancelled", { command: workflow.command }),
+      };
+    }
+    if (params.action !== "apply") {
+      throw new Error("PICM_PROPOSAL_INVALID: action must be prepare, present, apply, or cancel");
+    }
+    if (current.status !== "approved") {
+      return {
+        ok: false,
+        code: "PICM_PROPOSAL_NOT_APPROVED",
+        message: "An unambiguous direct approval of the current exact proposal is required before applying it",
+      };
+    }
+
+    current.status = "applying";
+    try {
+      throwIfAborted(execution.signal, "PICM_PROPOSAL_ABORTED");
+      const result = await applyProposalBatch(current.batch, { signal: execution.signal });
+      requireCurrentWorkflow(sessionId, workflow);
+      current.status = "applied";
+      return {
+        ...result,
+        action: "apply",
+        audit: proposalAudit(current.batch, "applied", { command: workflow.command }),
+      };
+    } catch (error) {
+      const failure = error instanceof Error ? error : new Error(String(error));
+      const aborted = failure.code === "PICM_PROPOSAL_ABORTED";
+      current.status = aborted ? "aborted" : "failed";
+      failure.picmProposalAudit = proposalAudit(current.batch, current.status, {
+        command: workflow.command,
+        ...(typeof failure.code === "string" ? { code: failure.code } : {}),
+      });
+      throw failure;
+    }
+  }
+
+  async function proposalBatch(params, ctx, execution) {
+    return queueScanOperation(ctx, () => runProposalBatch(ctx, params, execution));
   }
 
   function runtime(cwd) {
@@ -634,6 +820,20 @@ export function createRuntimeCoordinator({
     try {
       if (scan?.cwd === ctx.cwd) {
         if (event.toolName === "bash") return runtimeFor(ctx).gate.checkBash(event.input?.command);
+        if (
+          (workflow.command === "picm-adopt" || workflow.command === "picm-maintain") &&
+          (event.toolName === "edit" || event.toolName === "write")
+        ) {
+          return {
+            allowed: false,
+            reason: "Use picm_proposal_batch for approved /picm-adopt or /picm-maintain file mutations",
+          };
+        }
+        if (event.toolName === "picm_proposal_batch") {
+          return workflow.command === "picm-adopt" || workflow.command === "picm-maintain"
+            ? { allowed: true }
+            : { allowed: false, reason: "Proposal batches are available only during active /picm-adopt or /picm-maintain scans" };
+        }
         if (!GUARDED_PATH_TOOLS.has(event.toolName)) {
           return { allowed: false, reason: "Unrecognized agent tools are blocked during active PiCM scans" };
         }
@@ -836,6 +1036,8 @@ export function createRuntimeCoordinator({
     endToolExecution,
     isWorkflowCompleted,
     maintenancePolicy,
+    observeProposalResponse,
+    proposalBatch,
     workflowCommand,
     rejectToolExecution,
     resetCycle,

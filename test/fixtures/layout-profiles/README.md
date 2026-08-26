@@ -11,7 +11,7 @@ Profiles covered:
 - `stage-pipeline/` — ordered workflow stages, including root-numbered and nested `stages/` shapes plus an intentional source-integrity drift fixture for heuristic trace QA.
 - `specialist-folder/` — one reusable expert/helper, with `examples.md` present in one fixture and absent in another.
 - `team-role-os/` — multiple role folders with handoffs and shared reference.
-- `custom-existing-structure/` — pre-adoption agent-file variants plus one adopted custom PiCM workspace.
+- `custom-existing-structure/` — pre-adoption agent-file variants, one adopted custom PiCM workspace, and `mixed-proposal-batch/` for approved create/modify/delete/linked-move batch QA.
 - `security-red-team/` — synthetic sensitive-material fixtures for `/picm-adopt` and `/picm-maintain` safety checks.
 - `anti-patterns/` — synthetic, non-sensitive workspaces with one primary maintenance defect each: root brain dump, missing task routing, missing stage outputs/review gates, mixed reference/working artifacts, stale context, normal routing through `.picm/`, or incomplete handoff.
 
