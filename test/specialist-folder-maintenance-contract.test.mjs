@@ -50,7 +50,7 @@ function harness(cwd, sessionId) {
 }
 
 for (const fixtureName of fixtureNames) {
-  test(`/picm-maintain identifies ${fixtureName} without approving fixture writes`, async () => {
+  test(`/picm-maintain identifies ${fixtureName} without approving fixture writes`, async (t) => {
     const cwd = join(root, "test/fixtures/layout-profiles/specialist-folder", fixtureName);
     const before = snapshot(cwd);
     const h = harness(cwd, `specialist-${fixtureName}`);
@@ -95,6 +95,17 @@ for (const fixtureName of fixtureNames) {
       proposalId: prepared.details.proposalId,
     }, undefined, undefined, h.ctx);
 
-    assert.deepEqual(snapshot(cwd), before);
+    const unchanged = snapshot(cwd);
+    assert.deepEqual(unchanged, before);
+    t.diagnostic(JSON.stringify({
+      fixture: fixtureName,
+      layoutProfile: inventory.details.layoutProfile,
+      routingPreserved: {
+        agents: inventory.details.candidates.includes("AGENTS.md"),
+        context: inventory.details.candidates.includes("CONTEXT.md"),
+      },
+      proposalOutcome: "cancelled",
+      fixtureUnchanged: true,
+    }));
   });
 }
