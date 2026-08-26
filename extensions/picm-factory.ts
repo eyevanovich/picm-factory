@@ -95,7 +95,7 @@ function hasAffirmativePlacementClause(args: string, cue: RegExp): boolean {
   const affirmativeAfter = /^\s+(?:is|are|would be)\s+(?:preferred|selected|chosen|wanted|required|acceptable|okay|fine)\b/;
   const negativeBefore = /\b(?:no|not|never|avoid|reject|without|cannot|can't|don't|do not)\s+(?:(?:use|choose|want|prefer|select|place|keep)\s+)?(?:the\s+)?$/;
   const negativeAfter = /^\s+(?:(?:is|are|would be)\s+)?(?:not|never|unacceptable|rejected|forbidden)\b/;
-  return args.split(/\s*(?:[;,\n]|\bbut\b|\band\b)\s*/).some((clause) => {
+  return args.split(/\s*(?:[;,\n]|\bbut\b)\s*/).some((clause) => {
     const match = cue.exec(clause);
     if (!match) return false;
     const before = clause.slice(0, match.index).trim();
@@ -107,6 +107,23 @@ function hasAffirmativePlacementClause(args: string, cue: RegExp): boolean {
   });
 }
 
+function hasAffirmativeCoordinatedPlacements(args: string, rootCue: RegExp, nestedCue: RegExp): boolean {
+  const affirmativeBefore = /\b(?:use|choose|want|prefer|select|place|keep)\s+(?:the\s+)?$/;
+  const negativeBefore = /\b(?:no|not|never|avoid|reject|without|cannot|can't|don't|do not)\s+(?:(?:use|choose|want|prefer|select|place|keep)\s+)?(?:the\s+)?$/;
+  return args.split(/\s*(?:[;,\n]|\bbut\b)\s*/).some((clause) => {
+    const root = rootCue.exec(clause);
+    const nested = nestedCue.exec(clause);
+    if (!root || !nested) return false;
+    const first = root.index < nested.index ? root : nested;
+    const second = first === root ? nested : root;
+    const before = clause.slice(0, first.index).trim();
+    const between = clause.slice(first.index + first[0].length, second.index).trim();
+    return /^(?:and|or)$/.test(between) &&
+      affirmativeBefore.test(before) &&
+      !negativeBefore.test(before);
+  });
+}
+
 function buildStagePlacementContext(command: CommandName, args: string): string {
   if (command !== "picm-new") return "";
   const normalized = args.toLowerCase();
@@ -114,7 +131,8 @@ function buildStagePlacementContext(command: CommandName, args: string): string 
   const nestedCue = /\bnested (?:under )?(?:the )?stages\b|\bstages\//;
   const rootIsAffirmative = hasAffirmativePlacementClause(normalized, rootCue);
   const nestedIsAffirmative = hasAffirmativePlacementClause(normalized, nestedCue);
-  const seededPlacement = rootIsAffirmative === nestedIsAffirmative
+  const coordinatedConflict = hasAffirmativeCoordinatedPlacements(normalized, rootCue, nestedCue);
+  const seededPlacement = coordinatedConflict || rootIsAffirmative === nestedIsAffirmative
     ? undefined
     : rootIsAffirmative
       ? "root-numbered"

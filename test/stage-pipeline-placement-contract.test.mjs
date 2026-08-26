@@ -64,12 +64,24 @@ test("negated or conflicting placement cues remain unresolved", async () => {
     "Stage Pipeline; root-numbered folders are not acceptable",
     "Stage Pipeline; nested stages would be unacceptable",
     "Stage Pipeline; either root-numbered folders or nested stages",
+    "Stage Pipeline; do not use root-numbered folders and nested stages",
+    "Stage Pipeline; use root-numbered folders and nested stages",
   ]) {
     const h = harness();
     await h.commands.get("picm-new").handler(args, h.context());
     assert.match(h.sent[0], /placement is unresolved/);
     assert.doesNotMatch(h.sent[0], /placement seed:/);
   }
+});
+
+test("coordinated explicit override remains affirmative", async () => {
+  const h = harness();
+  await h.commands.get("picm-new").handler(
+    "Stage Pipeline; do not use root-numbered folders and use nested stages",
+    h.context(),
+  );
+  assert.match(h.sent[0], /placement seed: nested under `stages\/`/);
+  assert.doesNotMatch(h.sent[0], /placement is unresolved/);
 });
 
 test("postfix affirmative placement is preserved", async () => {
