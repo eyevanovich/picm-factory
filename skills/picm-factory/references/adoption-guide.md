@@ -48,6 +48,16 @@ Also note likely stable-reference areas vs per-run working artifacts or outputs.
 
 Before any shallow path check, run `picm_scan_control preflight`, ask the privacy question using the automatic-protections reassurance and additional-path wording in `coding-adoption-guide.md`, record exact exclusions with `privacy`, and call `begin`. If the root has no `.gitignore`, offer an exact Git-ignore proposal but retain PiCM protection through persisted config or session exclusions when the user declines. Then offer coding adoption without reading source merely to classify it, deriving the shallow sample from protected inventory rather than directory traversal. When coding adoption is selected, load `coding-adoption-guide.md` before further scanning. Its complete exclusion boundary is mandatory: root/nested `.gitignore`, `.git/info/exclude`, global Git excludes, persisted `privacy.excludedPaths`, and current-session exclusions are cumulative, and matching contents are unreadable even when tracked.
 
+### Sensitive non-Git adoption safeguard
+
+Before offering an adoption write when protected inventory identifies sensitive material in a non-Git workspace, give all of this actionable guidance:
+
+- Propose exact `.gitignore` patterns for the sensitive paths or categories if the workspace may later be committed. If Git is not planned, explain that PiCM session or persisted exclusions are the equivalent scan boundary, not commit protection.
+- Ask the owner to confirm that workspace storage, sharing, and any future repository visibility are appropriate for the material.
+- Keep sensitive source out of reusable context, examples, reports, and adoption metadata; use generic risk notes only.
+
+This guidance precedes the write preview and does not authorize a Git initialization or `.gitignore` change. Never initialize a repository or modify `.gitignore` without direct approval.
+
 ## Optional file-role inventory
 
 For a complex, cluttered, or unfamiliar workspace—or when the user asks—add a compact path-to-role-to-rationale table to the read-only adoption report. This is an orientation aid, not a migration map, and should cover representative files or areas rather than mechanically listing every file.
