@@ -23,11 +23,13 @@ import { packageRootFromImportMeta } from "./runtime/git-read-gate.mjs";
 import { executeBoundGrep } from "./runtime/path-execution-binding.mjs";
 import { canonicalNow } from "./runtime/maintenance-policy.mjs";
 import { createRuntimeCoordinator } from "./runtime/runtime-coordinator.mjs";
+import { createScaffoldApprovalRuntime } from "./runtime/scaffold-approval.mjs";
 
 type CommandName = "picm-new" | "picm-adopt" | "picm-maintain" | "picm-optimize" | "picm-help";
 
 const scanWorkflowEntryType = "picm-scan-workflow";
 const proposalBatchEntryType = "picm-proposal-batch";
+const nonMutatingScaffoldTools = new Set(["read", "grep", "rg", "find", "ls", "picm_scan_control"]);
 
 const commandDescriptions: Record<CommandName, string> = {
   "picm-new": "Create a workspace; optionally add a workflow description after the command",
@@ -182,6 +184,8 @@ export default function picmFactoryExtension(
     packageRoot,
     canonicalPackageRoot,
   });
+  const scaffoldApproval = createScaffoldApprovalRuntime();
+  const sessionId = (ctx: ExtensionContext) => ctx.sessionManager.getSessionId();
 
   const registerBoundBuiltin = (
     toolName: "read" | "edit" | "write" | "grep" | "rg" | "find" | "ls",
@@ -348,6 +352,32 @@ export default function picmFactoryExtension(
   });
 
   pi.registerTool({
+    name: "picm_scaffold_proposal",
+    label: "PiCM Scaffold Proposal",
+    description: "Register the exact write and edit operations in the current /picm-new scaffold proposal",
+    promptSnippet: "Bind scaffold approval to an exact reviewed operation set",
+    promptGuidelines: [
+      "After scanning and before presenting a /picm-new scaffold preview, register every exact write/edit tool input in one preview call.",
+      "Present the returned previewId and complete operation set. Only the documented direct approval phrases approve that current preview; revisions require a new preview.",
+    ],
+    parameters: Type.Object({
+      action: StringEnum(["preview"] as const),
+      operations: Type.Array(Type.Object({
+        tool: StringEnum(["write", "edit"] as const),
+        input: Type.Record(Type.String(), Type.Any()),
+      }), { minItems: 1 }),
+    }),
+    async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
+      if (coordinator.currentWorkflowCommand(ctx) !== "picm-new") {
+        throw new Error("SCAFFOLD_PROPOSAL_UNAVAILABLE: invoke /picm-new first");
+      }
+      const previewId = scaffoldApproval.register(sessionId(ctx), params.operations);
+      const result = { previewId, operations: params.operations };
+      return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }], details: result };
+    },
+  });
+
+  pi.registerTool({
     name: "picm_maintenance_policy",
     label: "PiCM Maintenance Policy",
     description: "Preview, apply, or inspect PiCM maintenance cadence in .picm/config.json",
@@ -386,15 +416,33 @@ export default function picmFactoryExtension(
     coordinator.startToolExecution(event, ctx);
   });
 
+  pi.on("input", (event, ctx) => {
+    if (event.source !== "extension") scaffoldApproval.observeInput(sessionId(ctx), event.text);
+  });
+
   pi.on("tool_call", async (event, ctx) => {
     let admitted = false;
+    let matchedOperation: { consumed: boolean; reservedBy?: string } | undefined;
     try {
+      const admission = scaffoldApproval.admission(sessionId(ctx), event);
+      if (admission.active) {
+        const maintenancePreview = event.toolName === "picm_maintenance_policy" && event.input?.action === "preview";
+        const allowedControl = nonMutatingScaffoldTools.has(event.toolName) ||
+          event.toolName === "picm_scaffold_proposal" || maintenancePreview;
+        if (!allowedControl && !admission.allowed) {
+          const reason = "[picm-factory] Blocked scaffold mutation: directly approve and apply only the current exact proposal";
+          if (ctx.hasUI) ctx.ui.notify(reason, "warning");
+          return { block: true, reason };
+        }
+        matchedOperation = admission.operation;
+      }
       const decision = await coordinator.checkToolCall(event, ctx);
       if (!decision.allowed) {
         const reason = `[picm-factory] Blocked by PiCM scan gate: ${decision.reason}`;
         if (ctx.hasUI) ctx.ui.notify(reason, "warning");
         return { block: true, reason };
       }
+      if (matchedOperation) scaffoldApproval.reserve(matchedOperation, event.toolCallId);
       coordinator.admitToolExecution(event, ctx);
       admitted = true;
     } finally {
@@ -403,6 +451,7 @@ export default function picmFactoryExtension(
   });
 
   pi.on("tool_execution_end", (event, ctx) => {
+    scaffoldApproval.complete(sessionId(ctx), event.toolCallId, !event.isError);
     coordinator.endToolExecution(event, ctx);
   });
 
@@ -488,11 +537,14 @@ export default function picmFactoryExtension(
   });
 
   pi.on("session_tree", async (_event, ctx) => {
+    scaffoldApproval.invalidate(sessionId(ctx));
     restoreScanWorkflow(ctx);
   });
 
   pi.on("agent_settled", async (_event, ctx) => {
-    if (coordinator.settle(ctx)) recordClearedWorkflow(ctx);
+    const workflowCompleted = coordinator.settle(ctx);
+    scaffoldApproval.settle(sessionId(ctx), workflowCompleted);
+    if (workflowCompleted) recordClearedWorkflow(ctx);
   });
 
   pi.on("session_shutdown", async (_event, ctx) => {
@@ -540,6 +592,7 @@ export default function picmFactoryExtension(
         },
       } : {}),
       handler: async (args, ctx) => {
+        scaffoldApproval.clear(sessionId(ctx));
         if (command === "picm-maintain") {
           await executeMaintain(ctx, args);
           return;

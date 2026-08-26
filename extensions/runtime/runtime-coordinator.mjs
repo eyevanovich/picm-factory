@@ -715,6 +715,8 @@ export function createRuntimeCoordinator({
     return workflowFor(ctx)?.command;
   }
 
+  const currentWorkflowCommand = workflowCommand;
+
   function isAutomatic(_ctx) {
     return false;
   }
@@ -787,6 +789,10 @@ export function createRuntimeCoordinator({
     }
 
     if (workflow && event.toolName === "picm_scan_control") return { allowed: true };
+
+    if (workflow?.command === "picm-new" && event.toolName === "picm_scaffold_proposal" && !scan) {
+      return { allowed: true };
+    }
 
     if (workflow && event.toolName === "picm_maintenance_policy") {
       if (event.input?.action === "preview" || workflow.scanStarted) return { allowed: true };
@@ -1032,6 +1038,7 @@ export function createRuntimeCoordinator({
     clearWorkflow,
     claimInitialMaintenanceOffer,
     continueAdoptionAsMaintenance,
+    currentWorkflowCommand,
     dispose,
     endToolExecution,
     isWorkflowCompleted,

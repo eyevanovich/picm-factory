@@ -79,7 +79,9 @@ Expected behavior:
 - detects existing architecture from files/folders such as `AGENTS.md`, `CLAUDE.md`, `CONTEXT.md`, `REFERENCES.md`, `identity.md`, `rules.md`, `examples.md`, `workflows/`, `reference/`, numbered stage folders, `stages/`, or `.picm/`
 - recommends `/picm-adopt`
 - if the user insists on `/picm-new`, requires them to choose intent (`adopt existing` vs `add/replace scaffold`)
-- requires exact preview/approval for every create/update/overwrite action
+- requires one current exact preview and direct approval for every create/update/overwrite action
+- after that preview, `preview only`, `continue`, equivalent vague assent, and a lone `.` write nothing; the proposal remains pending and the response states that no files were written
+- registers the exact operation set and writes all and only those actions after one documented explicit approval form
 - never treats a vague “continue” as permission to overwrite architecture
 
 ## Scenario 4: no git or dirty git
@@ -128,6 +130,8 @@ Expected behavior when Stage Pipeline is confirmed:
 - uses the selected placement consistently in the exact preview, generated paths, config path hints, and first-run checklist
 - uses local `CONTEXT.md` files for stage-specific context
 - creates local `AGENTS.md` only if a stage needs hard local behavior rules or independent Pi/subagent cwd execution
+- after the complete Stage Pipeline scaffold preview, treats `preview only`, `continue`, equivalent vague assent, and a lone `.` as strict no-write replies; retains the exact proposal and reports that no files were written
+- writes all and only the registered scaffold actions when the user gives one of the documented explicit approval forms, including `approve this exact scaffold`
 
 ## Scenario 7: generated file quality
 
