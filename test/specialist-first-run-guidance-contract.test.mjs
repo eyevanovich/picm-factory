@@ -5,18 +5,19 @@ import picmFactoryExtension from "../extensions/picm-factory.ts";
 import { runSpecialistFirstRunCommand } from "./fixtures/specialist-first-run-command.mjs";
 
 function harness() {
+  const handlers = new Map();
   const commands = new Map();
   const tools = new Map();
   const sent = [];
   const pi = {
-    on() {},
+    on(name, handler) { handlers.set(name, handler); },
     registerCommand(name, definition) { commands.set(name, definition); },
     registerTool(definition) { tools.set(definition.name, definition); },
     appendEntry() {},
     sendUserMessage(message) { sent.push(message); },
   };
   picmFactoryExtension(pi);
-  return { commands, tools, sent };
+  return { handlers, commands, tools, sent };
 }
 
 function context(cwd, sessionId) {
@@ -43,14 +44,7 @@ test("picm-new emits final guidance derived from the reported Specialist fixture
     ...h,
     context: ctx,
     args: "Create the FAQ polisher Specialist Folder",
-    routeSemantics: {
-      recipePath: "workflows/polish-faq.md",
-      inputs: ["The rough FAQ answer supplied for this run.", "`reference/faq-style.md` for reusable style guidance."],
-      expectedArtifact: "review/polished-faq.md",
-      requiresInspectEditApprove: true,
-      nextActionSource: "review/polished-faq.md",
-      visibleUncertainty: ["unsupported claims", "unresolved questions"],
-    },
+    recipePath: "workflows/polish-faq.md",
   });
 
   assert.match(guidance, /Start with `workflows\/polish-faq\.md`/);
