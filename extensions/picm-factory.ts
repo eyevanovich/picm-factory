@@ -24,6 +24,7 @@ import { executeBoundGrep } from "./runtime/path-execution-binding.mjs";
 import { canonicalNow } from "./runtime/maintenance-policy.mjs";
 import { createRuntimeCoordinator } from "./runtime/runtime-coordinator.mjs";
 import { createScaffoldApprovalRuntime } from "./runtime/scaffold-approval.mjs";
+import { renderSpecialistFirstRunGuidance } from "./runtime/specialist-first-run-guidance.mjs";
 
 type CommandName = "picm-new" | "picm-adopt" | "picm-maintain" | "picm-optimize" | "picm-help";
 
@@ -103,7 +104,7 @@ function buildStagePlacementContext(command: CommandName): string {
 
 function buildSpecialistFirstRunContext(command: CommandName): string {
   if (command !== "picm-new") return "";
-  return "\n\nSpecialist Folder final guidance: if the approved scaffold uses this profile, derive every detail from its approved generated routes. Name the exact first workflow/task recipe path, its inputs, and expected artifact. Require the user to inspect, edit, and explicitly approve that artifact; keep recipe-named uncertainty visible; and name the approved artifact as where the next action reads from. Do not invent optional folders, recipes, or operations. Recommend `/picm-maintain` after the first real use or a specialist workflow, routing, or stable-guidance change.";
+  return "\n\nSpecialist Folder final guidance: if the approved scaffold uses this profile, call `picm_specialist_first_run_guidance` with the exact first recipe path and approved recipe content, then use its returned text as the final first-run guidance. Derive every detail from approved generated routes and do not invent optional folders, recipes, or operations.";
 }
 
 function buildPrompt(
@@ -237,6 +238,24 @@ export default function picmFactoryExtension(
   const recordProposalAudit = (audit: any, ctx: ExtensionContext) => {
     pi.appendEntry(proposalBatchEntryType, { cwd: ctx.cwd, ...audit });
   };
+
+  pi.registerTool({
+    name: "picm_specialist_first_run_guidance",
+    label: "PiCM Specialist First-Run Guidance",
+    description: "Render final Specialist Folder guidance from an approved generated recipe",
+    promptSnippet: "Render route-derived final guidance after approving a Specialist Folder scaffold",
+    promptGuidelines: [
+      "After approving a Specialist Folder scaffold, pass its exact first recipe path and approved recipe content, then use the returned text as the final first-run guidance.",
+    ],
+    parameters: Type.Object({
+      recipePath: Type.String({ minLength: 1 }),
+      recipe: Type.String({ minLength: 1 }),
+    }),
+    async execute(_toolCallId, params) {
+      const guidance = renderSpecialistFirstRunGuidance(params);
+      return { content: [{ type: "text", text: guidance }], details: { guidance } };
+    },
+  });
 
   pi.registerTool({
     name: "picm_scan_control",

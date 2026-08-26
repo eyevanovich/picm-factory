@@ -991,6 +991,16 @@ export function createRuntimeCoordinator({
       return { allowed: true };
     }
 
+    if (workflow && event.toolName === "picm_specialist_first_run_guidance") {
+      if (workflow.command === "picm-new" && workflow.privacyReviewed && workflow.scanStarted) {
+        return { allowed: true };
+      }
+      return {
+        allowed: false,
+        reason: "Render Specialist guidance only during a privacy-reviewed picm-new scan",
+      };
+    }
+
     if (workflow && event.toolName === "picm_maintenance_policy") {
       if (event.input?.action === "preview" || workflow.scanStarted) return { allowed: true };
       return {
