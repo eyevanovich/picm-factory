@@ -1633,7 +1633,11 @@ test("Curated coding adoption reopens a protected phase before inspection and co
       ended: true,
     },
     proposal: { presented: presented.details.ok, declined: true, cancelled: cancelled.details.ok },
-    terminal: { completed: complete.details.completed, proposalDeclineWroteFiles: false },
+    terminal: {
+      completed: complete.details.completed,
+      proposalDeclineWroteFiles: false,
+      proposalDeclineWroteConfig: false,
+    },
   }, null, 2));
 });
 
