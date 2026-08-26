@@ -537,6 +537,7 @@ export default function picmFactoryExtension(
   });
 
   pi.on("session_tree", async (_event, ctx) => {
+    scaffoldApproval.invalidate(sessionId(ctx));
     restoreScanWorkflow(ctx);
   });
 

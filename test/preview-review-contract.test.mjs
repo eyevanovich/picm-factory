@@ -277,6 +277,31 @@ test("picm-new invalidates stale operations after a revision request", async (t)
   assert.equal(revised, undefined);
 });
 
+test("picm-new invalidates a reviewed proposal after switching session branches", async (t) => {
+  const { workspace, proposal } = scaffoldFixture(t);
+  const h = commandHarness(workspace);
+  await h.commands.get("picm-new").handler("stage pipeline", h.ctx);
+  const operation = { tool: "write", input: proposal[0] };
+  await h.tools.get("picm_scaffold_proposal").execute(
+    "proposal",
+    { action: "preview", operations: [operation] },
+    undefined,
+    undefined,
+    h.ctx,
+  );
+
+  await h.handlers.get("session_tree")({}, h.ctx);
+  await h.handlers.get("input")({ text: "approve this exact scaffold", source: "interactive" }, h.ctx);
+  const decision = await h.handlers.get("tool_call")({
+    toolName: "write",
+    toolCallId: "stale-branch-write",
+    input: operation.input,
+  }, h.ctx);
+
+  assert.equal(decision.block, true);
+  assert.deepEqual(workspaceSnapshot(workspace), {});
+});
+
 test("picm-new detects a revision appended to review navigation", async (t) => {
   const { workspace, proposal } = scaffoldFixture(t);
   const h = commandHarness(workspace);

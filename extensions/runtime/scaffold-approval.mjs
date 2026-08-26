@@ -71,6 +71,12 @@ export function createScaffoldApprovalRuntime() {
     admission,
     clear: (sessionId) => proposals.delete(sessionId),
     complete,
+    invalidate: (sessionId) => {
+      const proposal = proposals.get(sessionId);
+      if (!proposal) return;
+      proposal.approved = false;
+      proposal.invalidated = true;
+    },
     observeInput,
     register,
     reserve: (operation, toolCallId) => { operation.reservedBy = toolCallId; },
