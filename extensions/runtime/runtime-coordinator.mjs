@@ -12,6 +12,7 @@ import {
   proposalAudit,
   proposalSummary,
 } from "./proposal-batch.mjs";
+import { parseSpecialistFirstRunRecipe } from "./specialist-first-run-guidance.mjs";
 
 const EXPLICIT_SCAN_COMMANDS = new Set(["picm-new", "picm-adopt", "picm-maintain", "picm-optimize"]);
 const GUARDED_PATH_TOOLS = new Set(["read", "edit", "write", "grep", "rg", "find", "ls"]);
@@ -957,31 +958,27 @@ export function createRuntimeCoordinator({
       typeof event.args?.content === "string"
     ) {
       const path = resolve(ctx.cwd, event.args.path);
+      workflow.specialistScaffoldApproved = false;
+      workflow.specialistRouteSemantics = undefined;
       workflow.approvedWrites.set(path, event.args.content);
       if (path === resolve(ctx.cwd, ".picm/config.json")) {
         try {
           const config = JSON.parse(event.args.content);
           workflow.specialistConfigWritten = config?.generatedBy === "picm-factory" && config?.profile === "specialist-folder";
-          workflow.specialistRouteSemantics = workflow.specialistConfigWritten
-            ? structuredClone(config.specialistFirstRun)
+          const recipePath = config?.paths?.firstRecipe;
+          const recipe = typeof recipePath === "string"
+            ? workflow.approvedWrites.get(resolve(ctx.cwd, recipePath))
             : undefined;
+          if (workflow.specialistConfigWritten && typeof recipe === "string") {
+            workflow.specialistRouteSemantics = parseSpecialistFirstRunRecipe(recipePath, recipe);
+            workflow.specialistScaffoldApproved = true;
+          }
         } catch {
           workflow.specialistConfigWritten = false;
           workflow.specialistRouteSemantics = undefined;
+          workflow.specialistScaffoldApproved = false;
         }
       }
-      const semantics = workflow.specialistRouteSemantics;
-      workflow.specialistScaffoldApproved = Boolean(
-        workflow.specialistConfigWritten &&
-        semantics &&
-        typeof semantics.recipePath === "string" &&
-        workflow.approvedWrites.has(resolve(ctx.cwd, semantics.recipePath)) &&
-        Array.isArray(semantics.inputs) && semantics.inputs.length > 0 &&
-        typeof semantics.expectedArtifact === "string" &&
-        semantics.requiresInspectEditApprove === true &&
-        typeof semantics.nextActionSource === "string" &&
-        Array.isArray(semantics.visibleUncertainty) && semantics.visibleUncertainty.length > 0
-      );
     }
     if (typeof event.toolCallId !== "string") return;
     const sessionId = sessionIdFor(ctx);

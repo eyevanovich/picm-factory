@@ -104,7 +104,7 @@ function buildStagePlacementContext(command: CommandName): string {
 
 function buildSpecialistFirstRunContext(command: CommandName): string {
   if (command !== "picm-new") return "";
-  return "\n\nSpecialist Folder final guidance: if the approved scaffold uses this profile, record the exact approved first-run route semantics in `.picm/config.json` under `specialistFirstRun`, then call `picm_specialist_first_run_guidance` after the config and named recipe are written. Use its returned text as the final first-run guidance. Derive every field from approved generated routes and do not invent optional folders, recipes, or operations.";
+  return "\n\nSpecialist Folder final guidance: if the approved scaffold uses this profile, record only its exact first recipe path as `paths.firstRecipe` in `.picm/config.json`, write the config after the completed visible scaffold, then call `picm_specialist_first_run_guidance`. Use its returned text as the final first-run guidance. The runtime parses every field from the approved generated recipe; do not invent optional folders, recipes, or operations.";
 }
 
 function buildPrompt(

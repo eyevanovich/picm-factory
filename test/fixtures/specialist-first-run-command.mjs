@@ -29,7 +29,7 @@ export async function runSpecialistFirstRunCommand({ commands, tools, handlers, 
   await commands.get("picm-new").handler(args, context);
 
   const dispatch = sent.at(-1);
-  const toolName = dispatch?.match(/then call `([^`]+)` after the config and named recipe are written/)?.[1];
+  const toolName = dispatch?.match(/then call `([^`]+)`/)?.[1];
   if (!toolName || !dispatch.includes("use its returned text as the final first-run guidance")) {
     throw new Error("SPECIALIST_TEST_ORCHESTRATION_INCOMPLETE: picm-new did not dispatch final guidance");
   }
@@ -52,6 +52,12 @@ export async function runSpecialistFirstRunCommand({ commands, tools, handlers, 
   }
   const recipe = readFileSync(join(context.cwd, recipePath), "utf8");
   handlers.get("tool_execution_end")({
+    toolCallId: "approved-specialist-recipe",
+    toolName: "write",
+    args: { path: recipePath, content: recipe },
+    isError: false,
+  }, context);
+  handlers.get("tool_execution_end")({
     toolCallId: "approved-specialist-config",
     toolName: "write",
     args: {
@@ -61,16 +67,9 @@ export async function runSpecialistFirstRunCommand({ commands, tools, handlers, 
         profile: "specialist-folder",
         generatedBy: "picm-factory",
         createdAt: "2026-08-26T00:00:00.000Z",
-        paths: { rootInstructions: "AGENTS.md" },
-        specialistFirstRun: input,
+        paths: { rootInstructions: "AGENTS.md", firstRecipe: recipePath },
       }),
     },
-    isError: false,
-  }, context);
-  handlers.get("tool_execution_end")({
-    toolCallId: "approved-specialist-recipe",
-    toolName: "write",
-    args: { path: recipePath, content: recipe },
     isError: false,
   }, context);
   const event = { toolName, toolCallId: "specialist-final-guidance", input: {} };
