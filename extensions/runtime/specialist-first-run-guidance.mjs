@@ -24,7 +24,10 @@ export function parseSpecialistFirstRunRecipe(recipePath, recipe) {
   const nextActionSource = reviewSection.match(/\bnext\b[^.]*?\b(?:reads? from|uses?|consumes?)\b[^`]*`([^`]+)`/i)?.[1];
   const visibleUncertainty = [...reviewSection.matchAll(/\b(?:Keep|Leave|Preserve|Flag)\s+([^.!?\n]+)/gi)]
     .flatMap((match) => match[1].split(/\s+and\s+|,\s*/))
-    .map((value) => value.replace(/\s+(?:visible(?:\s+there)?|in (?:the )?review notes)$/i, "").trim())
+    .map((value) => value
+      .replace(/^and\s+/i, "")
+      .replace(/\s+(?:visible(?:\s+there)?|in (?:the )?review notes)$/i, "")
+      .trim())
     .filter(Boolean);
   const semantics = { recipePath, inputs, expectedArtifact, requiresInspectEditApprove, nextActionSource, visibleUncertainty };
   renderSpecialistFirstRunGuidance(semantics);

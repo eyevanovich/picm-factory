@@ -53,3 +53,25 @@ Inspect, edit, and approve \`review/draft.md\`. ${review} The next action reads 
     assert.deepEqual(semantics.visibleUncertainty, ["unsupported claims", "unresolved questions"]);
   }
 });
+
+test("Oxford-comma uncertainty lists render without a duplicated conjunction", () => {
+  const semantics = parseSpecialistFirstRunRecipe(
+    "workflows/review.md",
+    `# Review
+
+## Inputs
+
+- A supplied draft.
+
+## Output
+
+Create \`review/draft.md\`.
+
+## Review gate
+
+Inspect, edit, and approve \`review/draft.md\`. Keep gaps, unsupported claims, and open questions visible. The next action reads from \`review/draft.md\`.
+`,
+  );
+
+  assert.deepEqual(semantics.visibleUncertainty, ["gaps", "unsupported claims", "open questions"]);
+});
