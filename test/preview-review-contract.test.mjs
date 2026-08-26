@@ -34,6 +34,7 @@ function commandHarness(cwd = root) {
       clearWorkflow() { command = undefined; return true; },
       continueAdoptionAsMaintenance() {},
       currentWorkflowCommand: () => command,
+      workflowCommand: () => command,
       dispose: async () => {},
       endToolExecution() {},
       hasAdoptedStatus: async () => false,
