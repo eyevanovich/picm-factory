@@ -79,6 +79,9 @@ export function createRuntimeCoordinator({
       scanStarted: workflow.scanStarted,
       scanSettled: workflow.scanSettled,
       maintenanceResetAttempted: workflow.maintenanceResetAttempted,
+      adoptionBaselineCaptured: workflow.adoptionBaselineCaptured,
+      adoptionWasAlreadyAdopted: workflow.adoptionWasAlreadyAdopted,
+      initialMaintenanceOffered: workflow.initialMaintenanceOffered,
       completed: workflow.completed,
       excludedPaths: [...workflow.excludedPaths],
     };
@@ -97,6 +100,9 @@ export function createRuntimeCoordinator({
       scanStarted: false,
       scanSettled: false,
       maintenanceResetAttempted: false,
+      adoptionBaselineCaptured: false,
+      adoptionWasAlreadyAdopted: true,
+      initialMaintenanceOffered: false,
       completed: false,
       excludedPaths: [],
     };
@@ -145,6 +151,15 @@ export function createRuntimeCoordinator({
       scanSettled: privacyReviewed && state.scanStarted === true && state.scanSettled === true,
       maintenanceResetAttempted:
         privacyReviewed && state.maintenanceResetAttempted === true,
+      adoptionBaselineCaptured:
+        state.command === "picm-adopt" &&
+        (state.adoptionBaselineCaptured === true ||
+          (state.adoptionBaselineCaptured === undefined &&
+            typeof state.adoptionWasAlreadyAdopted === "boolean")),
+      adoptionWasAlreadyAdopted:
+        state.command === "picm-adopt" ? state.adoptionWasAlreadyAdopted !== false : true,
+      initialMaintenanceOffered:
+        state.command === "picm-adopt" && state.initialMaintenanceOffered === true,
       completed,
       excludedPaths,
     });
@@ -252,6 +267,10 @@ export function createRuntimeCoordinator({
         if (update.conflict) throw new Error(`${update.code}: ${update.message}`);
         persistedPrivacy = nextPrivacy;
         configChanged = update.changed;
+      }
+      if (workflow.command === "picm-adopt" && !workflow.adoptionBaselineCaptured) {
+        workflow.adoptionWasAlreadyAdopted = current.config?.adoption?.status === "adopted";
+        workflow.adoptionBaselineCaptured = true;
       }
       workflow.excludedPaths = mergePrivacyExcludedPaths(
         ctx.cwd,
@@ -457,9 +476,28 @@ export function createRuntimeCoordinator({
     }
   }
 
-  async function hasAdoptedStatus(ctx) {
+  async function hasNewlyAdoptedStatus(ctx) {
+    const workflow = workflowFor(ctx);
+    if (
+      !workflow ||
+      workflow.command !== "picm-adopt" ||
+      !workflow.adoptionBaselineCaptured ||
+      workflow.adoptionWasAlreadyAdopted
+    ) {
+      return false;
+    }
     const config = await runtimeFor(ctx).store.read();
     return config.ok && isRecord(config.config) && isRecord(config.config.adoption) && config.config.adoption.status === "adopted";
+  }
+
+  async function claimInitialMaintenanceOffer(ctx) {
+    const workflow = workflowFor(ctx);
+    if (!workflow || workflow.initialMaintenanceOffered || !await hasNewlyAdoptedStatus(ctx)) {
+      return undefined;
+    }
+    if (workflowFor(ctx) !== workflow || workflow.initialMaintenanceOffered) return undefined;
+    workflow.initialMaintenanceOffered = true;
+    return workflowState(workflow);
   }
 
   async function continueAdoptionAsMaintenance(ctx) {
@@ -473,7 +511,7 @@ export function createRuntimeCoordinator({
     if (!workflow.scanStarted || !workflow.scanSettled || activeScans.get(sessionIdFor(ctx))?.cwd === ctx.cwd) {
       throw new Error("PICM_SCAN_NOT_SETTLED: end the adoption scan before starting initial maintenance");
     }
-    if (!await hasAdoptedStatus(ctx)) {
+    if (!workflow.initialMaintenanceOffered || !await hasNewlyAdoptedStatus(ctx)) {
       throw new Error("PICM_ADOPTION_CONTINUATION_UNAVAILABLE: finish an adopted workspace before starting initial maintenance");
     }
     workflow.command = "picm-maintain";
@@ -792,10 +830,10 @@ export function createRuntimeCoordinator({
     beginBoundPathExecution,
     checkToolCall,
     clearWorkflow,
+    claimInitialMaintenanceOffer,
     continueAdoptionAsMaintenance,
     dispose,
     endToolExecution,
-    hasAdoptedStatus,
     isWorkflowCompleted,
     maintenancePolicy,
     workflowCommand,
