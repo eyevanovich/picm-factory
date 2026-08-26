@@ -1060,6 +1060,24 @@ test("newly adopted workspaces offer initial maintenance once; Finish preserves 
   assert.equal(readFileSync(join(cwd, ".picm/config.json"), "utf8"), afterAdoption);
 });
 
+test("repeated privacy review cannot overwrite the pre-adoption baseline", async (t) => {
+  const cwd = fixture(t, oldDue("nudge"));
+  const h = harness({ selectResult: "Finish" });
+  const ctx = h.context(cwd, "tui", "post-adoption-repeated-privacy");
+
+  await h.commands.get("picm-adopt").handler("", ctx);
+  await h.scanControl.execute("id", { action: "preflight" }, undefined, undefined, ctx);
+  await h.scanControl.execute("id", { action: "privacy", excludedPaths: ["private"] }, undefined, undefined, ctx);
+  setAdoptionStatus(cwd, { status: "adopted" });
+  await h.scanControl.execute("id", { action: "privacy", excludedPaths: [] }, undefined, undefined, ctx);
+  await h.scanControl.execute("id", { action: "begin" }, undefined, undefined, ctx);
+  await h.scanControl.execute("id", { action: "end" }, undefined, undefined, ctx);
+  await h.scanControl.execute("id", { action: "adoption-complete" }, undefined, undefined, ctx);
+
+  assert.equal(h.selections.length, 1);
+  assert.deepEqual(h.selections[0].items, ["Run maintenance now", "Finish"]);
+});
+
 test("initial maintenance reuses adoption exclusions, selects strict first, and resets only after maintenance completes", async (t) => {
   const cwd = fixture(t, oldDue("nudge"));
   let selection = 0;

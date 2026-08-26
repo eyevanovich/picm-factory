@@ -79,6 +79,7 @@ export function createRuntimeCoordinator({
       scanStarted: workflow.scanStarted,
       scanSettled: workflow.scanSettled,
       maintenanceResetAttempted: workflow.maintenanceResetAttempted,
+      adoptionBaselineCaptured: workflow.adoptionBaselineCaptured,
       adoptionWasAlreadyAdopted: workflow.adoptionWasAlreadyAdopted,
       initialMaintenanceOffered: workflow.initialMaintenanceOffered,
       completed: workflow.completed,
@@ -99,6 +100,7 @@ export function createRuntimeCoordinator({
       scanStarted: false,
       scanSettled: false,
       maintenanceResetAttempted: false,
+      adoptionBaselineCaptured: false,
       adoptionWasAlreadyAdopted: true,
       initialMaintenanceOffered: false,
       completed: false,
@@ -149,6 +151,11 @@ export function createRuntimeCoordinator({
       scanSettled: privacyReviewed && state.scanStarted === true && state.scanSettled === true,
       maintenanceResetAttempted:
         privacyReviewed && state.maintenanceResetAttempted === true,
+      adoptionBaselineCaptured:
+        state.command === "picm-adopt" &&
+        (state.adoptionBaselineCaptured === true ||
+          (state.adoptionBaselineCaptured === undefined &&
+            typeof state.adoptionWasAlreadyAdopted === "boolean")),
       adoptionWasAlreadyAdopted:
         state.command === "picm-adopt" ? state.adoptionWasAlreadyAdopted !== false : true,
       initialMaintenanceOffered:
@@ -224,8 +231,9 @@ export function createRuntimeCoordinator({
       requireCurrentWorkflow(sessionId, workflow);
       if (!current.ok) throw new Error(`${current.code}: ${current.message}`);
       const additions = mergePrivacyExcludedPaths(ctx.cwd, excludedPaths);
-      if (workflow.command === "picm-adopt") {
+      if (workflow.command === "picm-adopt" && !workflow.adoptionBaselineCaptured) {
         workflow.adoptionWasAlreadyAdopted = current.config?.adoption?.status === "adopted";
+        workflow.adoptionBaselineCaptured = true;
       }
       let persistedPrivacy = current.privacy;
       let configChanged = false;
@@ -470,7 +478,12 @@ export function createRuntimeCoordinator({
 
   async function hasNewlyAdoptedStatus(ctx) {
     const workflow = workflowFor(ctx);
-    if (!workflow || workflow.command !== "picm-adopt" || workflow.adoptionWasAlreadyAdopted) {
+    if (
+      !workflow ||
+      workflow.command !== "picm-adopt" ||
+      !workflow.adoptionBaselineCaptured ||
+      workflow.adoptionWasAlreadyAdopted
+    ) {
       return false;
     }
     const config = await runtimeFor(ctx).store.read();
