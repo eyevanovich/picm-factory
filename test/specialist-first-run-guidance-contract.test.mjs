@@ -1,8 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import picmFactoryExtension from "../extensions/picm-factory.ts";
+import { runSpecialistFirstRunCommand } from "./fixtures/specialist-first-run-command.mjs";
 
 function harness() {
   const commands = new Map();
@@ -39,24 +39,12 @@ test("picm-new emits final guidance derived from the reported Specialist fixture
   const fixture = join(process.cwd(), "test/fixtures/layout-profiles/specialist-folder/faq-polisher");
   const ctx = context(fixture, "specialist-guidance-test");
 
-  await h.commands.get("picm-new").handler("Create the FAQ polisher Specialist Folder", ctx);
-  assert.equal(h.sent.length, 1);
-  assert.match(
-    h.sent[0],
-    /call `picm_specialist_first_run_guidance` with the exact first recipe path and approved recipe content/,
-  );
-  assert.match(h.sent[0], /use its returned text as the final first-run guidance/);
-
-  const recipePath = "workflows/polish-faq.md";
-  const recipe = readFileSync(join(fixture, recipePath), "utf8");
-  const result = await h.tools.get("picm_specialist_first_run_guidance").execute(
-    "guidance",
-    { recipePath, recipe },
-    undefined,
-    undefined,
-    ctx,
-  );
-  const guidance = result.content[0].text;
+  const guidance = await runSpecialistFirstRunCommand({
+    ...h,
+    context: ctx,
+    args: "Create the FAQ polisher Specialist Folder",
+    recipePath: "workflows/polish-faq.md",
+  });
 
   assert.match(guidance, /Start with `workflows\/polish-faq\.md`/);
   assert.match(guidance, /rough FAQ answer supplied for this run/);
