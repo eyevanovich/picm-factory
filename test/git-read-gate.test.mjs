@@ -1594,6 +1594,16 @@ test("Curated coding adoption reopens a protected phase before inspection and co
   const complete = await control.execute("complete", { action: "complete" }, undefined, undefined, ctx);
   assert.equal(complete.details.completed, true);
   assert.equal(existsSync(join(root, ".picm", "config.json")), false);
+  t.diagnostic(JSON.stringify({
+    initialPhase: { inventoryIncluded: "AGENTS.md", ended: true },
+    betweenPhases: { projectReadBlocked: true, reason: closedPhaseRead.reason },
+    curatedInspectionPhase: {
+      inventoryIncluded: "docs/ARCHITECTURE.md",
+      guardedReads: ["docs/ARCHITECTURE.md", "docs/development.md"],
+      ended: true,
+    },
+    terminal: { completed: complete.details.completed, proposalDeclineWroteConfig: false },
+  }, null, 2));
 });
 
 test("privacy-reviewed scan authorization and exclusions survive resuming the same session", async () => {
