@@ -81,4 +81,4 @@ Do not substitute paraphrase for exact rendering. If protected or sensitive cont
 
 A valid approval clearly authorizes writing the enumerated current proposal. Exact review is optional and never creates a separate approval ceremony. A requested change supersedes pending approval; retain applicable unchanged-path review state, refresh the summary, and invite direct approval or diff inspection of the revised proposal.
 
-This protocol does not authorize crawling, a custom TUI, a workflow executor, or automated semantic-equivalence claims. Use the existing Pi conversation and file tools while preserving all runtime privacy and scan behavior.
+This protocol does not authorize crawling, a custom TUI, a workflow executor, or automated semantic-equivalence claims. Use the existing Pi conversation for review; use `picm_proposal_batch` for `/picm-adopt` and `/picm-maintain` mutations, and guarded file tools for eligible `/picm-optimize` mutations, while preserving all runtime privacy and scan behavior.
