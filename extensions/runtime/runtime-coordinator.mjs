@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { realpathSync } from "node:fs";
-import { relative, sep } from "node:path";
+import { relative, resolve, sep } from "node:path";
 import { createGitReadGate } from "./git-read-gate.mjs";
 import { createMaintenanceConfigStore } from "./maintenance-config-store.mjs";
 import { createMaintenanceController } from "./maintenance-controller.mjs";
@@ -177,6 +177,8 @@ export function createRuntimeCoordinator({
       pendingNewWorkflowIntentSource: undefined,
       completed: false,
       excludedPaths: [],
+      approvedWrites: new Map(),
+      specialistConfigWritten: false,
     };
     scanWorkflows.set(sessionId, workflow);
     activeScans.delete(sessionId);
@@ -257,6 +259,8 @@ export function createRuntimeCoordinator({
           : undefined,
       completed,
       excludedPaths,
+      approvedWrites: new Map(),
+      specialistConfigWritten: false,
     });
     return true;
   }
@@ -932,6 +936,25 @@ export function createRuntimeCoordinator({
   function rejectToolExecution(_event, _ctx) {}
 
   function endToolExecution(event, ctx) {
+    const workflow = workflowFor(ctx);
+    if (
+      workflow?.command === "picm-new" &&
+      event.toolName === "write" &&
+      event.isError !== true &&
+      typeof event.args?.path === "string" &&
+      typeof event.args?.content === "string"
+    ) {
+      const path = resolve(ctx.cwd, event.args.path);
+      workflow.approvedWrites.set(path, event.args.content);
+      if (path === resolve(ctx.cwd, ".picm/config.json")) {
+        try {
+          const config = JSON.parse(event.args.content);
+          workflow.specialistConfigWritten = config?.generatedBy === "picm-factory" && config?.profile === "specialist-folder";
+        } catch {
+          workflow.specialistConfigWritten = false;
+        }
+      }
+    }
     if (typeof event.toolCallId !== "string") return;
     const sessionId = sessionIdFor(ctx);
     const key = `${sessionId}:${event.toolCallId}`;
@@ -992,12 +1015,32 @@ export function createRuntimeCoordinator({
     }
 
     if (workflow && event.toolName === "picm_specialist_first_run_guidance") {
-      if (workflow.command === "picm-new" && workflow.privacyReviewed && workflow.scanStarted) {
+      const recipeContent = typeof event.input?.recipePath === "string"
+        ? workflow.approvedWrites.get(resolve(ctx.cwd, event.input.recipePath))
+        : undefined;
+      const namedEvidence = [
+        ...(Array.isArray(event.input?.inputs) ? event.input.inputs : []),
+        event.input?.expectedArtifact,
+        event.input?.nextActionSource,
+        ...(Array.isArray(event.input?.visibleUncertainty) ? event.input.visibleUncertainty : []),
+      ];
+      const evidenceMatches = typeof recipeContent === "string" &&
+        namedEvidence.length >= 5 &&
+        namedEvidence.every((value) => typeof value === "string" && value.trim() && recipeContent.includes(value.trim())) &&
+        event.input?.requiresInspectEditApprove === true &&
+        /\binspect\b/i.test(recipeContent) && /\bedit\b/i.test(recipeContent) && /\bapprove\b/i.test(recipeContent);
+      if (
+        workflow.command === "picm-new" &&
+        workflow.privacyReviewed &&
+        workflow.scanStarted &&
+        workflow.specialistConfigWritten &&
+        evidenceMatches
+      ) {
         return { allowed: true };
       }
       return {
         allowed: false,
-        reason: "Render Specialist guidance only during a privacy-reviewed picm-new scan",
+        reason: "Render Specialist guidance only after approved Specialist scaffold config and recipe writes from this picm-new run",
       };
     }
 

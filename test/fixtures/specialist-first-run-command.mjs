@@ -42,6 +42,36 @@ export async function runSpecialistFirstRunCommand({ commands, tools, handlers, 
   const tool = tools.get(toolName);
   if (!tool) throw new Error(`SPECIALIST_TEST_TOOL_MISSING: ${toolName}`);
   const input = routeSemantics(context.cwd, recipePath);
+  const premature = await handlers.get("tool_call")({
+    toolName,
+    toolCallId: "premature-specialist-guidance",
+    input,
+  }, context);
+  if (!premature?.block) {
+    throw new Error("SPECIALIST_TEST_PREMATURE_GUIDANCE_ALLOWED: guidance was authorized before scaffold writes");
+  }
+  const recipe = readFileSync(join(context.cwd, recipePath), "utf8");
+  handlers.get("tool_execution_end")({
+    toolCallId: "approved-specialist-config",
+    toolName: "write",
+    args: {
+      path: ".picm/config.json",
+      content: JSON.stringify({
+        version: 1,
+        profile: "specialist-folder",
+        generatedBy: "picm-factory",
+        createdAt: "2026-08-26T00:00:00.000Z",
+        paths: { rootInstructions: "AGENTS.md" },
+      }),
+    },
+    isError: false,
+  }, context);
+  handlers.get("tool_execution_end")({
+    toolCallId: "approved-specialist-recipe",
+    toolName: "write",
+    args: { path: recipePath, content: recipe },
+    isError: false,
+  }, context);
   const event = { toolName, toolCallId: "specialist-final-guidance", input };
   const admission = await handlers.get("tool_call")(event, context);
   if (admission?.block) throw new Error(`SPECIALIST_TEST_TOOL_BLOCKED: ${admission.reason}`);
