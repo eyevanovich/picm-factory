@@ -19,23 +19,27 @@ function harness() {
   return { commands, tools, sent };
 }
 
-test("picm-new emits final guidance derived from the reported Specialist fixture", async () => {
-  const h = harness();
-  const fixture = join(process.cwd(), "test/fixtures/layout-profiles/specialist-folder/faq-polisher");
-  const context = {
-    cwd: fixture,
+function context(cwd, sessionId) {
+  return {
+    cwd,
     mode: "rpc",
     hasUI: true,
     waitForIdle: async () => {},
     sessionManager: {
       getBranch: () => [],
       getEntries: () => [],
-      getSessionId: () => "specialist-guidance-test",
+      getSessionId: () => sessionId,
     },
     ui: { notify() {}, setWidget() {} },
   };
+}
 
-  await h.commands.get("picm-new").handler("Create the FAQ polisher Specialist Folder", context);
+test("picm-new emits final guidance derived from the reported Specialist fixture", async () => {
+  const h = harness();
+  const fixture = join(process.cwd(), "test/fixtures/layout-profiles/specialist-folder/faq-polisher");
+  const ctx = context(fixture, "specialist-guidance-test");
+
+  await h.commands.get("picm-new").handler("Create the FAQ polisher Specialist Folder", ctx);
   assert.equal(h.sent.length, 1);
   assert.match(
     h.sent[0],
@@ -50,7 +54,7 @@ test("picm-new emits final guidance derived from the reported Specialist fixture
     { recipePath, recipe },
     undefined,
     undefined,
-    context,
+    ctx,
   );
   const guidance = result.content[0].text;
 
@@ -66,6 +70,8 @@ test("picm-new emits final guidance derived from the reported Specialist fixture
 
 test("Specialist guidance renders the recipe's distinct next-action route", async () => {
   const h = harness();
+  const ctx = context(process.cwd(), "distinct-specialist-route-test");
+  await h.commands.get("picm-new").handler("Create a Specialist Folder", ctx);
   const result = await h.tools.get("picm_specialist_first_run_guidance").execute(
     "guidance",
     {
@@ -85,6 +91,9 @@ Create \`review/draft.md\`.
 A human must inspect, edit, and approve \`review/draft.md\`. Keep unresolved claims visible there. The next action reads from the approved \`queue/approved.md\`.
 `,
     },
+    undefined,
+    undefined,
+    ctx,
   );
 
   assert.match(result.content[0].text, /Expected artifact: `review\/draft\.md`/);

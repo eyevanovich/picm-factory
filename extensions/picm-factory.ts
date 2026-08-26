@@ -251,7 +251,10 @@ export default function picmFactoryExtension(
       recipePath: Type.String({ minLength: 1 }),
       recipe: Type.String({ minLength: 1 }),
     }),
-    async execute(_toolCallId, params) {
+    async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
+      if (!ctx || coordinator.workflowCommand(ctx) !== "picm-new") {
+        throw new Error("SPECIALIST_GUIDANCE_NOT_AUTHORIZED: invoke /picm-new before rendering final guidance");
+      }
       const guidance = renderSpecialistFirstRunGuidance(params);
       return { content: [{ type: "text", text: guidance }], details: { guidance } };
     },
