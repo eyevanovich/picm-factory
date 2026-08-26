@@ -1545,6 +1545,13 @@ test("Curated coding adoption reopens a protected phase before inspection and co
   const ctx = h.context(root, "curated-adoption-lifecycle");
   const control = h.tools.get("picm_scan_control");
   await h.commands.get("picm-adopt").handler("coding", ctx);
+  const lifecycleGuidance = control.promptGuidelines.find((guideline) =>
+    guideline.includes("coding mapping and adoption-depth choices")
+  );
+  assert.match(
+    lifecycleGuidance,
+    /After coding mapping and adoption-depth choices, begin a new phase before the Strict examination, map analysis, or Curated documentation inventory\./,
+  );
   await control.execute("preflight", { action: "preflight" }, undefined, undefined, ctx);
   await control.execute("privacy", { action: "privacy", excludedPaths: [] }, undefined, undefined, ctx);
 
