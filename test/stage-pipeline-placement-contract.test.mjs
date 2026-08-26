@@ -1,43 +1,58 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
+import picmFactoryExtension from "../extensions/picm-factory.ts";
 
-const root = process.cwd();
-const read = (path) => readFileSync(join(root, path), "utf8");
+function harness() {
+  const commands = new Map();
+  const sent = [];
+  const pi = {
+    on() {},
+    registerCommand(name, definition) { commands.set(name, definition); },
+    registerTool() {},
+    appendEntry() {},
+    sendUserMessage(message) { sent.push(message); },
+  };
+  picmFactoryExtension(pi);
+  const context = (mode = "rpc") => ({
+    cwd: process.cwd(),
+    mode,
+    hasUI: mode === "tui",
+    waitForIdle: async () => {},
+    sessionManager: { getBranch: () => [], getEntries: () => [], getSessionId: () => "placement-test" },
+    ui: { notify() {}, setWidget() {} },
+  });
+  return { commands, sent, context };
+}
 
-const skill = read("skills/picm-factory/SKILL.md");
-const interview = read("skills/picm-factory/references/interview-guide.md");
-const layouts = read("skills/picm-factory/references/layout-profiles.md");
-const scenarios = read("docs/picm-new-scenarios.md");
-
-test("confirmed Stage Pipeline placement is explicit before root paths are previewed", () => {
-  assert.match(skill, /Stage Pipeline is confirmed.*before choosing root stage paths/is);
-  assert.match(interview, /Stage Pipeline.*before choosing root stage paths/is);
-  assert.match(layouts, /Stage Pipeline is confirmed.*before choosing root stage paths/is);
+test("unseeded Stage Pipeline dispatch requires a placement answer", async () => {
+  const h = harness();
+  await h.commands.get("picm-new").handler("Create a Stage Pipeline", h.context());
+  assert.match(h.sent[0], /placement is unresolved/);
+  assert.match(h.sent[0], /ask whether stages should be root-numbered or nested under `stages\/`/);
+  assert.match(h.sent[0], /root-numbered only after the user says they have no preference/);
 });
 
-test("only an explicit no-preference response selects the documented root default", () => {
-  assert.match(skill, /Only after the user says they have no preference.*root-numbered/is);
-  assert.match(interview, /Only after the user says they have no preference.*root-numbered/is);
-  assert.match(layouts, /Only after the user says they have no preference.*root-numbered/is);
-  assert.match(scenarios, /chooses root-numbered only after the user says they have no preference/i);
+test("root-numbered seed is preserved by dispatch", async () => {
+  const h = harness();
+  await h.commands.get("picm-new").handler("Stage Pipeline; use root numbered folders", h.context());
+  assert.match(h.sent[0], /placement seed: root-numbered/);
+  assert.match(h.sent[0], /retain this explicit placement, skip the placement question/);
+  assert.doesNotMatch(h.sent[0], /placement is unresolved/);
 });
 
-test("seeded placement is preserved and every preview uses the selected paths", () => {
-  for (const text of [skill, interview, layouts]) {
-    assert.match(text, /explicitly seeded.*placement/is);
-    assert.match(text, /skip the question/i);
-  }
-  assert.match(layouts, /`01_intake\/`/);
-  assert.match(layouts, /`stages\/01_intake\/`/);
-  assert.match(layouts, /exact scaffold preview.*generated stage paths/is);
-  assert.match(scenarios, /explicitly seeded placement.*skips the question/is);
-  assert.match(scenarios, /exact preview.*generated paths.*config path hints.*first-run checklist/is);
+test("nested seed is preserved by dispatch", async () => {
+  const h = harness();
+  await h.commands.get("picm-new").handler("Stage Pipeline; use nested stages", h.context());
+  assert.match(h.sent[0], /placement seed: nested under `stages\/`/);
+  assert.match(h.sent[0], /use it in every preview and generated path/);
+  assert.doesNotMatch(h.sent[0], /placement is unresolved/);
 });
 
-test("placement guidance retains direct approval and privacy boundaries", () => {
-  assert.match(skill, /First call `picm_scan_control` with `preflight`/);
-  assert.match(skill, /Call `begin` only after successful preflight and privacy review/);
-  assert.match(skill, /accept direct explicit approval of the current summary before writing the exact proposal/);
+test("TUI placement dispatch retains privacy-first ordering", async () => {
+  const h = harness();
+  await h.commands.get("picm-new").handler("Stage Pipeline; stages/", h.context("tui"));
+  const prompt = h.sent[0];
+  assert.ok(prompt.indexOf('action: "preflight"') < prompt.indexOf("Stage Pipeline placement seed"));
+  assert.ok(prompt.indexOf('action: "privacy"') < prompt.indexOf("Stage Pipeline placement seed"));
+  assert.ok(prompt.indexOf("privacy review completes") < prompt.indexOf("Stage Pipeline placement seed"));
 });
