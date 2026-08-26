@@ -4,13 +4,15 @@ function section(markdown, headings) {
   return match?.[1]?.trim() ?? "";
 }
 
-export function isGeneratedSpecialistInputRoute(path) {
-  if (typeof path !== "string") return false;
-  const normalized = path.replace(/^\.\//, "");
-  return normalized.startsWith("reference/") ||
-    normalized === "rules.md" ||
-    normalized === "examples.md" ||
-    normalized === "identity.md";
+export function generatedSpecialistInputRoutes(inputs) {
+  if (!Array.isArray(inputs)) return [];
+  return inputs.flatMap((input) => {
+    if (typeof input !== "string") return [];
+    const runtimeInput = /\b(?:future|per-run|for this run|supplied|provided|current draft|user input)\b/i.test(input);
+    const generatedInput = /\b(?:reusable|stable|shared|generated)\b/i.test(input);
+    if (runtimeInput || !generatedInput) return [];
+    return [...input.matchAll(/`([^`]+)`/g)].map((match) => match[1]);
+  });
 }
 
 export function parseSpecialistFirstRunRecipe(recipePath, recipe) {
@@ -31,8 +33,11 @@ export function parseSpecialistFirstRunRecipe(recipePath, recipe) {
   const expectedArtifact = artifactSection.match(/`([^`]+)`/)?.[1];
   const requiresInspectEditApprove = /\binspect\b/i.test(reviewSection) && /\bedit\b/i.test(reviewSection) && /\bapprove\b/i.test(reviewSection);
   const nextActionSource = reviewSection.match(/\bnext\b[^.]*?\b(?:reads? from|uses?|consumes?)\b[^`]*`([^`]+)`/i)?.[1];
-  const uncertaintyText = reviewSection.match(/(?:Keep|Leave|Preserve)\s+(.+?)\s+(?:visible|in (?:the )?review notes)/i)?.[1];
-  const visibleUncertainty = uncertaintyText?.split(/\s+and\s+|,\s*/).map((value) => value.trim()).filter(Boolean);
+  const uncertaintyText = reviewSection.match(/\b(?:Keep|Leave|Preserve|Flag)\s+([^.!?\n]+)/i)?.[1];
+  const visibleUncertainty = uncertaintyText
+    ?.split(/\s+and\s+|,\s*/)
+    .map((value) => value.replace(/\s+(?:visible(?:\s+there)?|in (?:the )?review notes)$/i, "").trim())
+    .filter(Boolean);
   const semantics = { recipePath, inputs, expectedArtifact, requiresInspectEditApprove, nextActionSource, visibleUncertainty };
   renderSpecialistFirstRunGuidance(semantics);
   return semantics;

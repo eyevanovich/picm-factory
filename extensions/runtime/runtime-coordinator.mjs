@@ -13,7 +13,7 @@ import {
   proposalSummary,
 } from "./proposal-batch.mjs";
 import {
-  isGeneratedSpecialistInputRoute,
+  generatedSpecialistInputRoutes,
   parseSpecialistFirstRunRecipe,
 } from "./specialist-first-run-guidance.mjs";
 
@@ -974,9 +974,7 @@ export function createRuntimeCoordinator({
             : undefined;
           if (workflow.specialistConfigWritten && typeof recipe === "string") {
             const semantics = parseSpecialistFirstRunRecipe(recipePath, recipe);
-            const generatedInputPaths = semantics.inputs.flatMap((input) =>
-              [...input.matchAll(/`([^`]+)`/g)].map((match) => match[1])
-            ).filter(isGeneratedSpecialistInputRoute);
+            const generatedInputPaths = generatedSpecialistInputRoutes(semantics.inputs);
             const requiredPaths = [
               config.paths?.rootInstructions,
               config.paths?.rootContext,
