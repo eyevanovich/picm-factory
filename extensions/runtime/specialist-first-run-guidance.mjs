@@ -14,10 +14,11 @@ export function parseSpecialistFirstRunRecipe(recipePath, recipe) {
   const inputsSection = section(recipe, ["Inputs", "Sources", "What it reads"]);
   const artifactSection = section(recipe, ["Expected artifact", "Output", "Expected output", "Result"]);
   const reviewSection = section(recipe, ["Review gate and next action", "Review gate", "Review and next action", "Approval and handoff"]);
-  const bulletInputs = [...inputsSection.matchAll(/^[-*] (.+)$/gm)].map((match) => match[1].trim());
-  const inputs = bulletInputs.length > 0
-    ? bulletInputs
-    : inputsSection.split(/\n+|(?<=[.!?])\s+/).map((value) => value.trim()).filter(Boolean);
+  const inputs = inputsSection
+    .split(/\n+/)
+    .flatMap((line) => line.replace(/^[-*]\s+/, "").split(/(?<=[.!?])\s+/))
+    .map((value) => value.trim())
+    .filter(Boolean);
   const expectedArtifact = artifactSection.match(/`([^`]+)`/)?.[1];
   const requiresInspectEditApprove = /\binspect\b/i.test(reviewSection) && /\bedit\b/i.test(reviewSection) && /\bapprove\b/i.test(reviewSection);
   const nextActionSource = reviewSection.match(/\bnext\b[^.]*?\b(?:reads? from|uses?|consumes?)\b[^`]*`([^`]+)`/i)?.[1];

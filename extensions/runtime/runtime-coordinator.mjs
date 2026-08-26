@@ -970,8 +970,28 @@ export function createRuntimeCoordinator({
             ? workflow.approvedWrites.get(resolve(ctx.cwd, recipePath))
             : undefined;
           if (workflow.specialistConfigWritten && typeof recipe === "string") {
-            workflow.specialistRouteSemantics = parseSpecialistFirstRunRecipe(recipePath, recipe);
-            workflow.specialistScaffoldApproved = true;
+            const semantics = parseSpecialistFirstRunRecipe(recipePath, recipe);
+            const generatedInputPaths = semantics.inputs.flatMap((input) =>
+              [...input.matchAll(/`([^`]+)`/g)].map((match) => match[1])
+            );
+            const requiredPaths = [
+              config.paths?.rootInstructions,
+              config.paths?.rootContext,
+              "identity.md",
+              "rules.md",
+              recipePath,
+              ...generatedInputPaths,
+            ];
+            const completeInventory = requiredPaths.every((requiredPath) => {
+              if (typeof requiredPath !== "string" || !requiredPath.trim()) return false;
+              const content = workflow.approvedWrites.get(resolve(ctx.cwd, requiredPath));
+              return typeof content === "string" && content.trim() &&
+                !/\{\{|\}\}|\[[A-Z][^\]]*\]|\b(?:TODO|TBD)\b/i.test(content);
+            });
+            if (completeInventory) {
+              workflow.specialistRouteSemantics = semantics;
+              workflow.specialistScaffoldApproved = true;
+            }
           }
         } catch {
           workflow.specialistConfigWritten = false;

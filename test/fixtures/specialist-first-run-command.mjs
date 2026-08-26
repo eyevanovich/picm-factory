@@ -50,13 +50,21 @@ export async function runSpecialistFirstRunCommand({ commands, tools, handlers, 
   if (!premature?.block) {
     throw new Error("SPECIALIST_TEST_PREMATURE_GUIDANCE_ALLOWED: guidance was authorized before scaffold writes");
   }
-  const recipe = readFileSync(join(context.cwd, recipePath), "utf8");
-  handlers.get("tool_execution_end")({
-    toolCallId: "approved-specialist-recipe",
-    toolName: "write",
-    args: { path: recipePath, content: recipe },
-    isError: false,
-  }, context);
+  for (const path of [
+    "AGENTS.md",
+    "CONTEXT.md",
+    "identity.md",
+    "rules.md",
+    "reference/faq-style.md",
+    recipePath,
+  ]) {
+    handlers.get("tool_execution_end")({
+      toolCallId: `approved-specialist-${path}`,
+      toolName: "write",
+      args: { path, content: readFileSync(join(context.cwd, path), "utf8") },
+      isError: false,
+    }, context);
+  }
   handlers.get("tool_execution_end")({
     toolCallId: "approved-specialist-config",
     toolName: "write",
@@ -67,7 +75,7 @@ export async function runSpecialistFirstRunCommand({ commands, tools, handlers, 
         profile: "specialist-folder",
         generatedBy: "picm-factory",
         createdAt: "2026-08-26T00:00:00.000Z",
-        paths: { rootInstructions: "AGENTS.md", firstRecipe: recipePath },
+        paths: { rootInstructions: "AGENTS.md", rootContext: "CONTEXT.md", firstRecipe: recipePath },
       }),
     },
     isError: false,
