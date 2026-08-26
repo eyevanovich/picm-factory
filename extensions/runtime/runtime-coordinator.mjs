@@ -231,10 +231,6 @@ export function createRuntimeCoordinator({
       requireCurrentWorkflow(sessionId, workflow);
       if (!current.ok) throw new Error(`${current.code}: ${current.message}`);
       const additions = mergePrivacyExcludedPaths(ctx.cwd, excludedPaths);
-      if (workflow.command === "picm-adopt" && !workflow.adoptionBaselineCaptured) {
-        workflow.adoptionWasAlreadyAdopted = current.config?.adoption?.status === "adopted";
-        workflow.adoptionBaselineCaptured = true;
-      }
       let persistedPrivacy = current.privacy;
       let configChanged = false;
       if (persist && additions.length > 0) {
@@ -271,6 +267,10 @@ export function createRuntimeCoordinator({
         if (update.conflict) throw new Error(`${update.code}: ${update.message}`);
         persistedPrivacy = nextPrivacy;
         configChanged = update.changed;
+      }
+      if (workflow.command === "picm-adopt" && !workflow.adoptionBaselineCaptured) {
+        workflow.adoptionWasAlreadyAdopted = current.config?.adoption?.status === "adopted";
+        workflow.adoptionBaselineCaptured = true;
       }
       workflow.excludedPaths = mergePrivacyExcludedPaths(
         ctx.cwd,

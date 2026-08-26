@@ -1078,6 +1078,51 @@ test("repeated privacy review cannot overwrite the pre-adoption baseline", async
   assert.deepEqual(h.selections[0].items, ["Run maintenance now", "Finish"]);
 });
 
+test("restoring before privacy preserves the uncaptured adoption baseline", async (t) => {
+  const cwd = fixture(t, oldDue("nudge"));
+  const entries = [];
+  const initial = harness({ entries });
+  const initialCtx = initial.context(cwd, "tui", "restored-before-privacy");
+
+  await initial.commands.get("picm-adopt").handler("", initialCtx);
+  await initial.scanControl.execute("id", { action: "preflight" }, undefined, undefined, initialCtx);
+
+  const restored = harness({ entries, selectResult: "Finish" });
+  const restoredCtx = restored.context(cwd, "tui", "restored-before-privacy");
+  await restored.handlers.get("session_start")({ reason: "resume" }, restoredCtx);
+  await restored.scanControl.execute("id", { action: "privacy", excludedPaths: [] }, undefined, undefined, restoredCtx);
+  setAdoptionStatus(cwd, { status: "adopted" });
+  await restored.scanControl.execute("id", { action: "begin" }, undefined, undefined, restoredCtx);
+  await restored.scanControl.execute("id", { action: "end" }, undefined, undefined, restoredCtx);
+  await restored.scanControl.execute("id", { action: "adoption-complete" }, undefined, undefined, restoredCtx);
+
+  assert.equal(restored.selections.length, 1);
+});
+
+test("declined privacy does not capture the adoption baseline", async (t) => {
+  const cwd = fixture(t, oldDue("nudge"));
+  const h = harness({ confirm: false });
+  const ctx = h.context(cwd, "tui", "declined-adoption-privacy");
+
+  await h.commands.get("picm-adopt").handler("", ctx);
+  await h.scanControl.execute("id", { action: "preflight" }, undefined, undefined, ctx);
+  await h.scanControl.execute(
+    "id",
+    { action: "privacy", excludedPaths: ["private"], persist: true },
+    undefined,
+    undefined,
+    ctx,
+  );
+  setAdoptionStatus(cwd, { status: "adopted" });
+  h.setConfirm(true);
+  await h.scanControl.execute("id", { action: "privacy", excludedPaths: [] }, undefined, undefined, ctx);
+  await h.scanControl.execute("id", { action: "begin" }, undefined, undefined, ctx);
+  await h.scanControl.execute("id", { action: "end" }, undefined, undefined, ctx);
+  await h.scanControl.execute("id", { action: "adoption-complete" }, undefined, undefined, ctx);
+
+  assert.deepEqual(h.selections, []);
+});
+
 test("initial maintenance reuses adoption exclusions, selects strict first, and resets only after maintenance completes", async (t) => {
   const cwd = fixture(t, oldDue("nudge"));
   let selection = 0;
