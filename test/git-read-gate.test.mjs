@@ -1280,6 +1280,18 @@ test("approved adoption and maintenance batches apply mixed operations atomicall
         undefined,
         ctx,
       );
+      const present = async (prepared, summary = "Complete proposal summary") => batch.execute(
+        "present",
+        {
+          action: "present",
+          proposalId: prepared.details.proposalId,
+          digest: prepared.details.digest,
+          summary,
+        },
+        undefined,
+        undefined,
+        ctx,
+      );
 
       assert.equal((await h.handlers.get("tool_call")({ toolName: "bash", input: { command: "rm AGENTS.md" } }, ctx)).block, true);
       assert.equal((await h.handlers.get("tool_call")({ toolName: "write", input: { path: "AGENTS.md", content: "bypass" } }, ctx)).block, true);
@@ -1300,7 +1312,16 @@ test("approved adoption and maintenance batches apply mixed operations atomicall
       const aborted = await prepare();
       await h.handlers.get("before_agent_start")({ prompt: "approve" }, ctx);
       assert.equal((await apply(aborted.details.proposalId)).details.ok, false);
-      await h.handlers.get("before_agent_start")({ prompt: aborted.details.approvalPrompt }, ctx);
+      const stalePresentation = await batch.execute("present", {
+        action: "present",
+        proposalId: aborted.details.proposalId,
+        digest: "wrong-digest",
+        summary: "Complete proposal summary",
+      }, undefined, undefined, ctx);
+      assert.equal(stalePresentation.details.ok, false);
+      const presentedAbort = await present(aborted);
+      assert.equal(presentedAbort.details.digest, aborted.details.digest);
+      await h.handlers.get("before_agent_start")({ prompt: "approve" }, ctx);
       let abortChecks = 0;
       const abortAfterFirstMutation = {
         get aborted() {
@@ -1317,7 +1338,8 @@ test("approved adoption and maintenance batches apply mixed operations atomicall
       assert.equal(entries.some((entry) => entry.customType === "picm-proposal-batch" && entry.data.status === "aborted"), true);
 
       const stale = await prepare();
-      await h.handlers.get("before_agent_start")({ prompt: stale.details.approvalPrompt }, ctx);
+      await present(stale);
+      await h.handlers.get("before_agent_start")({ prompt: "accept" }, ctx);
       writeFileSync(join(root, "reference/obsolete.md"), "# Drifted note\n");
       await assert.rejects(
         apply(stale.details.proposalId),
@@ -1329,7 +1351,9 @@ test("approved adoption and maintenance batches apply mixed operations atomicall
       assert.equal(readFileSync(join(root, "reference/obsolete.md"), "utf8"), "# Drifted note\n");
 
       const approved = await prepare("# Drifted note\n");
-      await h.handlers.get("before_agent_start")({ prompt: approved.details.approvalPrompt }, ctx);
+      const presented = await present(approved);
+      assert.match(presented.details.approvalPrompt, /accept and write/);
+      await h.handlers.get("before_agent_start")({ prompt: "accept and write" }, ctx);
       const applying = apply(approved.details.proposalId);
       const ending = control.execute("end", { action: "end" }, undefined, undefined, ctx);
       const [applied, ended] = await Promise.all([applying, ending]);

@@ -443,11 +443,11 @@ export function createRuntimeCoordinator({
     return queueScanOperation(ctx, () => runScanControl(ctx, params, execution));
   }
 
-  function proposalResponseStatus(prompt, approvalPrompt) {
+  function proposalResponseStatus(prompt) {
     const text = typeof prompt === "string"
       ? prompt.trim().toLowerCase().replace(/[.!]+$/g, "").replace(/\s+/g, " ")
       : "";
-    if (text === approvalPrompt.toLowerCase()) {
+    if (/^(?:i )?(?:accept|approve|proceed)(?: (?:this|the|current|exact|proposal|batch|changes|it))*?(?: (?:and|to) (?:write|apply))?$/.test(text)) {
       return "approved";
     }
     if (/\b(?:cancel|stop|decline|withdraw|never mind|do not apply|don't apply)\b/.test(text)) return "cancelled";
@@ -459,7 +459,10 @@ export function createRuntimeCoordinator({
     const sessionId = sessionIdFor(ctx);
     const current = proposalBatches.get(sessionId);
     if (!current || current.cwd !== ctx.cwd || current.status === "applied") return undefined;
-    const status = proposalResponseStatus(prompt, current.approvalPrompt);
+    const status = proposalResponseStatus(prompt);
+    if (!current.presented && status === "approved") {
+      return proposalAudit(current.batch, "approval-observed", { approval: "pending" });
+    }
     if (status === "approved" && current.status === "pending") current.status = "approved";
     else if (status !== "pending") current.status = status;
     else if (current.status !== "revision-required" && current.status !== "cancelled") current.status = "pending";
@@ -497,13 +500,12 @@ export function createRuntimeCoordinator({
         operations: params.operations,
       });
       requireCurrentWorkflow(sessionId, workflow);
-      const approvalPrompt = `Approve proposal ${batch.id}`;
       proposalBatches.set(sessionId, {
         cwd: ctx.cwd,
         command: workflow.command,
         batch,
         status: "pending",
-        approvalPrompt,
+        presented: false,
       });
       return {
         ok: true,
@@ -511,7 +513,6 @@ export function createRuntimeCoordinator({
         proposalId: batch.id,
         digest: batch.digest,
         operations: batch.auditOperations,
-        approvalPrompt,
         audit: proposalAudit(batch, "prepared", { command: workflow.command }),
       };
     }
@@ -531,6 +532,40 @@ export function createRuntimeCoordinator({
         message: "proposalId does not match the current exact proposal batch",
       };
     }
+    if (params.action === "present") {
+      if (current.status !== "pending") {
+        return {
+          ok: false,
+          code: "PICM_PROPOSAL_REPLACEMENT_REQUIRED",
+          message: "Prepare a replacement batch after cancellation or a requested revision",
+        };
+      }
+      if (params.digest !== current.batch.digest) {
+        return {
+          ok: false,
+          code: "PICM_PROPOSAL_STALE",
+          message: "digest does not match the current exact proposal batch",
+        };
+      }
+      const summary = typeof params.summary === "string" ? params.summary.trim() : "";
+      if (!summary) {
+        return {
+          ok: false,
+          code: "PICM_PROPOSAL_SUMMARY_REQUIRED",
+          message: "A rendered summary is required before requesting approval",
+        };
+      }
+      current.presented = true;
+      return {
+        ok: true,
+        action: "present",
+        proposalId: current.batch.id,
+        digest: current.batch.digest,
+        summary,
+        approvalPrompt: "Reply accept, approve, accept and write, or proceed to apply this exact proposal; otherwise request changes or cancel.",
+        audit: proposalAudit(current.batch, "presented", { command: workflow.command }),
+      };
+    }
     if (params.action === "cancel") {
       current.status = "cancelled";
       return {
@@ -541,7 +576,7 @@ export function createRuntimeCoordinator({
       };
     }
     if (params.action !== "apply") {
-      throw new Error("PICM_PROPOSAL_INVALID: action must be prepare, apply, or cancel");
+      throw new Error("PICM_PROPOSAL_INVALID: action must be prepare, present, apply, or cancel");
     }
     if (current.status !== "approved") {
       return {

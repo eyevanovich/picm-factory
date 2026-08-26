@@ -88,7 +88,7 @@ const maintenanceOptimizationIntake =
   "At maintenance intake, ask whether to include agent-document optimization in this pass. Default to No. No runs the standard maintenance workflow unchanged. If Yes, load and follow `references/optimization-guide.md` as the single source for the documentation-only optimization scope, preservation ledger, proposal selection, no-worthwhile-change result, privacy boundaries, and shared summary/selective-exact preview; do not duplicate or weaken that flow.";
 
 const proposalBatchGuidance =
-  "For /picm-adopt and /picm-maintain, prepare every exact create, modify, delete, and linked move set with `picm_proposal_batch` while a protected scan phase is active. Render the resulting complete summary, then wait. The runtime accepts only an unambiguous direct approval of the current proposal (`accept`, `approve`, `accept and write`, or `proceed`) before `apply`; a vague response, cancellation, or requested revision is no-write. Never use Bash for file operations. Use `cancel` after a cancellation, or `prepare` a replacement batch after a revision. The tool records a session audit for each prepared, approval-observed, cancelled, and applied batch.";
+  "For /picm-adopt and /picm-maintain, prepare every exact create, modify, delete, and linked move set with `picm_proposal_batch` while a protected scan phase is active. Call `present` with the returned proposal ID, digest, and complete rendered summary, then wait. The runtime accepts only an unambiguous direct approval of the presented current proposal (`accept`, `approve`, `accept and write`, or `proceed`) before `apply`; a vague response, cancellation, or requested revision is no-write. Never use Bash for file operations. Use `cancel` after a cancellation, or `prepare` a replacement batch after a revision. The tool records a session audit for each prepared, presented, approval-observed, cancelled, and applied batch.";
 
 function buildMaintenanceContinuationPrompt(depth: "strict" | "balanced") {
   return `Initial maintenance continuation — successful adoption selected an initial maintenance pass. The adoption privacy review and its confirmed exclusions remain active for this conversation. Do not repeat preflight or the privacy question. Begin a new protected scan phase with \`picm_scan_control\` action \`begin\`, then run profile-appropriate maintenance using protected inventory and guarded reads.\n\nMode: maintain\nInitial maintenance run depth: ${depth}. Apply this depth to this run only. Do not mutate \`capabilities.codebaseMap.maintenancePreset\`.\n\n${maintenanceOptimizationIntake}\n\nBefore applying a proposal batch, follow the skill's shipped summary-preview and optional-diff-review protocol. Present the complete current summary, including non-blocking review suggestions for material or uncertain changes, then treat an unambiguous direct approval such as accept, approve, accept and write, or proceed as approval to write only that exact proposal. Do not require a separate summary-acceptance step or review menu. Keep exact review available on demand for view all, review files, and show diff for a path. When the user requests a draft adjustment, revise the current proposal conversationally, preserve applicable unchanged-path review state, and invite direct approval or diff inspection of the revision.\n\n${proposalBatchGuidance}\n\nAfter the final maintenance scan \`end\`, call \`picm_scan_control\` with \`action: "complete"\` before reporting, saving session state, or using any other agent tool.`;
@@ -316,16 +316,18 @@ export default function picmFactoryExtension(
   pi.registerTool({
     name: "picm_proposal_batch",
     label: "PiCM Proposal Batch",
-    description: "Prepare, cancel, or apply an exact approved PiCM create, modify, delete, and linked-move batch",
+    description: "Prepare, present, cancel, or apply an exact approved PiCM create, modify, delete, and linked-move batch",
     promptSnippet: "Prepare and apply an explicitly approved PiCM proposal batch",
     promptGuidelines: [
-      "Use only during an active protected /picm-adopt or /picm-maintain scan. Prepare the exact operations before rendering the complete summary, then wait for an unambiguous direct approval of that current proposal before apply.",
+      "Use only during an active protected /picm-adopt or /picm-maintain scan. Prepare the exact operations, then call present with its proposalId, digest, and complete rendered summary. Wait for an unambiguous direct approval before apply.",
       "The runtime accepts accept, approve, accept and write, or proceed as direct approval. Vague assent, cancellation, or a requested revision remains no-write. Use cancel for cancellation or prepare a replacement batch after revision.",
       "The batch rechecks each protected path and expected source content, applies only the reviewed operations, rolls back on a mutation failure, and records session audit entries. Never use Bash for PiCM file operations.",
     ],
     parameters: Type.Object({
-      action: StringEnum(["prepare", "apply", "cancel"] as const),
+      action: StringEnum(["prepare", "present", "apply", "cancel"] as const),
       proposalId: Type.Optional(Type.String({ minLength: 1 })),
+      digest: Type.Optional(Type.String({ minLength: 1 })),
+      summary: Type.Optional(Type.String({ minLength: 1 })),
       operations: Type.Optional(Type.Array(Type.Object({
         type: StringEnum(["create", "modify", "delete", "move"] as const),
         path: Type.String({ minLength: 1 }),
