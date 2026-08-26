@@ -82,6 +82,18 @@ test("postfix affirmative placement is preserved", async () => {
   assert.doesNotMatch(h.sent[0], /placement is unresolved/);
 });
 
+test("unrelated negation does not discard an explicit placement", async () => {
+  for (const [args, expected] of [
+    ["Stage Pipeline; use nested stages without placeholder files", /placement seed: nested under `stages\/`/],
+    ["Stage Pipeline; keep root-numbered folders without examples", /placement seed: root-numbered/],
+  ]) {
+    const h = harness();
+    await h.commands.get("picm-new").handler(args, h.context());
+    assert.match(h.sent[0], expected);
+    assert.doesNotMatch(h.sent[0], /placement is unresolved/);
+  }
+});
+
 test("TUI placement dispatch retains privacy-first ordering", async () => {
   const h = harness();
   await h.commands.get("picm-new").handler("Stage Pipeline; stages/", h.context("tui"));

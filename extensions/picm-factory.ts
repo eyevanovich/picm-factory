@@ -91,14 +91,16 @@ function buildMaintenanceContinuationPrompt(depth: "strict" | "balanced") {
 }
 
 function hasAffirmativePlacementClause(args: string, cue: RegExp): boolean {
-  const negative = /\b(?:no|not|never|avoid|reject|without|unacceptable|isn't|cannot|can't|don't)\b|\bdo not\b/;
   const affirmativeBefore = /\b(?:use|choose|want|prefer|select|place|keep)\s+(?:the\s+)?$/;
   const affirmativeAfter = /^\s+(?:is|are|would be)\s+(?:preferred|selected|chosen|wanted|required|acceptable|okay|fine)\b/;
+  const negativeBefore = /\b(?:no|not|never|avoid|reject|without|cannot|can't|don't|do not)\s+(?:(?:use|choose|want|prefer|select|place|keep)\s+)?(?:the\s+)?$/;
+  const negativeAfter = /^\s+(?:(?:is|are|would be)\s+)?(?:not|never|unacceptable|rejected|forbidden)\b/;
   return args.split(/\s*(?:[;,\n]|\bbut\b|\band\b)\s*/).some((clause) => {
     const match = cue.exec(clause);
-    if (!match || negative.test(clause)) return false;
+    if (!match) return false;
     const before = clause.slice(0, match.index).trim();
     const after = clause.slice(match.index + match[0].length);
+    if (negativeBefore.test(before) || negativeAfter.test(after)) return false;
     return before === "" && after.trim() === "" ||
       affirmativeBefore.test(before) ||
       affirmativeAfter.test(after);
