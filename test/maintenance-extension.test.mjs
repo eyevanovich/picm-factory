@@ -982,6 +982,9 @@ test("non-adopted adoption completion skips initial maintenance and preserves it
     ["scanned only", { status: "scanned" }],
     ["needs routing", { status: "needs-routing" }],
     ["missing status", undefined],
+    ["declined", { status: "declined" }],
+    ["cancelled", { status: "cancelled" }],
+    ["failed", { status: "failed" }],
     ["malformed status", { status: { value: "adopted" } }],
   ]) {
     await t.test(name, async (t) => {
@@ -1007,19 +1010,45 @@ test("non-adopted adoption completion skips initial maintenance and preserves it
   }
 });
 
-test("successful adoption offers initial maintenance; Finish completes without advancing its schedule", async (t) => {
+test("already-adopted coding fixtures complete without the initial maintenance selector", async (t) => {
   const cwd = fixture(t, oldDue("nudge"));
-  setAdoptionStatus(cwd, { status: "adopted" });
-  const h = harness({ selectResult: "Finish" });
-  const ctx = h.context(cwd, "tui", "post-adoption-finish");
-  const before = readFileSync(join(cwd, ".picm/config.json"), "utf8");
+  const configPath = join(cwd, ".picm/config.json");
+  const codingConfig = JSON.parse(readFileSync(
+    new URL("./fixtures/coding-repository/small-service/.picm/config.json", import.meta.url),
+    "utf8",
+  ));
+  codingConfig.maintenance = oldDue("nudge");
+  writeFileSync(configPath, `${JSON.stringify(codingConfig, null, 2)}\n`);
+  const before = readFileSync(configPath, "utf8");
+  const h = harness();
+  const ctx = h.context(cwd, "tui", "already-adopted-coding-fixture");
 
-  await h.commands.get("picm-adopt").handler("", ctx);
+  await h.commands.get("picm-adopt").handler("coding", ctx);
   await h.scanControl.execute("id", { action: "preflight" }, undefined, undefined, ctx);
   await h.scanControl.execute("id", { action: "privacy", excludedPaths: ["private"] }, undefined, undefined, ctx);
   await h.scanControl.execute("id", { action: "begin" }, undefined, undefined, ctx);
   await h.scanControl.execute("id", { action: "end" }, undefined, undefined, ctx);
   const completed = await h.scanControl.execute("id", { action: "adoption-complete" }, undefined, undefined, ctx);
+
+  assert.deepEqual(h.selections, []);
+  assert.equal(completed.details.initialMaintenance, "finished");
+  assert.equal(readFileSync(configPath, "utf8"), before);
+});
+
+test("newly adopted workspaces offer initial maintenance once; Finish preserves the schedule", async (t) => {
+  const cwd = fixture(t, oldDue("nudge"));
+  const h = harness({ selectResult: "Finish" });
+  const ctx = h.context(cwd, "tui", "post-adoption-finish");
+
+  await h.commands.get("picm-adopt").handler("", ctx);
+  await h.scanControl.execute("id", { action: "preflight" }, undefined, undefined, ctx);
+  await h.scanControl.execute("id", { action: "privacy", excludedPaths: ["private"] }, undefined, undefined, ctx);
+  setAdoptionStatus(cwd, { status: "adopted" });
+  const afterAdoption = readFileSync(join(cwd, ".picm/config.json"), "utf8");
+  await h.scanControl.execute("id", { action: "begin" }, undefined, undefined, ctx);
+  await h.scanControl.execute("id", { action: "end" }, undefined, undefined, ctx);
+  const completed = await h.scanControl.execute("id", { action: "adoption-complete" }, undefined, undefined, ctx);
+  await h.scanControl.execute("id", { action: "adoption-complete" }, undefined, undefined, ctx);
 
   assert.deepEqual(h.selections, [{
     title: "Would you like to run an initial maintenance pass now (recommended)?",
@@ -1028,12 +1057,11 @@ test("successful adoption offers initial maintenance; Finish completes without a
   assert.equal(completed.details.initialMaintenance, "finished");
   assert.equal(completed.details.completed, true);
   assert.equal(completed.details.command, "picm-adopt");
-  assert.equal(readFileSync(join(cwd, ".picm/config.json"), "utf8"), before);
+  assert.equal(readFileSync(join(cwd, ".picm/config.json"), "utf8"), afterAdoption);
 });
 
 test("initial maintenance reuses adoption exclusions, selects strict first, and resets only after maintenance completes", async (t) => {
   const cwd = fixture(t, oldDue("nudge"));
-  setAdoptionStatus(cwd, { status: "adopted" });
   let selection = 0;
   const h = harness({
     selectHandler: (title, items) => {
@@ -1047,11 +1075,12 @@ test("initial maintenance reuses adoption exclusions, selects strict first, and 
     },
   });
   const ctx = h.context(cwd, "tui", "post-adoption-run");
-  const before = readFileSync(join(cwd, ".picm/config.json"), "utf8");
 
   await h.commands.get("picm-adopt").handler("", ctx);
   await h.scanControl.execute("id", { action: "preflight" }, undefined, undefined, ctx);
   await h.scanControl.execute("id", { action: "privacy", excludedPaths: ["private"] }, undefined, undefined, ctx);
+  setAdoptionStatus(cwd, { status: "adopted" });
+  const afterAdoption = readFileSync(join(cwd, ".picm/config.json"), "utf8");
   await h.scanControl.execute("id", { action: "begin" }, undefined, undefined, ctx);
   await h.scanControl.execute("id", { action: "end" }, undefined, undefined, ctx);
   const started = await h.scanControl.execute("id", { action: "adoption-complete" }, undefined, undefined, ctx);
@@ -1063,7 +1092,7 @@ test("initial maintenance reuses adoption exclusions, selects strict first, and 
   assert.match(h.sent.at(-1), /Do not repeat preflight or the privacy question/);
   assert.match(h.sent.at(-1), /Initial maintenance run depth: strict/);
   assert.match(h.sent.at(-1), /agent-document optimization.*Default to No/i);
-  assert.equal(readFileSync(join(cwd, ".picm/config.json"), "utf8"), before);
+  assert.equal(readFileSync(join(cwd, ".picm/config.json"), "utf8"), afterAdoption);
 
   await h.scanControl.execute("id", { action: "begin" }, undefined, undefined, ctx);
   await h.scanControl.execute("id", { action: "end" }, undefined, undefined, ctx);
@@ -1073,7 +1102,6 @@ test("initial maintenance reuses adoption exclusions, selects strict first, and 
 
 test("cancelling the initial maintenance depth leaves adoption complete and the schedule unchanged", async (t) => {
   const cwd = fixture(t, oldDue("nudge"));
-  setAdoptionStatus(cwd, { status: "adopted" });
   let selection = 0;
   const h = harness({
     selectHandler: () => {
@@ -1082,16 +1110,17 @@ test("cancelling the initial maintenance depth leaves adoption complete and the 
     },
   });
   const ctx = h.context(cwd, "tui", "post-adoption-cancel");
-  const before = readFileSync(join(cwd, ".picm/config.json"), "utf8");
 
   await h.commands.get("picm-adopt").handler("", ctx);
   await h.scanControl.execute("id", { action: "preflight" }, undefined, undefined, ctx);
   await h.scanControl.execute("id", { action: "privacy", excludedPaths: [] }, undefined, undefined, ctx);
+  setAdoptionStatus(cwd, { status: "adopted" });
+  const afterAdoption = readFileSync(join(cwd, ".picm/config.json"), "utf8");
   await h.scanControl.execute("id", { action: "begin" }, undefined, undefined, ctx);
   await h.scanControl.execute("id", { action: "end" }, undefined, undefined, ctx);
   const completed = await h.scanControl.execute("id", { action: "adoption-complete" }, undefined, undefined, ctx);
 
   assert.equal(completed.details.initialMaintenance, "cancelled");
   assert.equal(completed.details.completed, true);
-  assert.equal(readFileSync(join(cwd, ".picm/config.json"), "utf8"), before);
+  assert.equal(readFileSync(join(cwd, ".picm/config.json"), "utf8"), afterAdoption);
 });

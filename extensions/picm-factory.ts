@@ -255,6 +255,8 @@ export default function picmFactoryExtension(
           scanStarted: result.scanStarted,
           scanSettled: result.scanSettled,
           maintenanceResetAttempted: result.maintenanceResetAttempted,
+          adoptionWasAlreadyAdopted: result.adoptionWasAlreadyAdopted,
+          initialMaintenanceOffered: result.initialMaintenanceOffered,
           excludedPaths: result.excludedPaths,
         });
         if (result.maintenanceReset && (!result.maintenanceReset.ok || result.maintenanceReset.conflict) && ctx.hasUI) {
@@ -273,6 +275,8 @@ export default function picmFactoryExtension(
             scanStarted: result.scanStarted,
             scanSettled: result.scanSettled,
             maintenanceResetAttempted: result.maintenanceResetAttempted,
+            adoptionWasAlreadyAdopted: result.adoptionWasAlreadyAdopted,
+            initialMaintenanceOffered: result.initialMaintenanceOffered,
             completed: true,
             excludedPaths: result.excludedPaths,
           });
@@ -363,7 +367,7 @@ export default function picmFactoryExtension(
       action: "adoption-complete",
       initialMaintenance,
     });
-    if (ctx.mode !== "tui" || !await coordinator.hasAdoptedStatus(ctx)) return finish("finished");
+    if (ctx.mode !== "tui" || !await coordinator.claimInitialMaintenanceOffer(ctx)) return finish("finished");
 
     const choice = await ctx.ui.select(
       "Would you like to run an initial maintenance pass now (recommended)?",
