@@ -12,7 +12,10 @@ import {
   proposalAudit,
   proposalSummary,
 } from "./proposal-batch.mjs";
-import { parseSpecialistFirstRunRecipe } from "./specialist-first-run-guidance.mjs";
+import {
+  isGeneratedSpecialistInputRoute,
+  parseSpecialistFirstRunRecipe,
+} from "./specialist-first-run-guidance.mjs";
 
 const EXPLICIT_SCAN_COMMANDS = new Set(["picm-new", "picm-adopt", "picm-maintain", "picm-optimize"]);
 const GUARDED_PATH_TOOLS = new Set(["read", "edit", "write", "grep", "rg", "find", "ls"]);
@@ -973,7 +976,7 @@ export function createRuntimeCoordinator({
             const semantics = parseSpecialistFirstRunRecipe(recipePath, recipe);
             const generatedInputPaths = semantics.inputs.flatMap((input) =>
               [...input.matchAll(/`([^`]+)`/g)].map((match) => match[1])
-            );
+            ).filter(isGeneratedSpecialistInputRoute);
             const requiredPaths = [
               config.paths?.rootInstructions,
               config.paths?.rootContext,

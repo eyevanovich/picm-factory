@@ -4,6 +4,15 @@ function section(markdown, headings) {
   return match?.[1]?.trim() ?? "";
 }
 
+export function isGeneratedSpecialistInputRoute(path) {
+  if (typeof path !== "string") return false;
+  const normalized = path.replace(/^\.\//, "");
+  return normalized.startsWith("reference/") ||
+    normalized === "rules.md" ||
+    normalized === "examples.md" ||
+    normalized === "identity.md";
+}
+
 export function parseSpecialistFirstRunRecipe(recipePath, recipe) {
   if (typeof recipePath !== "string" || !recipePath.trim() || typeof recipe !== "string" || !recipe.trim()) {
     throw new Error("SPECIALIST_RECIPE_INCOMPLETE: approved recipe path and content are required");
