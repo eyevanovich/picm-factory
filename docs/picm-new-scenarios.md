@@ -122,10 +122,10 @@ Expected behavior:
 
 ## Scenario 6: stage pipeline layout choice
 
-Expected behavior when Stage Pipeline is recommended:
+Expected behavior when Stage Pipeline is confirmed:
 
-- asks whether stages should be root numbered folders or nested under `stages/`
-- defaults to root numbered folders when the user has no preference
+- follows the Stage Pipeline **Placement decision** in `../skills/picm-factory/references/layout-profiles.md`
+- uses the selected placement consistently in the exact preview, generated paths, config path hints, and first-run checklist
 - uses local `CONTEXT.md` files for stage-specific context
 - creates local `AGENTS.md` only if a stage needs hard local behavior rules or independent Pi/subagent cwd execution
 

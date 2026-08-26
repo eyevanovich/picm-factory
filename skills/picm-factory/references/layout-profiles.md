@@ -50,14 +50,16 @@ For each active stage, generate a local `CONTEXT.md` contract that states its Pu
 
 First-run ending guidance for this profile should be path-specific: tell the user to start in the first stage folder and read its `CONTEXT.md`; produce the first named output/review artifact; stop before the downstream stage; inspect/edit/approve the artifact and record gaps or unsupported claims visibly; then run the next stage from that approved edited artifact. When the scaffold has multiple handoffs, name each intermediate output review/edit point before the downstream stage consumes it. If the contract names a future `output/...` path but no physical empty directory was created, explain that the first run should create the artifact at that path.
 
-Ask follow-up:
+### Placement decision
 
-- Root numbered folders or nested `stages/`?
+After Stage Pipeline is confirmed and before choosing root stage paths, resolve where the stages belong:
 
-Default recommendation:
+- If command arguments contain an explicitly seeded placement, retain that override and skip the question. `Use root numbered folders` means paths such as `01_intake/`; `use nested stages` means paths such as `stages/01_intake/`.
+- Otherwise ask: “Should stages be root-numbered or nested under `stages/`?” Do not choose root-numbered merely because placement was omitted.
+- Only after the user says they have no preference, choose root-numbered as the documented default. It is especially suitable for non-technical users who benefit from seeing the workflow immediately.
+- Honor a nested choice when the root already has many persistent folders or the user prefers cleaner root organization.
 
-- Root numbered folders when the user has no preference, and especially for non-technical users who benefit from seeing the workflow immediately.
-- Nested `stages/` when the root already has many persistent folders or the user prefers cleaner root organization.
+The exact scaffold preview, generated stage paths, `.picm/config.json` path hints, and first-run checklist must all use the selected placement without mixing the two shapes.
 
 ## Specialist Folder
 

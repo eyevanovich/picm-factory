@@ -60,6 +60,10 @@ Ask these in plain language:
 
 Ask only when relevant.
 
+### Stage Pipeline placement
+
+Use the **Placement decision** under Stage Pipeline in `layout-profiles.md` after the user confirms the profile and before choosing stage paths.
+
 ### Operator profile
 
 Use when the user is non-technical, team-based, or unsure how they will operate the workspace.
@@ -155,7 +159,7 @@ After the interview:
 2. Recommend a primary layout profile and explain why.
 3. Present alternatives and any secondary pattern worth borrowing.
 4. Ask the user to confirm the profile before scaffolding.
-5. Preview the minimum viable scaffold plan and explain how every proposed path supports the first real run, required routing/safety, or a known reusable constraint. Remove future-only stages, unused roles, and empty organizational areas.
+5. Preview the minimum viable scaffold plan and explain how every proposed path supports the first real run, required routing/safety, or a known reusable constraint. For Stage Pipeline, show the selected placement in the exact generated paths: root-numbered paths such as `01_intake/` or nested paths such as `stages/01_intake/`. Remove future-only stages, unused roles, and empty organizational areas.
 6. If no real references or examples exist, say to add them after the first real use reveals a durable rule or genuine golden example; do not create placeholder files or folders.
 7. For a Stage Pipeline, preview each generated stage contract with concise Purpose, Inputs, Process, Outputs, optional Named scripts/tools, Verify, and Handoff/review-gate sections. Include the scripts/tools section only when the user named a relevant script path, MCP server/tool, or integration during the interview.
 8. Ensure any stage output consumed downstream points to an inspectable review surface, usually a named file under that stage's `output/` when the workflow benefits from a dedicated output area.
