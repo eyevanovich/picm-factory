@@ -103,7 +103,7 @@ function buildStagePlacementContext(command: CommandName): string {
 
 function buildNewWorkflowContinuityContext(command: CommandName): string {
   if (command !== "picm-new") return "";
-  return "\n\nExisting-architecture continuity: protected inventory reports `newWorkflowIntentRequired: true` when the workspace already contains routing or workflow architecture. End that discovery phase and ask the user to choose **adopt existing**, **add/replace scaffold**, or cancel. Do not call `picm_scan_control` action `complete` while this choice is pending. Treat only the user's direct choice as intent: `continue`, `go ahead`, `yes`, preview-only input, or other vague continuation is neither a choice nor permission to write. After a direct choice, call `picm_scan_control` with action `new-intent` and intent `adopt-existing`, `add-replace`, or `cancel`. The control records the choice without writing files. For add/replace, begin a new protected scan phase before project reads, drafting, preview, or registered scaffold writes. For adopt existing, it continues the authorized workflow as adoption; begin a new protected scan phase before project reads and load the adoption guide. Every scaffold write still needs a current exact proposal and direct scaffold approval.";
+  return "\n\nExisting-architecture continuity: protected inventory reports `newWorkflowIntentRequired: true` when the workspace already contains routing or workflow architecture. End that discovery phase and ask the user to choose **adopt existing**, **add/replace scaffold**, or cancel. Do not call `picm_scan_control` action `complete` while this choice is pending. Treat only the user's direct choice as intent: `continue`, `go ahead`, `yes`, preview-only input, or other vague continuation is neither a choice nor permission to write. After the exact reply, call `picm_scan_control` with action `new-intent` and the matching intent `adopt-existing`, `add-replace`, or `cancel`; the control rejects an intent not directly observed from the user. The control records the choice without writing files. For add/replace, begin a new protected scan phase before project reads, drafting, preview, or registered scaffold writes. For adopt existing, it continues the authorized workflow as adoption; begin a new protected scan phase before project reads and load the adoption guide. Every scaffold write still needs a current exact proposal and direct scaffold approval.";
 }
 
 function buildPrompt(
@@ -247,7 +247,7 @@ export default function picmFactoryExtension(
       "Only an explicit /picm-new, /picm-adopt, /picm-maintain, or /picm-optimize command authorizes picm_scan_control; natural-language requests do not.",
       "After an explicit command, call picm_scan_control preflight before any scan. For /picm-maintain and /picm-optimize, if preflight returns privacyQuestionIsConcise true, ask exactly: Name any additional project-relative files or directory that should be excluded from reads, or reply `none` to continue. Then call privacy with every exact project-relative excluded path. Otherwise, ask the full privacy question before privacy and begin.",
       "Use picm_scan_control privacy with persist true only when the user requests durable exclusions. First present and obtain acceptance of the complete concise .picm/config.json summary, explain the privacy configuration impact, then use the action's exact TUI patch confirmation as the separate runtime write confirmation.",
-      "Use picm_scan_control inventory only after begin, end after each scan phase, and complete when the PiCM workflow finishes. When /picm-new inventory reports newWorkflowIntentRequired, end the discovery phase, ask for adopt-existing, add-replace, or cancel, then call picm_scan_control new-intent with that exact intent before complete; vague continuation is neither selection nor write approval. After end, invoke only begin for the next phase, new-intent for this pending choice, or terminal complete before any ordinary project tool. After an adoption writes exact adoption.status \"adopted\", call adoption-complete to present the initial-maintenance choice; other adoption outcomes finish normally without the choice.",
+      "Use picm_scan_control inventory only after begin, end after each scan phase, and complete when the PiCM workflow finishes. When /picm-new inventory reports newWorkflowIntentRequired, end the discovery phase, ask for adopt-existing, add-replace, or cancel, then call picm_scan_control new-intent with the directly observed matching choice before complete; vague continuation is neither selection nor write approval. Do not begin another phase while that choice is pending. After end, invoke only new-intent for this pending choice or terminal complete before any ordinary project tool. After an adoption writes exact adoption.status \"adopted\", call adoption-complete to present the initial-maintenance choice; other adoption outcomes finish normally without the choice.",
     ],
     parameters: Type.Object({
       action: StringEnum(["preflight", "privacy", "begin", "inventory", "end", "complete", "adoption-complete", "new-intent", "status"] as const),
@@ -286,6 +286,7 @@ export default function picmFactoryExtension(
           initialIntent: result.initialIntent,
           newWorkflowIntentRequired: result.newWorkflowIntentRequired,
           newWorkflowIntent: result.newWorkflowIntent,
+          pendingNewWorkflowIntent: result.pendingNewWorkflowIntent,
           excludedPaths: result.excludedPaths,
         });
         if (result.maintenanceReset && (!result.maintenanceReset.ok || result.maintenanceReset.conflict) && ctx.hasUI) {
@@ -310,6 +311,7 @@ export default function picmFactoryExtension(
             initialIntent: result.initialIntent,
             newWorkflowIntentRequired: result.newWorkflowIntentRequired,
             newWorkflowIntent: result.newWorkflowIntent,
+            pendingNewWorkflowIntent: result.pendingNewWorkflowIntent,
             completed: true,
             excludedPaths: result.excludedPaths,
           });
@@ -427,9 +429,11 @@ export default function picmFactoryExtension(
     if (!continuity) return;
     const selectedIntent = continuity.newWorkflowIntent
       ? ` The user selected ${continuity.newWorkflowIntent}.`
-      : continuity.newWorkflowIntentRequired
-        ? " Existing-architecture intent selection is pending."
-        : "";
+      : continuity.pendingNewWorkflowIntent
+        ? ` The user directly selected ${continuity.pendingNewWorkflowIntent}; record only that matching intent.`
+        : continuity.newWorkflowIntentRequired
+          ? " Existing-architecture intent selection is pending."
+          : "";
     return {
       message: {
         customType: "picm-new-intent-continuity",
@@ -444,7 +448,9 @@ export default function picmFactoryExtension(
   });
 
   pi.on("input", (event, ctx) => {
-    if (event.source !== "extension") scaffoldApproval.observeInput(sessionId(ctx), event.text);
+    if (event.source === "extension") return;
+    coordinator.observeNewWorkflowIntentResponse?.(ctx, event.text);
+    scaffoldApproval.observeInput(sessionId(ctx), event.text);
   });
 
   pi.on("tool_call", async (event, ctx) => {

@@ -27,6 +27,16 @@ const NEW_WORKFLOW_ARCHITECTURE_FILES = new Set([
 const NEW_WORKFLOW_ARCHITECTURE_DIRECTORIES = ["workflows", "reference", "stages", ".picm"];
 const NEW_WORKFLOW_INTENTS = new Set(["add-replace", "adopt-existing", "cancelled"]);
 
+function directNewWorkflowIntent(text) {
+  const reply = typeof text === "string"
+    ? text.trim().toLowerCase().replace(/[.!]+$/g, "")
+    : "";
+  if (reply === "adopt existing" || reply === "adopt-existing") return "adopt-existing";
+  if (reply === "add/replace scaffold" || reply === "add-replace") return "add-replace";
+  if (reply === "cancel") return "cancel";
+  return undefined;
+}
+
 function candidatesRelativeToWorkspace(candidates, worktree, cwd) {
   let canonicalWorktree = worktree;
   let canonicalCwd = cwd;
@@ -134,6 +144,7 @@ export function createRuntimeCoordinator({
       initialIntent: workflow.initialIntent,
       newWorkflowIntentRequired: workflow.newWorkflowIntentRequired,
       newWorkflowIntent: workflow.newWorkflowIntent,
+      pendingNewWorkflowIntent: workflow.pendingNewWorkflowIntent,
       completed: workflow.completed,
       excludedPaths: [...workflow.excludedPaths],
     };
@@ -161,6 +172,7 @@ export function createRuntimeCoordinator({
         : undefined,
       newWorkflowIntentRequired: false,
       newWorkflowIntent: undefined,
+      pendingNewWorkflowIntent: undefined,
       completed: false,
       excludedPaths: [],
     };
@@ -227,6 +239,7 @@ export function createRuntimeCoordinator({
         typeof state.newWorkflowIntent === "string" && NEW_WORKFLOW_INTENTS.has(state.newWorkflowIntent)
           ? state.newWorkflowIntent
           : undefined,
+      pendingNewWorkflowIntent: undefined,
       completed,
       excludedPaths,
     });
@@ -374,6 +387,9 @@ export function createRuntimeCoordinator({
       if (!workflow.newWorkflowIntentRequired || workflow.newWorkflowIntent) {
         throw new Error("PICM_NEW_INTENT_UNAVAILABLE: an existing-architecture intent choice is not pending");
       }
+      if (workflow.pendingNewWorkflowIntent !== params.intent) {
+        throw new Error("PICM_NEW_INTENT_NOT_CONFIRMED: record only the directly observed user choice for this existing architecture");
+      }
       if (!workflow.scanStarted || !workflow.scanSettled || activeScans.get(sessionId)?.cwd === ctx.cwd) {
         throw new Error("PICM_SCAN_NOT_SETTLED: end the existing-architecture discovery scan before recording its intent");
       }
@@ -384,6 +400,7 @@ export function createRuntimeCoordinator({
       const selectedIntent = params.intent === "cancel" ? "cancelled" : params.intent;
       workflow.newWorkflowIntentRequired = false;
       workflow.newWorkflowIntent = selectedIntent;
+      workflow.pendingNewWorkflowIntent = undefined;
 
       if (selectedIntent === "adopt-existing") {
         const current = await runtimeFor(ctx).store.read();
@@ -447,6 +464,9 @@ export function createRuntimeCoordinator({
       if (!workflow.privacyReviewed) {
         throw new Error("PICM_PRIVACY_NOT_REVIEWED: complete picm_scan_control privacy before scanning");
       }
+      if (workflow.command === "picm-new" && workflow.newWorkflowIntentRequired) {
+        throw new Error("PICM_NEW_INTENT_PENDING: record the user's existing-architecture intent before starting another scan");
+      }
       if (workflow.command === "picm-new" && workflow.newWorkflowIntent === "cancelled") {
         throw new Error("PICM_NEW_INTENT_CANCELLED: complete the cancelled /picm-new workflow without starting another scan");
       }
@@ -488,7 +508,13 @@ export function createRuntimeCoordinator({
         throw new Error("PICM_SCAN_NOT_SETTLED: end the active privacy-reviewed scan before completion");
       }
       if (workflow.command === "picm-new" && workflow.newWorkflowIntentRequired) {
-        throw new Error("PICM_NEW_INTENT_PENDING: record the user's existing-architecture intent before completing /picm-new");
+        if (workflow.pendingNewWorkflowIntent === "cancel") {
+          workflow.newWorkflowIntentRequired = false;
+          workflow.newWorkflowIntent = "cancelled";
+          workflow.pendingNewWorkflowIntent = undefined;
+        } else {
+          throw new Error("PICM_NEW_INTENT_PENDING: record the user's existing-architecture intent before completing /picm-new");
+        }
       }
       let maintenanceReset;
       if (!workflow.completed) {
@@ -832,6 +858,12 @@ export function createRuntimeCoordinator({
     return workflowFor(ctx)?.command;
   }
 
+  function observeNewWorkflowIntentResponse(ctx, text) {
+    const workflow = workflowFor(ctx);
+    if (!workflow || workflow.command !== "picm-new" || !workflow.newWorkflowIntentRequired) return;
+    workflow.pendingNewWorkflowIntent = directNewWorkflowIntent(text);
+  }
+
   function newWorkflowContinuity(ctx) {
     const workflow = workflowFor(ctx);
     if (!workflow?.initialIntent) return undefined;
@@ -839,6 +871,7 @@ export function createRuntimeCoordinator({
       initialIntent: workflow.initialIntent,
       newWorkflowIntent: workflow.newWorkflowIntent,
       newWorkflowIntentRequired: workflow.newWorkflowIntentRequired,
+      pendingNewWorkflowIntent: workflow.pendingNewWorkflowIntent,
     };
   }
 
@@ -1171,6 +1204,7 @@ export function createRuntimeCoordinator({
     isWorkflowCompleted,
     maintenancePolicy,
     newWorkflowContinuity,
+    observeNewWorkflowIntentResponse,
     observeProposalResponse,
     proposalBatch,
     workflowCommand,

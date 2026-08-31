@@ -355,9 +355,31 @@ test("existing architecture retains picm-new intent through an explicit continua
 
     await h.handlers.get("input")({ text: "continue", source: "interactive" }, ctx);
     await assert.rejects(
+      control.execute("new-intent", { action: "new-intent", intent }, undefined, undefined, ctx),
+      /PICM_NEW_INTENT_NOT_CONFIRMED/,
+    );
+    await assert.rejects(
+      control.execute("begin", { action: "begin" }, undefined, undefined, ctx),
+      /PICM_NEW_INTENT_PENDING/,
+    );
+    await assert.rejects(
       control.execute("complete", { action: "complete" }, undefined, undefined, ctx),
       /PICM_NEW_INTENT_PENDING/,
     );
+
+    const directChoice = {
+      "add-replace": "add/replace scaffold",
+      "adopt-existing": "adopt existing",
+      cancel: "cancel",
+    }[intent];
+    await h.handlers.get("input")({ text: directChoice, source: "interactive" }, ctx);
+
+    if (!resumes) {
+      const completion = await control.execute("complete", { action: "complete" }, undefined, undefined, ctx);
+      assert.equal(completion.details.newWorkflowIntent, "cancelled");
+      assert.equal(completion.details.completed, true);
+      continue;
+    }
 
     const selected = await control.execute(
       "new-intent",
@@ -371,14 +393,6 @@ test("existing architecture retains picm-new intent through an explicit continua
     assert.equal(selected.details.newWorkflowIntent, selectedIntent);
     assert.equal(selected.details.newWorkflowIntentRequired, false);
 
-    if (!resumes) {
-      await assert.rejects(
-        control.execute("begin", { action: "begin" }, undefined, undefined, ctx),
-        /PICM_NEW_INTENT_CANCELLED/,
-      );
-      await control.execute("complete", { action: "complete" }, undefined, undefined, ctx);
-      continue;
-    }
     const continuation = await control.execute("begin", { action: "begin" }, undefined, undefined, ctx);
     assert.equal(continuation.details.command, command);
     assert.equal(continuation.details.privacyReviewed, true);
