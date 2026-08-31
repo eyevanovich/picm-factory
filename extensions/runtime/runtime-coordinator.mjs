@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { realpathSync } from "node:fs";
 import { relative, sep } from "node:path";
 import { createGitReadGate } from "./git-read-gate.mjs";
 import { createMaintenanceConfigStore } from "./maintenance-config-store.mjs";
@@ -27,7 +28,13 @@ const NEW_WORKFLOW_ARCHITECTURE_DIRECTORIES = ["workflows", "reference", "stages
 const NEW_WORKFLOW_INTENTS = new Set(["add-replace", "adopt-existing", "cancelled"]);
 
 function candidatesRelativeToWorkspace(candidates, worktree, cwd) {
-  const prefix = relative(worktree, cwd).split(sep).filter(Boolean).join("/");
+  let canonicalWorktree = worktree;
+  let canonicalCwd = cwd;
+  try {
+    canonicalWorktree = realpathSync(worktree);
+    canonicalCwd = realpathSync(cwd);
+  } catch {}
+  const prefix = relative(canonicalWorktree, canonicalCwd).split(sep).filter(Boolean).join("/");
   if (!prefix) return candidates;
   const rootedPrefix = `${prefix}/`;
   return candidates
@@ -412,7 +419,7 @@ export function createRuntimeCoordinator({
       if (
         workflow.command === "picm-new" &&
         !workflow.newWorkflowIntent &&
-        hasExistingNewWorkflowArchitecture(candidates)
+        hasExistingNewWorkflowArchitecture(workspaceCandidates)
       ) {
         workflow.newWorkflowIntentRequired = true;
       }

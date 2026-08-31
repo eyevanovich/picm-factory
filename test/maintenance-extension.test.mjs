@@ -385,6 +385,27 @@ test("existing architecture retains picm-new intent through an explicit continua
   }
 });
 
+test("existing architecture detection stays within a nested picm-new workspace", async (t) => {
+  const root = fixture(t);
+  const workspace = join(root, "packages", "foo");
+  mkdirSync(workspace, { recursive: true });
+  writeFileSync(join(root, "AGENTS.md"), "sibling architecture\n");
+  const h = harness();
+  const ctx = h.context(workspace, "tui", "nested-new-intent");
+  const control = h.scanControl;
+
+  await h.commands.get("picm-new").handler("nested workflow", ctx);
+  await control.execute("preflight", { action: "preflight" }, undefined, undefined, ctx);
+  await control.execute("privacy", { action: "privacy", excludedPaths: [] }, undefined, undefined, ctx);
+  await control.execute("begin", { action: "begin" }, undefined, undefined, ctx);
+  const siblingOnly = await control.execute("inventory", { action: "inventory" }, undefined, undefined, ctx);
+  assert.equal(siblingOnly.details.newWorkflowIntentRequired, false);
+
+  writeFileSync(join(workspace, "AGENTS.md"), "nested architecture\n");
+  const localArchitecture = await control.execute("inventory", { action: "inventory" }, undefined, undefined, ctx);
+  assert.equal(localArchitecture.details.newWorkflowIntentRequired, true);
+});
+
 test("picm-new outside TUI keeps its non-bootstrap skill dispatch", async (t) => {
   const cwd = fixture(t);
   const h = harness();
