@@ -330,6 +330,61 @@ test("full privacy bootstrap asks about sensitive material for fresh and incompl
   }
 });
 
+test("existing architecture retains picm-new intent through an explicit continuation choice", async (t) => {
+  for (const { intent, command, selectedIntent, resumes } of [
+    { intent: "add-replace", command: "picm-new", selectedIntent: "add-replace", resumes: true },
+    { intent: "adopt-existing", command: "picm-adopt", selectedIntent: "adopt-existing", resumes: true },
+    { intent: "cancel", command: "picm-new", selectedIntent: "cancelled", resumes: false },
+  ]) {
+    const cwd = fixture(t);
+    writeFileSync(join(cwd, "AGENTS.md"), "existing architecture\n");
+    const h = harness();
+    const ctx = h.context(cwd, "tui", `new-intent-${intent}`);
+    const control = h.scanControl;
+
+    await h.commands.get("picm-new").handler("customer research pipeline", ctx);
+    await control.execute("preflight", { action: "preflight" }, undefined, undefined, ctx);
+    await control.execute("privacy", { action: "privacy", excludedPaths: [] }, undefined, undefined, ctx);
+    await control.execute("begin", { action: "begin" }, undefined, undefined, ctx);
+    const inventory = await control.execute("inventory", { action: "inventory" }, undefined, undefined, ctx);
+    assert.equal(inventory.details.newWorkflowIntentRequired, true);
+    assert.equal(inventory.details.initialIntent, "customer research pipeline");
+    await control.execute("end", { action: "end" }, undefined, undefined, ctx);
+    await h.handlers.get("agent_settled")({}, ctx);
+    await h.handlers.get("session_tree")({}, ctx);
+
+    await h.handlers.get("input")({ text: "continue", source: "interactive" }, ctx);
+    await assert.rejects(
+      control.execute("complete", { action: "complete" }, undefined, undefined, ctx),
+      /PICM_NEW_INTENT_PENDING/,
+    );
+
+    const selected = await control.execute(
+      "new-intent",
+      { action: "new-intent", intent },
+      undefined,
+      undefined,
+      ctx,
+    );
+    assert.equal(selected.details.command, command);
+    assert.equal(selected.details.initialIntent, "customer research pipeline");
+    assert.equal(selected.details.newWorkflowIntent, selectedIntent);
+    assert.equal(selected.details.newWorkflowIntentRequired, false);
+
+    if (!resumes) {
+      await assert.rejects(
+        control.execute("begin", { action: "begin" }, undefined, undefined, ctx),
+        /PICM_NEW_INTENT_CANCELLED/,
+      );
+      await control.execute("complete", { action: "complete" }, undefined, undefined, ctx);
+      continue;
+    }
+    const continuation = await control.execute("begin", { action: "begin" }, undefined, undefined, ctx);
+    assert.equal(continuation.details.command, command);
+    assert.equal(continuation.details.privacyReviewed, true);
+  }
+});
+
 test("picm-new outside TUI keeps its non-bootstrap skill dispatch", async (t) => {
   const cwd = fixture(t);
   const h = harness();

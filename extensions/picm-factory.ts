@@ -101,6 +101,11 @@ function buildStagePlacementContext(command: CommandName): string {
   return "\n\nStage Pipeline placement: follow the loaded skill when interpreting User arguments. Retain exactly one unambiguous affirmative root-numbered or nested placement as seed context. Treat negated, conflicting, or absent placement as unresolved and ask whether stages should be root-numbered or nested under `stages/` before previewing stage paths. Select root-numbered only after the user says they have no preference, then use the resolved placement in every preview and generated path.";
 }
 
+function buildNewWorkflowContinuityContext(command: CommandName): string {
+  if (command !== "picm-new") return "";
+  return "\n\nExisting-architecture continuity: protected inventory reports `newWorkflowIntentRequired: true` when the workspace already contains routing or workflow architecture. End that discovery phase and ask the user to choose **adopt existing**, **add/replace scaffold**, or cancel. Do not call `picm_scan_control` action `complete` while this choice is pending. Treat only the user's direct choice as intent: `continue`, `go ahead`, `yes`, preview-only input, or other vague continuation is neither a choice nor permission to write. After a direct choice, call `picm_scan_control` with action `new-intent` and intent `adopt-existing`, `add-replace`, or `cancel`. The control records the choice without writing files. For add/replace, begin a new protected scan phase before project reads, drafting, preview, or registered scaffold writes. For adopt existing, it continues the authorized workflow as adoption; begin a new protected scan phase before project reads and load the adoption guide. Every scaffold write still needs a current exact proposal and direct scaffold approval.";
+}
+
 function buildPrompt(
   command: CommandName,
   args: string,
@@ -123,6 +128,7 @@ function buildPrompt(
   const optimizationIntake = command === "picm-maintain" ? `\n\n${maintenanceOptimizationIntake}` : "";
   const sensitiveNonGitSafeguards = command === "picm-adopt" ? `\n\n${sensitiveNonGitAdoptionSafeguards}` : "";
   const stagePlacementContext = buildStagePlacementContext(command);
+  const newWorkflowContinuityContext = buildNewWorkflowContinuityContext(command);
   const batchGuidance = command === "picm-adopt" || command === "picm-maintain"
     ? `\n\n${proposalBatchGuidance}`
     : "";
@@ -131,9 +137,9 @@ function buildPrompt(
     return `Privacy-first startup — follow this order exactly:\n1. Call \`picm_scan_control\` with \`action: "preflight"\`. Do not load the skill or use any other tool yet.\n2. After preflight, if it reports \`privacyQuestionIsConcise: true\`, ask exactly:\n\n${concisePrivacyQuestion}\n\nThen call \`picm_scan_control\` with \`action: "privacy"\` and every additional exact path (an empty list for \`none\`).\n3. Otherwise, ask the user:\n\n${adoptionPrivacyQuestion}\n\nThen call \`picm_scan_control\` with \`action: "privacy"\` and every additional exact path (an empty list for \`none\`). Use \`persist: true\` only if the user requests durable exclusions and follow its summary and exact TUI confirmation requirements.\n4. After the privacy call completes, load the \`picm-factory\` skill and continue the ${workflow} workflow.\n\n${commandContext}${previewGuidance}${batchGuidance}${optimizationIntake}`;
   }
   if (privacyBootstrap) {
-    return `Privacy-first startup — follow this order exactly:\n1. Call \`picm_scan_control\` with \`action: "preflight"\`. Do not load the skill or use any other tool yet.\n2. After preflight, ask the user:\n\n${adoptionPrivacyQuestion}\n\n3. Prepare the privacy call with every additional exact path from the reply (an empty list for \`none\`). Use \`persist: true\` only if the user requests durable exclusions. Before a call with \`persist: true\`, present the complete concise \`.picm/config.json\` summary categories: affected files and operations, behavior or configuration changes, linked cross-file moves, preserved behavior, known uncertainty, and review suggestions. Use \`None\` for empty categories, explain the privacy configuration impact, and obtain the user's summary acceptance. Then call \`picm_scan_control\` with \`action: "privacy"\`; its exact TUI patch confirmation is the separate runtime write confirmation.\n4. Only after privacy review completes, load the \`picm-factory\` skill and its \`SKILL.md\`, then continue the ${mode} workflow.\n\n${commandContext}${sensitiveNonGitSafeguards}${adoptionReferenceRouting}${stagePlacementContext}${previewGuidance}${batchGuidance}`;
+    return `Privacy-first startup — follow this order exactly:\n1. Call \`picm_scan_control\` with \`action: "preflight"\`. Do not load the skill or use any other tool yet.\n2. After preflight, ask the user:\n\n${adoptionPrivacyQuestion}\n\n3. Prepare the privacy call with every additional exact path from the reply (an empty list for \`none\`). Use \`persist: true\` only if the user requests durable exclusions. Before a call with \`persist: true\`, present the complete concise \`.picm/config.json\` summary categories: affected files and operations, behavior or configuration changes, linked cross-file moves, preserved behavior, known uncertainty, and review suggestions. Use \`None\` for empty categories, explain the privacy configuration impact, and obtain the user's summary acceptance. Then call \`picm_scan_control\` with \`action: "privacy"\`; its exact TUI patch confirmation is the separate runtime write confirmation.\n4. Only after privacy review completes, load the \`picm-factory\` skill and its \`SKILL.md\`, then continue the ${mode} workflow.\n\n${commandContext}${sensitiveNonGitSafeguards}${adoptionReferenceRouting}${stagePlacementContext}${newWorkflowContinuityContext}${previewGuidance}${batchGuidance}`;
   }
-  return `Use the picm-factory skill. Load its SKILL.md before proceeding.\n\n${commandContext}${stagePlacementContext}${previewGuidance}${batchGuidance}`;
+  return `Use the picm-factory skill. Load its SKILL.md before proceeding.\n\n${commandContext}${stagePlacementContext}${newWorkflowContinuityContext}${previewGuidance}${batchGuidance}`;
 }
 
 type PicmFactoryExtensionOptions = {
@@ -241,10 +247,11 @@ export default function picmFactoryExtension(
       "Only an explicit /picm-new, /picm-adopt, /picm-maintain, or /picm-optimize command authorizes picm_scan_control; natural-language requests do not.",
       "After an explicit command, call picm_scan_control preflight before any scan. For /picm-maintain and /picm-optimize, if preflight returns privacyQuestionIsConcise true, ask exactly: Name any additional project-relative files or directory that should be excluded from reads, or reply `none` to continue. Then call privacy with every exact project-relative excluded path. Otherwise, ask the full privacy question before privacy and begin.",
       "Use picm_scan_control privacy with persist true only when the user requests durable exclusions. First present and obtain acceptance of the complete concise .picm/config.json summary, explain the privacy configuration impact, then use the action's exact TUI patch confirmation as the separate runtime write confirmation.",
-      "Use picm_scan_control inventory only after begin, end after each scan phase, and complete when the PiCM workflow finishes. After picm_scan_control end, invoke only begin for the next phase or terminal complete before any ordinary project tool. After an adoption writes exact adoption.status \"adopted\", call adoption-complete to present the initial-maintenance choice; other adoption outcomes finish normally without the choice.",
+      "Use picm_scan_control inventory only after begin, end after each scan phase, and complete when the PiCM workflow finishes. When /picm-new inventory reports newWorkflowIntentRequired, end the discovery phase, ask for adopt-existing, add-replace, or cancel, then call picm_scan_control new-intent with that exact intent before complete; vague continuation is neither selection nor write approval. After end, invoke only begin for the next phase, new-intent for this pending choice, or terminal complete before any ordinary project tool. After an adoption writes exact adoption.status \"adopted\", call adoption-complete to present the initial-maintenance choice; other adoption outcomes finish normally without the choice.",
     ],
     parameters: Type.Object({
-      action: StringEnum(["preflight", "privacy", "begin", "inventory", "end", "complete", "adoption-complete", "status"] as const),
+      action: StringEnum(["preflight", "privacy", "begin", "inventory", "end", "complete", "adoption-complete", "new-intent", "status"] as const),
+      intent: Type.Optional(StringEnum(["add-replace", "adopt-existing", "cancel"] as const)),
       path: Type.Optional(Type.String({ minLength: 1 })),
       excludedPaths: Type.Optional(Type.Array(Type.String({ minLength: 1 }))),
       persist: Type.Optional(Type.Boolean()),
@@ -276,6 +283,9 @@ export default function picmFactoryExtension(
           adoptionBaselineCaptured: result.adoptionBaselineCaptured,
           adoptionWasAlreadyAdopted: result.adoptionWasAlreadyAdopted,
           initialMaintenanceOffered: result.initialMaintenanceOffered,
+          initialIntent: result.initialIntent,
+          newWorkflowIntentRequired: result.newWorkflowIntentRequired,
+          newWorkflowIntent: result.newWorkflowIntent,
           excludedPaths: result.excludedPaths,
         });
         if (result.maintenanceReset && (!result.maintenanceReset.ok || result.maintenanceReset.conflict) && ctx.hasUI) {
@@ -297,6 +307,9 @@ export default function picmFactoryExtension(
             adoptionBaselineCaptured: result.adoptionBaselineCaptured,
             adoptionWasAlreadyAdopted: result.adoptionWasAlreadyAdopted,
             initialMaintenanceOffered: result.initialMaintenanceOffered,
+            initialIntent: result.initialIntent,
+            newWorkflowIntentRequired: result.newWorkflowIntentRequired,
+            newWorkflowIntent: result.newWorkflowIntent,
             completed: true,
             excludedPaths: result.excludedPaths,
           });
@@ -410,6 +423,20 @@ export default function picmFactoryExtension(
   pi.on("before_agent_start", (event, ctx) => {
     const audit = coordinator.observeProposalResponse(ctx, event.prompt);
     if (audit) recordProposalAudit(audit, ctx);
+    const continuity = coordinator.newWorkflowContinuity?.(ctx);
+    if (!continuity) return;
+    const selectedIntent = continuity.newWorkflowIntent
+      ? ` The user selected ${continuity.newWorkflowIntent}.`
+      : continuity.newWorkflowIntentRequired
+        ? " Existing-architecture intent selection is pending."
+        : "";
+    return {
+      message: {
+        customType: "picm-new-intent-continuity",
+        content: `Continue the active PiCM workflow from the initiating request: ${continuity.initialIntent}.${selectedIntent} Preserve this intent and its accepted constraints unless the user directly revises them. A continuation, preview, or approval reply does not itself authorize scaffold writes.`,
+        display: false,
+      },
+    };
   });
 
   pi.on("tool_execution_start", (event, ctx) => {
@@ -600,7 +627,11 @@ export default function picmFactoryExtension(
         await ctx.waitForIdle();
         let promptArgs = args;
         if (command !== "picm-help") {
-          const authorization = coordinator.authorizeWorkflow(ctx, command);
+          const authorization = coordinator.authorizeWorkflow(
+            ctx,
+            command,
+            command === "picm-new" ? { initialIntent: args } : undefined,
+          );
           pi.appendEntry(scanWorkflowEntryType, { status: "authorized", ...authorization });
         } else if (coordinator.clearWorkflow(ctx)) {
           recordClearedWorkflow(ctx);

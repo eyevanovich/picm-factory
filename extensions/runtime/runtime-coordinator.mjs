@@ -14,6 +14,17 @@ import {
 
 const EXPLICIT_SCAN_COMMANDS = new Set(["picm-new", "picm-adopt", "picm-maintain", "picm-optimize"]);
 const GUARDED_PATH_TOOLS = new Set(["read", "edit", "write", "grep", "rg", "find", "ls"]);
+const NEW_WORKFLOW_ARCHITECTURE_FILES = new Set([
+  "AGENTS.md",
+  "CLAUDE.md",
+  "CONTEXT.md",
+  "REFERENCES.md",
+  "identity.md",
+  "rules.md",
+  "examples.md",
+]);
+const NEW_WORKFLOW_ARCHITECTURE_DIRECTORIES = ["workflows", "reference", "stages", ".picm"];
+const NEW_WORKFLOW_INTENTS = new Set(["add-replace", "adopt-existing", "cancelled"]);
 
 function candidatesRelativeToWorkspace(candidates, worktree, cwd) {
   const prefix = relative(worktree, cwd).split(sep).filter(Boolean).join("/");
@@ -26,6 +37,17 @@ function candidatesRelativeToWorkspace(candidates, worktree, cwd) {
 
 function isRecord(value) {
   return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+function hasExistingNewWorkflowArchitecture(candidates) {
+  return candidates.some((candidate) => {
+    const topLevel = candidate.split("/", 1)[0];
+    return NEW_WORKFLOW_ARCHITECTURE_FILES.has(topLevel) ||
+      NEW_WORKFLOW_ARCHITECTURE_DIRECTORIES.some((directory) =>
+        topLevel === directory || candidate.startsWith(`${directory}/`),
+      ) ||
+      /^\d+(?:[_-]|$)/.test(topLevel);
+  });
 }
 
 function hasCompletedPicmSetup(config) {
@@ -102,12 +124,15 @@ export function createRuntimeCoordinator({
       adoptionBaselineCaptured: workflow.adoptionBaselineCaptured,
       adoptionWasAlreadyAdopted: workflow.adoptionWasAlreadyAdopted,
       initialMaintenanceOffered: workflow.initialMaintenanceOffered,
+      initialIntent: workflow.initialIntent,
+      newWorkflowIntentRequired: workflow.newWorkflowIntentRequired,
+      newWorkflowIntent: workflow.newWorkflowIntent,
       completed: workflow.completed,
       excludedPaths: [...workflow.excludedPaths],
     };
   }
 
-  function authorizeWorkflow(ctx, command) {
+  function authorizeWorkflow(ctx, command, { initialIntent } = {}) {
     const sessionId = sessionIdFor(ctx);
     clearActiveScan(ctx);
     proposalBatches.delete(sessionId);
@@ -124,6 +149,11 @@ export function createRuntimeCoordinator({
       adoptionBaselineCaptured: false,
       adoptionWasAlreadyAdopted: true,
       initialMaintenanceOffered: false,
+      initialIntent: command === "picm-new" && typeof initialIntent === "string" && initialIntent.trim()
+        ? initialIntent.trim()
+        : undefined,
+      newWorkflowIntentRequired: false,
+      newWorkflowIntent: undefined,
       completed: false,
       excludedPaths: [],
     };
@@ -181,6 +211,15 @@ export function createRuntimeCoordinator({
         state.command === "picm-adopt" ? state.adoptionWasAlreadyAdopted !== false : true,
       initialMaintenanceOffered:
         state.command === "picm-adopt" && state.initialMaintenanceOffered === true,
+      initialIntent: typeof state.initialIntent === "string" && state.initialIntent.trim()
+        ? state.initialIntent.trim()
+        : undefined,
+      newWorkflowIntentRequired:
+        state.command === "picm-new" && state.newWorkflowIntentRequired === true,
+      newWorkflowIntent:
+        typeof state.newWorkflowIntent === "string" && NEW_WORKFLOW_INTENTS.has(state.newWorkflowIntent)
+          ? state.newWorkflowIntent
+          : undefined,
       completed,
       excludedPaths,
     });
@@ -201,8 +240,8 @@ export function createRuntimeCoordinator({
     const { action, path, excludedPaths = [], persist = false } = params;
     const sessionId = sessionIdFor(ctx);
     const workflow = workflowFor(ctx);
-    if (workflow?.scanSettled && !workflow.completed && action !== "begin" && action !== "complete") {
-      throw new Error("PICM_SCAN_SETTLED: after ending a scan, only begin for the next phase or complete is allowed");
+    if (workflow?.scanSettled && !workflow.completed && action !== "begin" && action !== "complete" && action !== "new-intent") {
+      throw new Error("PICM_SCAN_SETTLED: after ending a scan, only begin for the next phase, record a pending new-workflow intent, or complete is allowed");
     }
     if (workflow?.completed && action !== "status" && action !== "complete") {
       throw new Error("PICM_SCAN_COMPLETE: wait for the completed workflow to settle before starting another scan action");
@@ -318,6 +357,49 @@ export function createRuntimeCoordinator({
         ...workflowState(workflow),
       };
     }
+    if (action === "new-intent") {
+      if (!workflow || workflow.command !== "picm-new") {
+        throw new Error("PICM_NEW_INTENT_UNAVAILABLE: detect existing architecture through /picm-new before recording its intent");
+      }
+      if (!workflow.preflightComplete || !workflow.privacyReviewed) {
+        throw new Error("PICM_PRIVACY_NOT_REVIEWED: complete picm-new privacy review before recording an architecture intent");
+      }
+      if (!workflow.newWorkflowIntentRequired || workflow.newWorkflowIntent) {
+        throw new Error("PICM_NEW_INTENT_UNAVAILABLE: an existing-architecture intent choice is not pending");
+      }
+      if (!workflow.scanStarted || !workflow.scanSettled || activeScans.get(sessionId)?.cwd === ctx.cwd) {
+        throw new Error("PICM_SCAN_NOT_SETTLED: end the existing-architecture discovery scan before recording its intent");
+      }
+      if (params.intent !== "add-replace" && params.intent !== "adopt-existing" && params.intent !== "cancel") {
+        throw new Error("PICM_NEW_INTENT_INVALID: choose add-replace, adopt-existing, or cancel");
+      }
+
+      const selectedIntent = params.intent === "cancel" ? "cancelled" : params.intent;
+      workflow.newWorkflowIntentRequired = false;
+      workflow.newWorkflowIntent = selectedIntent;
+
+      if (selectedIntent === "adopt-existing") {
+        const current = await runtimeFor(ctx).store.read();
+        requireCurrentWorkflow(sessionId, workflow);
+        if (!current.ok) throw new Error(`${current.code}: ${current.message}`);
+        workflow.command = "picm-adopt";
+        workflow.adoptionBaselineCaptured = true;
+        workflow.adoptionWasAlreadyAdopted = current.config?.adoption?.status === "adopted";
+      }
+
+      return {
+        ok: true,
+        action,
+        authorized: true,
+        active: false,
+        continuation: selectedIntent === "add-replace"
+          ? "The user selected add/replace scaffold. Privacy review remains active; begin a new protected scan phase before project inspection or scaffold drafting. This selection does not approve writes."
+          : selectedIntent === "adopt-existing"
+            ? "The user selected adopt existing. The authorized workflow now continues as /picm-adopt; begin a new protected scan phase before project inspection and load the adoption guide. This selection does not approve writes."
+            : "The user cancelled the existing-architecture choice. Privacy review remains active only until this workflow completes; no files were changed.",
+        ...workflowState(workflow),
+      };
+    }
     if (action === "inventory") {
       const scan = activeScans.get(sessionId);
       if (!workflow || scan?.cwd !== ctx.cwd) {
@@ -326,6 +408,14 @@ export function createRuntimeCoordinator({
       const inventory = await runtimeFor(ctx).gate.refreshInventory(path, scan.excludedPaths);
       requireCurrentWorkflow(sessionId, workflow);
       const candidates = [...inventory.candidates].sort();
+      const workspaceCandidates = candidatesRelativeToWorkspace(candidates, inventory.worktree, ctx.cwd);
+      if (
+        workflow.command === "picm-new" &&
+        !workflow.newWorkflowIntent &&
+        hasExistingNewWorkflowArchitecture(candidates)
+      ) {
+        workflow.newWorkflowIntentRequired = true;
+      }
       return {
         ok: true,
         action,
@@ -335,9 +425,8 @@ export function createRuntimeCoordinator({
         worktree: inventory.worktree,
         isolated: inventory.isolated,
         candidates,
-        layoutProfile: identifyLayoutProfile(
-          candidatesRelativeToWorkspace(candidates, inventory.worktree, ctx.cwd),
-        ),
+        layoutProfile: identifyLayoutProfile(workspaceCandidates),
+        ...workflowState(workflow),
         excludedPaths: [...scan.excludedPaths],
       };
     }
@@ -350,6 +439,9 @@ export function createRuntimeCoordinator({
       }
       if (!workflow.privacyReviewed) {
         throw new Error("PICM_PRIVACY_NOT_REVIEWED: complete picm_scan_control privacy before scanning");
+      }
+      if (workflow.command === "picm-new" && workflow.newWorkflowIntent === "cancelled") {
+        throw new Error("PICM_NEW_INTENT_CANCELLED: complete the cancelled /picm-new workflow without starting another scan");
       }
       const config = await runtimeFor(ctx).store.read();
       requireCurrentWorkflow(sessionId, workflow);
@@ -387,6 +479,9 @@ export function createRuntimeCoordinator({
       }
       if (!workflow.scanSettled || activeScans.get(sessionId)?.cwd === ctx.cwd) {
         throw new Error("PICM_SCAN_NOT_SETTLED: end the active privacy-reviewed scan before completion");
+      }
+      if (workflow.command === "picm-new" && workflow.newWorkflowIntentRequired) {
+        throw new Error("PICM_NEW_INTENT_PENDING: record the user's existing-architecture intent before completing /picm-new");
       }
       let maintenanceReset;
       if (!workflow.completed) {
@@ -730,6 +825,16 @@ export function createRuntimeCoordinator({
     return workflowFor(ctx)?.command;
   }
 
+  function newWorkflowContinuity(ctx) {
+    const workflow = workflowFor(ctx);
+    if (!workflow?.initialIntent) return undefined;
+    return {
+      initialIntent: workflow.initialIntent,
+      newWorkflowIntent: workflow.newWorkflowIntent,
+      newWorkflowIntentRequired: workflow.newWorkflowIntentRequired,
+    };
+  }
+
   const currentWorkflowCommand = workflowCommand;
 
   function isAutomatic(_ctx) {
@@ -1058,6 +1163,7 @@ export function createRuntimeCoordinator({
     endToolExecution,
     isWorkflowCompleted,
     maintenancePolicy,
+    newWorkflowContinuity,
     observeProposalResponse,
     proposalBatch,
     workflowCommand,
