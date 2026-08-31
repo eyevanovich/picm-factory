@@ -976,6 +976,19 @@ export function createRuntimeCoordinator({
             const generatedInputPaths = Array.isArray(config.paths?.generatedInputs)
               ? config.paths.generatedInputs
               : [];
+            const runtimeInputPaths = Array.isArray(config.paths?.runtimeInputs)
+              ? config.paths.runtimeInputs
+              : [];
+            const declaredInputPaths = [...generatedInputPaths, ...runtimeInputPaths];
+            const uniqueDeclarations = new Set(declaredInputPaths);
+            const exhaustiveInputInventory =
+              declaredInputPaths.every((inputPath) => typeof inputPath === "string" && inputPath.trim()) &&
+              uniqueDeclarations.size === declaredInputPaths.length &&
+              uniqueDeclarations.size === semantics.inputPaths.length &&
+              semantics.inputPaths.every((inputPath) => uniqueDeclarations.has(inputPath));
+            const runtimeInputsAreNotScaffolded = runtimeInputPaths.every(
+              (inputPath) => !workflow.approvedWrites.has(resolve(ctx.cwd, inputPath)),
+            );
             const requiredPaths = [
               config.paths?.rootInstructions,
               config.paths?.rootContext,
@@ -990,7 +1003,7 @@ export function createRuntimeCoordinator({
               return typeof content === "string" && content.trim() &&
                 !/\{\{|\}\}|\[[A-Z][^\]]*\]|\b(?:TODO|TBD)\b/i.test(content);
             });
-            if (completeInventory) {
+            if (exhaustiveInputInventory && runtimeInputsAreNotScaffolded && completeInventory) {
               workflow.specialistRouteSemantics = semantics;
               workflow.specialistScaffoldApproved = true;
             }

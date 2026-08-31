@@ -56,3 +56,20 @@ test("picm-new emits final guidance derived from the reported Specialist fixture
   assert.match(guidance, /next specialist action reads from the approved `review\/polished-faq\.md`/);
   assert.match(guidance, /Run `\/picm-maintain` after the first real use/);
 });
+
+test("picm-new rejects an omitted generated recipe input", async () => {
+  const h = harness();
+  const fixture = join(process.cwd(), "test/fixtures/layout-profiles/specialist-folder/faq-polisher");
+  const ctx = context(fixture, "specialist-omitted-input-test");
+
+  await assert.rejects(
+    runSpecialistFirstRunCommand({
+      ...h,
+      context: ctx,
+      args: "Create the FAQ polisher Specialist Folder",
+      recipePath: "workflows/polish-faq.md",
+      generatedInputs: [],
+    }),
+    /SPECIALIST_TEST_TOOL_BLOCKED/,
+  );
+});

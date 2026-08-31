@@ -25,6 +25,7 @@ Inspect, edit, and approve \`review/polished.md\`. Keep unsupported claims visib
     "The future draft at `reference/faq.md`.",
     "Reusable guidance at `knowledge/style.md`.",
   ]);
+  assert.deepEqual(semantics.inputPaths, ["reference/faq.md", "knowledge/style.md"]);
 });
 
 test("uncertainty clauses normalize supported visibility wording", () => {

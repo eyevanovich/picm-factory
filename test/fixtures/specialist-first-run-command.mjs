@@ -25,7 +25,7 @@ function routeSemantics(cwd, recipePath) {
   };
 }
 
-export async function runSpecialistFirstRunCommand({ commands, tools, handlers, sent, context, args, recipePath }) {
+export async function runSpecialistFirstRunCommand({ commands, tools, handlers, sent, context, args, recipePath, generatedInputs = ["reference/faq-style.md"] }) {
   await commands.get("picm-new").handler(args, context);
 
   const dispatch = sent.at(-1);
@@ -79,7 +79,8 @@ export async function runSpecialistFirstRunCommand({ commands, tools, handlers, 
           rootInstructions: "AGENTS.md",
           rootContext: "CONTEXT.md",
           firstRecipe: recipePath,
-          generatedInputs: ["reference/faq-style.md"],
+          generatedInputs,
+          runtimeInputs: [],
         },
       }),
     },

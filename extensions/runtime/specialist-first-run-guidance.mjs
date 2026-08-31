@@ -19,6 +19,9 @@ export function parseSpecialistFirstRunRecipe(recipePath, recipe) {
     .flatMap((line) => line.replace(/^[-*]\s+/, "").split(/(?<=[.!?])\s+/))
     .map((value) => value.trim())
     .filter(Boolean);
+  const inputPaths = [...new Set(inputs.flatMap((input) =>
+    [...input.matchAll(/`([^`]+)`/g)].map((match) => match[1]),
+  ))];
   const expectedArtifact = artifactSection.match(/`([^`]+)`/)?.[1];
   const requiresInspectEditApprove = /\binspect\b/i.test(reviewSection) && /\bedit\b/i.test(reviewSection) && /\bapprove\b/i.test(reviewSection);
   const nextActionSource = reviewSection.match(/\bnext\b[^.]*?\b(?:reads? from|uses?|consumes?)\b[^`]*`([^`]+)`/i)?.[1];
@@ -29,7 +32,7 @@ export function parseSpecialistFirstRunRecipe(recipePath, recipe) {
       .replace(/\s+(?:visible(?:\s+there)?|in (?:the )?review notes)$/i, "")
       .trim())
     .filter(Boolean);
-  const semantics = { recipePath, inputs, expectedArtifact, requiresInspectEditApprove, nextActionSource, visibleUncertainty };
+  const semantics = { recipePath, inputs, inputPaths, expectedArtifact, requiresInspectEditApprove, nextActionSource, visibleUncertainty };
   renderSpecialistFirstRunGuidance(semantics);
   return semantics;
 }
