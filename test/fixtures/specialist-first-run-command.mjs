@@ -30,7 +30,7 @@ export async function runSpecialistFirstRunCommand({ commands, tools, handlers, 
 
   const dispatch = sent.at(-1);
   const toolName = dispatch?.match(/then call `([^`]+)`/)?.[1];
-  if (!toolName || !dispatch.includes("use its returned text as the final first-run guidance")) {
+  if (!toolName || !/use its returned text as the final first-run guidance/i.test(dispatch)) {
     throw new Error("SPECIALIST_TEST_ORCHESTRATION_INCOMPLETE: picm-new did not dispatch final guidance");
   }
 
