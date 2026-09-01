@@ -25,7 +25,7 @@ function routeSemantics(cwd, recipePath) {
   };
 }
 
-export async function runSpecialistFirstRunCommand({ commands, tools, handlers, sent, context, args, recipePath, generatedInputs = ["reference/faq-style.md"], initialRecipeContent }) {
+export async function runSpecialistFirstRunCommand({ commands, tools, handlers, sent, context, args, recipePath, generatedInputs = ["reference/faq-style.md"], initialRecipeContent, editRecipeAfterConfig = false }) {
   await commands.get("picm-new").handler(args, context);
 
   const dispatch = sent.at(-1);
@@ -70,7 +70,7 @@ export async function runSpecialistFirstRunCommand({ commands, tools, handlers, 
       isError: false,
     }, context);
   }
-  if (initialRecipeContent !== undefined) {
+  if (initialRecipeContent !== undefined && !editRecipeAfterConfig) {
     handlers.get("tool_execution_end")({
       toolCallId: "approved-specialist-recipe-edit",
       toolName: "edit",
@@ -99,6 +99,14 @@ export async function runSpecialistFirstRunCommand({ commands, tools, handlers, 
     },
     isError: false,
   }, context);
+  if (initialRecipeContent !== undefined && editRecipeAfterConfig) {
+    handlers.get("tool_execution_end")({
+      toolCallId: "approved-specialist-post-config-recipe-edit",
+      toolName: "edit",
+      args: { path: recipePath },
+      isError: false,
+    }, context);
+  }
   const event = { toolName, toolCallId: "specialist-final-guidance", input: {} };
   const admission = await handlers.get("tool_call")(event, context);
   if (admission?.block) throw new Error(`SPECIALIST_TEST_TOOL_BLOCKED: ${admission.reason}`);

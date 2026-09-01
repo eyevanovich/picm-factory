@@ -100,3 +100,30 @@ test("picm-new derives guidance from the persisted recipe after an edit", async 
     rmSync(fixture, { recursive: true, force: true });
   }
 });
+
+test("picm-new rederives guidance after a post-config recipe edit", async () => {
+  const source = join(process.cwd(), "test/fixtures/layout-profiles/specialist-folder/faq-polisher");
+  const fixture = mkdtempSync(join(process.cwd(), ".specialist-guidance-"));
+  cpSync(source, fixture, { recursive: true });
+  try {
+    const h = harness();
+    const ctx = context(fixture, "specialist-post-config-edit-test");
+    const recipePath = "workflows/polish-faq.md";
+    const persistedRecipe = readFileSync(join(fixture, recipePath), "utf8");
+    const initialRecipe = persistedRecipe.replaceAll("review/polished-faq.md", "review/stale-faq.md");
+
+    const guidance = await runSpecialistFirstRunCommand({
+      ...h,
+      context: ctx,
+      args: "Create the FAQ polisher Specialist Folder",
+      recipePath,
+      initialRecipeContent: initialRecipe,
+      editRecipeAfterConfig: true,
+    });
+
+    assert.match(guidance, /Expected artifact: `review\/polished-faq\.md`/);
+    assert.doesNotMatch(guidance, /stale-faq/);
+  } finally {
+    rmSync(fixture, { recursive: true, force: true });
+  }
+});

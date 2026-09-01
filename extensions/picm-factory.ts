@@ -252,7 +252,7 @@ export default function picmFactoryExtension(
       if (!ctx || coordinator.workflowCommand(ctx) !== "picm-new") {
         throw new Error("SPECIALIST_GUIDANCE_NOT_AUTHORIZED: invoke /picm-new before rendering final guidance");
       }
-      const guidance = renderSpecialistFirstRunGuidance(coordinator.specialistRouteSemantics(ctx));
+      const guidance = renderSpecialistFirstRunGuidance(await coordinator.specialistRouteSemantics(ctx));
       return { content: [{ type: "text", text: guidance }], details: { guidance } };
     },
   });
