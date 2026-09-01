@@ -61,7 +61,7 @@ function hasExistingNewWorkflowArchitecture(candidates) {
     const topLevel = candidate.split("/", 1)[0];
     return NEW_WORKFLOW_ARCHITECTURE_FILES.has(topLevel) ||
       NEW_WORKFLOW_ARCHITECTURE_DIRECTORIES.some((directory) =>
-        topLevel === directory || candidate.startsWith(`${directory}/`),
+        candidate.startsWith(`${directory}/`),
       ) ||
       candidate.includes("/") && /^\d+(?:[_-]|$)/.test(topLevel);
   });
@@ -454,10 +454,21 @@ export function createRuntimeCoordinator({
       requireCurrentWorkflow(sessionId, workflow);
       const candidates = [...inventory.candidates].sort();
       const workspaceCandidates = candidatesRelativeToWorkspace(candidates, inventory.worktree, ctx.cwd);
+      let completedPicmSetup = false;
       if (
         workflow.command === "picm-new" &&
         !workflow.newWorkflowIntent &&
-        hasExistingNewWorkflowArchitecture(workspaceCandidates)
+        workspaceCandidates.includes(".picm/config.json")
+      ) {
+        const current = await runtimeFor(ctx).store.read();
+        requireCurrentWorkflow(sessionId, workflow);
+        if (!current.ok) throw new Error(`${current.code}: ${current.message}`);
+        completedPicmSetup = hasCompletedPicmSetup(current.config);
+      }
+      if (
+        workflow.command === "picm-new" &&
+        !workflow.newWorkflowIntent &&
+        (completedPicmSetup || hasExistingNewWorkflowArchitecture(workspaceCandidates))
       ) {
         workflow.newWorkflowIntentRequired = true;
       }

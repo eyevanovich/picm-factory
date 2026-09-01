@@ -428,6 +428,9 @@ test("privacy-only picm metadata does not count as existing architecture", async
     privacy: { excludedPaths: ["private"] },
   }));
   writeFileSync(join(cwd, "2026-report.md"), "source file\n");
+  writeFileSync(join(cwd, "workflows"), "source file\n");
+  writeFileSync(join(cwd, "reference"), "source file\n");
+  writeFileSync(join(cwd, "stages"), "source file\n");
   const h = harness();
   const ctx = h.context(cwd, "tui", "privacy-only-metadata");
 
@@ -449,6 +452,38 @@ test("privacy-only picm metadata does not count as existing architecture", async
     ctx,
   );
   assert.equal(numberedDirectory.details.newWorkflowIntentRequired, true);
+});
+
+test("completed picm metadata counts as existing architecture", async (t) => {
+  for (const config of [
+    { version: 1, adoption: { status: "adopted" } },
+    {
+      version: 1,
+      generatedBy: "picm-factory",
+      profile: "stage-pipeline",
+      createdAt: "2026-08-24",
+      paths: { rootInstructions: "AGENTS.md" },
+    },
+  ]) {
+    const cwd = fixture(t);
+    writeFileSync(join(cwd, ".picm/config.json"), JSON.stringify(config));
+    const h = harness();
+    const ctx = h.context(cwd, "tui", `completed-picm-${config.profile ?? "adopted"}`);
+
+    await h.commands.get("picm-new").handler("replacement workflow", ctx);
+    await h.scanControl.execute("preflight", { action: "preflight" }, undefined, undefined, ctx);
+    await h.scanControl.execute("privacy", { action: "privacy", excludedPaths: [] }, undefined, undefined, ctx);
+    await h.scanControl.execute("begin", { action: "begin" }, undefined, undefined, ctx);
+    const inventory = await h.scanControl.execute(
+      "inventory",
+      { action: "inventory" },
+      undefined,
+      undefined,
+      ctx,
+    );
+
+    assert.equal(inventory.details.newWorkflowIntentRequired, true);
+  }
 });
 
 test("direct architecture choice survives session restoration with provenance", async (t) => {
