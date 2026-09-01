@@ -24,7 +24,7 @@ You do not need to know PiCM or ICM terminology. Choose based on what is already
 | You know this is a repository or monorepo and want to skip the initial classification. | `/picm-adopt coding` | Enters the same coding-adoption flow that regular `/picm-adopt` can offer. |
 | You are still unsure. | `/picm-help` | Repeats this guide and the safety/install model. |
 
-When a folder already has workspace architecture, prefer `/picm-adopt` over `/picm-new`. Adoption does not mean conversion: it scans and reports first, then requires a complete concise summary and direct explicit approval before writing or restructuring anything.
+When a folder already has workspace architecture, prefer `/picm-adopt` over `/picm-new`. If `/picm-new` discovers that architecture, it pauses after discovery for a direct choice to adopt it, add/replace the scaffold, or cancel; vague continuation and preview-only replies neither choose a path nor approve writes, and cancellation writes nothing. Adoption does not mean conversion: it scans and reports first, then requires a complete concise summary and direct explicit approval before writing or restructuring anything.
 
 ## Command arguments and autocomplete
 

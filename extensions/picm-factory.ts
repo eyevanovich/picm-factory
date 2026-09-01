@@ -241,10 +241,11 @@ export default function picmFactoryExtension(
       "Only an explicit /picm-new, /picm-adopt, /picm-maintain, or /picm-optimize command authorizes picm_scan_control; natural-language requests do not.",
       "After an explicit command, call picm_scan_control preflight before any scan. For /picm-maintain and /picm-optimize, if preflight returns privacyQuestionIsConcise true, ask exactly: Name any additional project-relative files or directory that should be excluded from reads, or reply `none` to continue. Then call privacy with every exact project-relative excluded path. Otherwise, ask the full privacy question before privacy and begin.",
       "Use picm_scan_control privacy with persist true only when the user requests durable exclusions. First present and obtain acceptance of the complete concise .picm/config.json summary, explain the privacy configuration impact, then use the action's exact TUI patch confirmation as the separate runtime write confirmation.",
-      "Use picm_scan_control inventory only after begin, end after each scan phase, and complete when the PiCM workflow finishes. After picm_scan_control end, invoke only begin for the next phase or terminal complete before any ordinary project tool. After an adoption writes exact adoption.status \"adopted\", call adoption-complete to present the initial-maintenance choice; other adoption outcomes finish normally without the choice.",
+      "Use picm_scan_control inventory only after begin, end after each scan phase, and complete when the PiCM workflow finishes. Use new-intent only for the directly observed choice reported by the /picm-new runtime; it does not approve writes. After an adoption writes exact adoption.status \"adopted\", call adoption-complete to present the initial-maintenance choice; other adoption outcomes finish normally without the choice.",
     ],
     parameters: Type.Object({
-      action: StringEnum(["preflight", "privacy", "begin", "inventory", "end", "complete", "adoption-complete", "status"] as const),
+      action: StringEnum(["preflight", "privacy", "begin", "inventory", "end", "complete", "adoption-complete", "new-intent", "status"] as const),
+      intent: Type.Optional(StringEnum(["add-replace", "adopt-existing", "cancel"] as const)),
       path: Type.Optional(Type.String({ minLength: 1 })),
       excludedPaths: Type.Optional(Type.Array(Type.String({ minLength: 1 }))),
       persist: Type.Optional(Type.Boolean()),
@@ -276,6 +277,11 @@ export default function picmFactoryExtension(
           adoptionBaselineCaptured: result.adoptionBaselineCaptured,
           adoptionWasAlreadyAdopted: result.adoptionWasAlreadyAdopted,
           initialMaintenanceOffered: result.initialMaintenanceOffered,
+          initialIntent: result.initialIntent,
+          newWorkflowIntentRequired: result.newWorkflowIntentRequired,
+          newWorkflowIntent: result.newWorkflowIntent,
+          pendingNewWorkflowIntent: result.pendingNewWorkflowIntent,
+          pendingNewWorkflowIntentSource: result.pendingNewWorkflowIntentSource,
           excludedPaths: result.excludedPaths,
         });
         if (result.maintenanceReset && (!result.maintenanceReset.ok || result.maintenanceReset.conflict) && ctx.hasUI) {
@@ -297,6 +303,11 @@ export default function picmFactoryExtension(
             adoptionBaselineCaptured: result.adoptionBaselineCaptured,
             adoptionWasAlreadyAdopted: result.adoptionWasAlreadyAdopted,
             initialMaintenanceOffered: result.initialMaintenanceOffered,
+            initialIntent: result.initialIntent,
+            newWorkflowIntentRequired: result.newWorkflowIntentRequired,
+            newWorkflowIntent: result.newWorkflowIntent,
+            pendingNewWorkflowIntent: result.pendingNewWorkflowIntent,
+            pendingNewWorkflowIntentSource: result.pendingNewWorkflowIntentSource,
             completed: true,
             excludedPaths: result.excludedPaths,
           });
@@ -410,6 +421,22 @@ export default function picmFactoryExtension(
   pi.on("before_agent_start", (event, ctx) => {
     const audit = coordinator.observeProposalResponse(ctx, event.prompt);
     if (audit) recordProposalAudit(audit, ctx);
+    const continuity = coordinator.newWorkflowContinuity?.(ctx);
+    if (!continuity) return;
+    const selectedIntent = continuity.newWorkflowIntent
+      ? ` The user selected ${continuity.newWorkflowIntent}.`
+      : continuity.pendingNewWorkflowIntent
+        ? ` The user directly selected ${continuity.pendingNewWorkflowIntent}; record only that matching intent.`
+        : continuity.newWorkflowIntentRequired
+          ? " Existing-architecture intent selection is pending."
+          : "";
+    return {
+      message: {
+        customType: "picm-new-intent-continuity",
+        content: `Continue the active PiCM workflow from the initiating request: ${continuity.initialIntent}.${selectedIntent} Preserve this intent and its accepted constraints unless the user directly revises them. A continuation, preview, or approval reply does not itself authorize scaffold writes.`,
+        display: false,
+      },
+    };
   });
 
   pi.on("tool_execution_start", (event, ctx) => {
@@ -417,7 +444,10 @@ export default function picmFactoryExtension(
   });
 
   pi.on("input", (event, ctx) => {
-    if (event.source !== "extension") scaffoldApproval.observeInput(sessionId(ctx), event.text);
+    if (event.source === "extension") return;
+    const observedIntent = coordinator.observeNewWorkflowIntentResponse?.(ctx, event.text);
+    if (observedIntent) pi.appendEntry(scanWorkflowEntryType, { status: "authorized", ...observedIntent });
+    scaffoldApproval.observeInput(sessionId(ctx), event.text);
   });
 
   pi.on("tool_call", async (event, ctx) => {
@@ -600,7 +630,11 @@ export default function picmFactoryExtension(
         await ctx.waitForIdle();
         let promptArgs = args;
         if (command !== "picm-help") {
-          const authorization = coordinator.authorizeWorkflow(ctx, command);
+          const authorization = coordinator.authorizeWorkflow(
+            ctx,
+            command,
+            command === "picm-new" ? { initialIntent: args } : undefined,
+          );
           pi.appendEntry(scanWorkflowEntryType, { status: "authorized", ...authorization });
         } else if (coordinator.clearWorkflow(ctx)) {
           recordClearedWorkflow(ctx);
