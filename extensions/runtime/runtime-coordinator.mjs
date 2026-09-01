@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { realpathSync } from "node:fs";
+import { readFileSync, realpathSync } from "node:fs";
 import { relative, resolve, sep } from "node:path";
 import { createGitReadGate } from "./git-read-gate.mjs";
 import { createMaintenanceConfigStore } from "./maintenance-config-store.mjs";
@@ -969,7 +969,7 @@ export function createRuntimeCoordinator({
           workflow.specialistConfigWritten = config?.generatedBy === "picm-factory" && config?.profile === "specialist-folder";
           const recipePath = config?.paths?.firstRecipe;
           const recipe = typeof recipePath === "string"
-            ? workflow.approvedWrites.get(resolve(ctx.cwd, recipePath))
+            ? readFileSync(resolve(ctx.cwd, recipePath), "utf8")
             : undefined;
           if (workflow.specialistConfigWritten && typeof recipe === "string") {
             const semantics = parseSpecialistFirstRunRecipe(recipePath, recipe);

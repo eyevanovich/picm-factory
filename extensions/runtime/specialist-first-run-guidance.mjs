@@ -4,6 +4,16 @@ function section(markdown, headings) {
   return match?.[1]?.trim() ?? "";
 }
 
+function expectedArtifactPath(artifactSection) {
+  const candidates = [...artifactSection.matchAll(
+    /\b(?:create|write|save|produce|return)(?:s|d)?\b[^.!?;\n`]*`([^`]+)`|\bresult(?:ing)?(?:\s+(?:artifact|file|output))?\s+(?:is|at|to|in)\b[^.!?;\n`]*`([^`]+)`/gi,
+  )]
+    .map((match) => match[1] ?? match[2])
+    .filter((path) => !path.endsWith("/"));
+  const uniqueCandidates = [...new Set(candidates)];
+  return uniqueCandidates.length === 1 ? uniqueCandidates[0] : undefined;
+}
+
 export function parseSpecialistFirstRunRecipe(recipePath, recipe) {
   if (typeof recipePath !== "string" || !recipePath.trim() || typeof recipe !== "string" || !recipe.trim()) {
     throw new Error("SPECIALIST_RECIPE_INCOMPLETE: approved recipe path and content are required");
@@ -22,7 +32,7 @@ export function parseSpecialistFirstRunRecipe(recipePath, recipe) {
   const inputPaths = [...new Set(inputs.flatMap((input) =>
     [...input.matchAll(/`([^`]+)`/g)].map((match) => match[1]),
   ))];
-  const expectedArtifact = artifactSection.match(/`([^`]+)`/)?.[1];
+  const expectedArtifact = expectedArtifactPath(artifactSection);
   const requiresInspectEditApprove = /\binspect\b/i.test(reviewSection) && /\bedit\b/i.test(reviewSection) && /\bapprove\b/i.test(reviewSection);
   const nextActionSource = reviewSection.match(/\bnext\b[^.]*?\b(?:reads? from|uses?|consumes?)\b[^`]*`([^`]+)`/i)?.[1];
   const visibleUncertainty = [...reviewSection.matchAll(/\b(?:Keep|Leave|Preserve|Flag)\s+([^.!?\n]+)/gi)]

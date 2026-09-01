@@ -76,3 +76,45 @@ Inspect, edit, and approve \`review/draft.md\`. Keep gaps, unsupported claims, a
 
   assert.deepEqual(semantics.visibleUncertainty, ["gaps", "unsupported claims", "open questions"]);
 });
+
+test("artifact parsing uses the creation clause rather than a reference path", () => {
+  const semantics = parseSpecialistFirstRunRecipe(
+    "workflows/polish.md",
+    `# Polish
+
+## Inputs
+
+- A supplied draft.
+
+## Expected artifact
+
+Compare with \`reference/style.md\`, then create \`review/polished.md\`.
+
+## Review gate
+
+Inspect, edit, and approve \`review/polished.md\`. Keep open questions visible. The next action reads from \`review/polished.md\`.
+`,
+  );
+
+  assert.equal(semantics.expectedArtifact, "review/polished.md");
+});
+
+test("artifact parsing rejects ambiguous creation clauses", () => {
+  assert.throws(() => parseSpecialistFirstRunRecipe(
+    "workflows/polish.md",
+    `# Polish
+
+## Inputs
+
+- A supplied draft.
+
+## Expected artifact
+
+Create \`review/polished.md\` or write \`review/alternate.md\`.
+
+## Review gate
+
+Inspect, edit, and approve \`review/polished.md\`. Keep open questions visible. The next action reads from \`review/polished.md\`.
+`,
+  ), /SPECIALIST_GUIDANCE_INVALID/);
+});

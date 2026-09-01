@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { mkdtempSync, cpSync, readFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import picmFactoryExtension from "../extensions/picm-factory.ts";
 import { runSpecialistFirstRunCommand } from "./fixtures/specialist-first-run-command.mjs";
@@ -72,4 +73,30 @@ test("picm-new rejects an omitted generated recipe input", async () => {
     }),
     /SPECIALIST_TEST_TOOL_BLOCKED/,
   );
+});
+
+test("picm-new derives guidance from the persisted recipe after an edit", async () => {
+  const source = join(process.cwd(), "test/fixtures/layout-profiles/specialist-folder/faq-polisher");
+  const fixture = mkdtempSync(join(process.cwd(), ".specialist-guidance-"));
+  cpSync(source, fixture, { recursive: true });
+  try {
+    const h = harness();
+    const ctx = context(fixture, "specialist-edited-recipe-test");
+    const recipePath = "workflows/polish-faq.md";
+    const persistedRecipe = readFileSync(join(fixture, recipePath), "utf8");
+    const initialRecipe = persistedRecipe.replaceAll("review/polished-faq.md", "review/stale-faq.md");
+
+    const guidance = await runSpecialistFirstRunCommand({
+      ...h,
+      context: ctx,
+      args: "Create the FAQ polisher Specialist Folder",
+      recipePath,
+      initialRecipeContent: initialRecipe,
+    });
+
+    assert.match(guidance, /Expected artifact: `review\/polished-faq\.md`/);
+    assert.doesNotMatch(guidance, /stale-faq/);
+  } finally {
+    rmSync(fixture, { recursive: true, force: true });
+  }
 });
