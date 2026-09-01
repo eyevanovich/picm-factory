@@ -78,7 +78,9 @@ Expected behavior:
 
 - detects existing architecture from files/folders such as `AGENTS.md`, `CLAUDE.md`, `CONTEXT.md`, `REFERENCES.md`, `identity.md`, `rules.md`, `examples.md`, `workflows/`, `reference/`, numbered stage folders, `stages/`, or `.picm/`
 - recommends `/picm-adopt`
-- if the user insists on `/picm-new`, requires them to choose intent (`adopt existing` vs `add/replace scaffold`)
+- ends discovery and requires a directly observed choice of `adopt existing`, `add/replace scaffold`, or cancel while keeping the privacy-reviewed workflow open
+- rejects another protected scan while the choice remains pending; vague or preview-only continuation input does not select an intent
+- after an add/replace or adopt choice, starts a new protected phase before project reads or drafting; cancellation completes without writes
 - requires one current exact preview and direct approval for every create/update/overwrite action
 - after that preview, `preview only`, `continue`, equivalent vague assent, and a lone `.` write nothing; the proposal remains pending and the response states that no files were written
 - registers the exact operation set and writes all and only those actions after one documented explicit approval form

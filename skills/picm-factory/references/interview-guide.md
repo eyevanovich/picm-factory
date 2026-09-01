@@ -140,7 +140,8 @@ Before writing files:
 1. Confirm folder classification:
    - empty enough: proceed after normal scaffold approval
    - source-material-only: confirm building around existing material without moving/rewriting it
-   - existing architecture: recommend `/picm-adopt`; require explicit override and exact file-action approval to continue with `/picm-new`
+   - existing architecture: recommend `/picm-adopt`; after ending discovery, require a direct choice of `adopt existing`, `add/replace scaffold`, or cancel; vague or preview-only input leaves the choice pending, and cancellation completes without writes
+   - do not begin another protected phase while that choice is pending; after a directly observed add/replace or adopt choice is recorded, begin a new protected phase before project reads or drafting
 2. Confirm git safety:
    - no git repo: recommend `git init`; require explicit confirmation to proceed without git
    - dirty repo: show `git status --short`; require confirmation
