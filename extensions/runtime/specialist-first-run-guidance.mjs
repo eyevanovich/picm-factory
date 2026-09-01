@@ -14,6 +14,21 @@ function expectedArtifactPath(artifactSection) {
   return uniqueCandidates.length === 1 ? uniqueCandidates[0] : undefined;
 }
 
+function reviewGateArtifactPath(reviewSection) {
+  const actionPatterns = [
+    /\binspect(?:s|ed|ing|ion|ions)?\b/i,
+    /\bedit(?:s|ed|ing)?\b/i,
+    /\bapprov(?:e|es|ed|ing|al|als)\b/i,
+  ];
+  const gateClauses = reviewSection
+    .split(/(?<=[.!?])\s+|\n+/)
+    .filter((clause) => actionPatterns.every((pattern) => pattern.test(clause)));
+  const candidates = [...new Set(gateClauses.flatMap((clause) =>
+    [...clause.matchAll(/`([^`]+)`/g)].map((match) => match[1]),
+  ))];
+  return candidates.length === 1 ? candidates[0] : undefined;
+}
+
 export function parseSpecialistFirstRunRecipe(recipePath, recipe) {
   if (typeof recipePath !== "string" || !recipePath.trim() || typeof recipe !== "string" || !recipe.trim()) {
     throw new Error("SPECIALIST_RECIPE_INCOMPLETE: approved recipe path and content are required");
@@ -33,7 +48,8 @@ export function parseSpecialistFirstRunRecipe(recipePath, recipe) {
     [...input.matchAll(/`([^`]+)`/g)].map((match) => match[1]),
   ))];
   const expectedArtifact = expectedArtifactPath(artifactSection);
-  const requiresInspectEditApprove = /\binspect\b/i.test(reviewSection) && /\bedit\b/i.test(reviewSection) && /\bapprove\b/i.test(reviewSection);
+  const reviewGateArtifact = reviewGateArtifactPath(reviewSection);
+  const requiresInspectEditApprove = reviewGateArtifact === expectedArtifact;
   const nextActionSource = reviewSection.match(/\bnext\b[^.]*?\b(?:reads? from|uses?|consumes?)\b[^`]*`([^`]+)`/i)?.[1];
   const visibleUncertainty = [...reviewSection.matchAll(/\b(?:Keep|Leave|Preserve|Flag)\s+([^.!?\n]+)/gi)]
     .flatMap((match) => match[1].split(/\s+and\s+|,\s*/))
@@ -42,7 +58,7 @@ export function parseSpecialistFirstRunRecipe(recipePath, recipe) {
       .replace(/\s+(?:visible(?:\s+(?:there|in (?:the )?(?:artifact|output|result|review notes)))?|in (?:the )?review notes)$/i, "")
       .trim())
     .filter(Boolean);
-  const semantics = { recipePath, inputs, inputPaths, expectedArtifact, requiresInspectEditApprove, nextActionSource, visibleUncertainty };
+  const semantics = { recipePath, inputs, inputPaths, expectedArtifact, reviewGateArtifact, requiresInspectEditApprove, nextActionSource, visibleUncertainty };
   renderSpecialistFirstRunGuidance(semantics);
   return semantics;
 }

@@ -140,3 +140,46 @@ Inspect, edit, and approve \`review/polished.md\`. Keep open questions visible. 
 `,
   ), /SPECIALIST_GUIDANCE_INVALID/);
 });
+
+test("review gate accepts noun variants bound to the expected artifact", () => {
+  const semantics = parseSpecialistFirstRunRecipe(
+    "workflows/review.md",
+    `# Review
+
+## Inputs
+
+- A supplied draft.
+
+## Output
+
+Create \`review/draft.md\`.
+
+## Review gate
+
+Human inspection, edits, and explicit approval of \`review/draft.md\` are required. Keep open questions visible. The next action reads from \`review/draft.md\`.
+`,
+  );
+
+  assert.equal(semantics.reviewGateArtifact, "review/draft.md");
+  assert.equal(semantics.requiresInspectEditApprove, true);
+});
+
+test("review gate rejects an artifact different from the expected artifact", () => {
+  assert.throws(() => parseSpecialistFirstRunRecipe(
+    "workflows/review.md",
+    `# Review
+
+## Inputs
+
+- A supplied draft.
+
+## Output
+
+Create \`review/draft.md\`.
+
+## Review gate
+
+Inspect, edit, and approve \`review/final.md\`. Keep open questions visible. The next action reads from \`review/draft.md\`.
+`,
+  ), /SPECIALIST_GUIDANCE_INVALID/);
+});
