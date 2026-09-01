@@ -373,6 +373,7 @@ test("existing architecture retains picm-new intent through an explicit continua
       cancel: "cancel",
     }[intent];
     await h.handlers.get("input")({ text: directChoice, source: "interactive" }, ctx);
+    await h.handlers.get("input")({ text: "continue", source: "interactive" }, ctx);
 
     if (!resumes) {
       const completion = await control.execute("complete", { action: "complete" }, undefined, undefined, ctx);
@@ -426,6 +427,7 @@ test("privacy-only picm metadata does not count as existing architecture", async
     version: 1,
     privacy: { excludedPaths: ["private"] },
   }));
+  writeFileSync(join(cwd, "2026-report.md"), "source file\n");
   const h = harness();
   const ctx = h.context(cwd, "tui", "privacy-only-metadata");
 
@@ -436,6 +438,17 @@ test("privacy-only picm metadata does not count as existing architecture", async
   const inventory = await h.scanControl.execute("inventory", { action: "inventory" }, undefined, undefined, ctx);
 
   assert.equal(inventory.details.newWorkflowIntentRequired, false);
+
+  mkdirSync(join(cwd, "01_discovery"));
+  writeFileSync(join(cwd, "01_discovery/CONTEXT.md"), "numbered architecture\n");
+  const numberedDirectory = await h.scanControl.execute(
+    "inventory",
+    { action: "inventory" },
+    undefined,
+    undefined,
+    ctx,
+  );
+  assert.equal(numberedDirectory.details.newWorkflowIntentRequired, true);
 });
 
 test("direct architecture choice survives session restoration with provenance", async (t) => {

@@ -63,7 +63,7 @@ function hasExistingNewWorkflowArchitecture(candidates) {
       NEW_WORKFLOW_ARCHITECTURE_DIRECTORIES.some((directory) =>
         topLevel === directory || candidate.startsWith(`${directory}/`),
       ) ||
-      /^\d+(?:[_-]|$)/.test(topLevel);
+      candidate.includes("/") && /^\d+(?:[_-]|$)/.test(topLevel);
   });
 }
 
@@ -878,10 +878,10 @@ export function createRuntimeCoordinator({
   function observeNewWorkflowIntentResponse(ctx, text) {
     const workflow = workflowFor(ctx);
     if (!workflow || workflow.command !== "picm-new" || !workflow.newWorkflowIntentRequired) return;
-    workflow.pendingNewWorkflowIntent = directNewWorkflowIntent(text);
-    workflow.pendingNewWorkflowIntentSource = workflow.pendingNewWorkflowIntent
-      ? "direct-user-reply"
-      : undefined;
+    const observedIntent = directNewWorkflowIntent(text);
+    if (!observedIntent) return;
+    workflow.pendingNewWorkflowIntent = observedIntent;
+    workflow.pendingNewWorkflowIntentSource = "direct-user-reply";
     return workflowState(workflow);
   }
 
