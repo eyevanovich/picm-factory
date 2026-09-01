@@ -208,7 +208,7 @@ test("picm-new rejects an incomplete persisted required file after edit", async 
       context: context(fixture, "specialist-required-file-edit-test"),
       args: "Create the FAQ polisher Specialist Folder",
       recipePath: "workflows/polish-faq.md",
-      persistedEdits: { "reference/faq-style.md": "{{STYLE_GUIDANCE}}\n" },
+      persistedEdits: { "reference/faq-style.md": "[quality rule]\n" },
     }), /SPECIALIST_GUIDANCE_NOT_APPROVED/);
   } finally {
     rmSync(fixture, { recursive: true, force: true });
@@ -227,7 +227,15 @@ test("picm-new accepts Markdown links in persisted required files", async () => 
       args: "Create the FAQ polisher Specialist Folder",
       recipePath: "workflows/polish-faq.md",
       persistedEdits: {
-        "reference/faq-style.md": "# Style guidance\n\nFollow the [API guide](reference/api.md).\n",
+        "reference/faq-style.md": [
+          "# Style guidance",
+          "",
+          "Follow the [API guide](reference/api.md).",
+          "Use [the reference guide][api-guide] and [API guide] shortcuts.",
+          "",
+          "[api-guide]: reference/api.md",
+          "",
+        ].join("\n"),
       },
     });
 

@@ -36,7 +36,9 @@ test("recipe parsing accepts Markdown link labels", () => {
     "workflows/polish.md",
     `# Polish
 
-See the [API guide](reference/api.md).
+See the [API guide](reference/api.md), [the reference guide][api-guide], and [API guide].
+
+[api-guide]: reference/api.md
 
 ## Inputs
 

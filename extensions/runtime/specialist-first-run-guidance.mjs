@@ -27,9 +27,63 @@ function reviewGateArtifactPath(reviewSection) {
   return candidates.length === 1 ? candidates[0] : undefined;
 }
 
+const SPECIALIST_SCAFFOLD_PLACEHOLDERS = [
+  "{{createdAt}}",
+  "[AI recreation of deterministic mechanics]",
+  "[AUDIENCE / USER]",
+  "[Exact local script path or MCP/tool name supplied by the user]",
+  "[High / Medium / Low]",
+  "[LAYOUT FOLDERS]",
+  "[Material to transform for this run.]",
+  "[Name or short description]",
+  "[One sentence: what this stage is responsible for, and what it should not do.]",
+  "[One short paragraph describing the repeatable work.]",
+  "[Optional: check the output against a prior artifact, source constraint, or quality bar before handoff.]",
+  "[Relevant background.]",
+  "[Reusable rules/examples/style/domain constraints to follow.]",
+  "[Specialist Name]",
+  "[Stage Name]",
+  "[User-named mechanical task, only if applicable]",
+  "[User-named script/tool]",
+  "[WORKFLOW NAME]",
+  "[What happened and what the next role needs to know.]",
+  "[What should happen next.]",
+  "[What this specialist is and who it serves.]",
+  "[Workflow Name]",
+  "[YYYY-MM-DD]",
+  "[allowed work]",
+  "[artifact produced by this stage]",
+  "[criteria]",
+  "[detail]",
+  "[domain rule]",
+  "[final deliverable]",
+  "[input type]",
+  "[inspectable output path]",
+  "[mechanical job and review boundary]",
+  "[mistakes/non-goals]",
+  "[next stage/role or final user review]",
+  "[non-goals / approval boundaries]",
+  "[per-run input or prior stage output]",
+  "[private repo, ignore paths, approval requirement]",
+  "[quality rule]",
+  "[reference path, if any]",
+  "[safety rule]",
+  "[stage/role]",
+  "[step]",
+  "[unknown]",
+  "[what must remain visible downstream]",
+  "[what the user should inspect or edit before the next stage consumes this output]",
+  "[when to use it and what must be reviewed]",
+  "[where approved output goes next]",
+  "[who consumes the result]",
+  "[who runs this]",
+  "[working artifact if any]",
+  "[yes/no/unknown]",
+];
+
 export function hasUnresolvedSpecialistPlaceholder(content) {
   return typeof content === "string" &&
-    /\{\{|\}\}|(?<!!)\[[A-Z][^\]\n]*\](?!\s*\()|\b(?:TODO|TBD)\b/i.test(content);
+    SPECIALIST_SCAFFOLD_PLACEHOLDERS.some((placeholder) => content.includes(placeholder));
 }
 
 export function parseSpecialistFirstRunRecipe(recipePath, recipe) {
