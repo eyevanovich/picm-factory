@@ -52,7 +52,7 @@ export function parseSpecialistFirstRunRecipe(recipePath, recipe) {
   const visibleUncertainty = [...reviewSection.matchAll(/\b(?:Keep|Leave|Preserve|Flag)\s+([^.!?\n]+)/gi)]
     .flatMap((match) => match[1].split(/\s+and\s+|,\s*/))
     .map((value) => value
-      .replace(/^and\s+/i, "")
+      .replace(/^(?:and|or)\s+/i, "")
       .replace(/\s+(?:visible(?:\s+(?:there|in (?:the )?(?:artifact|output|result|review notes)))?|in (?:the )?review notes)$/i, "")
       .trim())
     .filter(Boolean);

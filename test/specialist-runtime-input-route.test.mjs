@@ -1,6 +1,9 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { parseSpecialistFirstRunRecipe } from "../extensions/runtime/specialist-first-run-guidance.mjs";
+import {
+  parseSpecialistFirstRunRecipe,
+  renderSpecialistFirstRunGuidance,
+} from "../extensions/runtime/specialist-first-run-guidance.mjs";
 
 test("recipe parsing preserves runtime and generated input routes", () => {
   const semantics = parseSpecialistFirstRunRecipe(
@@ -75,6 +78,30 @@ Inspect, edit, and approve \`review/draft.md\`. Keep gaps, unsupported claims, a
   );
 
   assert.deepEqual(semantics.visibleUncertainty, ["gaps", "unsupported claims", "open questions"]);
+});
+
+test("or-conjoined uncertainty lists render without a duplicated conjunction", () => {
+  const semantics = parseSpecialistFirstRunRecipe(
+    "workflows/review.md",
+    `# Review
+
+## Inputs
+
+- A supplied draft.
+
+## Output
+
+Create \`review/draft.md\`.
+
+## Review gate
+
+Inspect, edit, and approve \`review/draft.md\`. Keep missing information, blockers, or low-confidence points visible. The next action reads from \`review/draft.md\`.
+`,
+  );
+  const guidance = renderSpecialistFirstRunGuidance(semantics);
+
+  assert.deepEqual(semantics.visibleUncertainty, ["missing information", "blockers", "low-confidence points"]);
+  assert.doesNotMatch(guidance, /and or low-confidence points/);
 });
 
 test("artifact-location uncertainty wording renders once", () => {
