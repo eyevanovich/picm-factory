@@ -215,6 +215,28 @@ test("picm-new rejects an incomplete persisted required file after edit", async 
   }
 });
 
+test("picm-new accepts Markdown links in persisted required files", async () => {
+  const source = join(process.cwd(), "test/fixtures/layout-profiles/specialist-folder/faq-polisher");
+  const fixture = mkdtempSync(join(process.cwd(), ".specialist-guidance-"));
+  cpSync(source, fixture, { recursive: true });
+  try {
+    const h = harness();
+    const guidance = await runSpecialistFirstRunCommand({
+      ...h,
+      context: context(fixture, "specialist-markdown-link-test"),
+      args: "Create the FAQ polisher Specialist Folder",
+      recipePath: "workflows/polish-faq.md",
+      persistedEdits: {
+        "reference/faq-style.md": "# Style guidance\n\nFollow the [API guide](reference/api.md).\n",
+      },
+    });
+
+    assert.match(guidance, /Start with `workflows\/polish-faq\.md`/);
+  } finally {
+    rmSync(fixture, { recursive: true, force: true });
+  }
+});
+
 test("picm-new accepts a pre-existing input classified as runtime", async () => {
   const h = harness();
   const fixture = join(process.cwd(), "test/fixtures/layout-profiles/specialist-folder/faq-polisher");

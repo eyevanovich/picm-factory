@@ -13,6 +13,7 @@ import {
   proposalSummary,
 } from "./proposal-batch.mjs";
 import {
+  hasUnresolvedSpecialistPlaceholder,
   parseSpecialistFirstRunRecipe,
 } from "./specialist-first-run-guidance.mjs";
 
@@ -1037,7 +1038,7 @@ export function createRuntimeCoordinator({
       if (!isLocalSpecialistRoute(requiredPath)) return false;
       const content = scaffoldContents.get(resolve(ctx.cwd, requiredPath));
       return typeof content === "string" && content.trim() &&
-        !/\{\{|\}\}|\[[A-Z][^\]]*\]|\b(?:TODO|TBD)\b/i.test(content);
+        !hasUnresolvedSpecialistPlaceholder(content);
     });
     return exhaustiveInputInventory && localOutputRoutes && runtimeInputsAreNotScaffolded && completeInventory
       ? semantics

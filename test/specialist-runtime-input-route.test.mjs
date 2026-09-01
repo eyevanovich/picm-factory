@@ -31,6 +31,30 @@ Inspect, edit, and approve \`review/polished.md\`. Keep unsupported claims visib
   assert.deepEqual(semantics.inputPaths, ["reference/faq.md", "knowledge/style.md"]);
 });
 
+test("recipe parsing accepts Markdown link labels", () => {
+  const semantics = parseSpecialistFirstRunRecipe(
+    "workflows/polish.md",
+    `# Polish
+
+See the [API guide](reference/api.md).
+
+## Inputs
+
+- A supplied draft.
+
+## Expected artifact
+
+Create \`review/polished.md\`.
+
+## Review gate
+
+Inspect, edit, and approve \`review/polished.md\`. Keep open questions visible. The next action reads from \`review/polished.md\`.
+`,
+  );
+
+  assert.equal(semantics.expectedArtifact, "review/polished.md");
+});
+
 test("uncertainty clauses normalize supported visibility wording", () => {
   for (const review of [
     "Flag unsupported claims and unresolved questions in the review notes.",

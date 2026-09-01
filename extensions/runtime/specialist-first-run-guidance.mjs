@@ -27,11 +27,16 @@ function reviewGateArtifactPath(reviewSection) {
   return candidates.length === 1 ? candidates[0] : undefined;
 }
 
+export function hasUnresolvedSpecialistPlaceholder(content) {
+  return typeof content === "string" &&
+    /\{\{|\}\}|(?<!!)\[[A-Z][^\]\n]*\](?!\s*\()|\b(?:TODO|TBD)\b/i.test(content);
+}
+
 export function parseSpecialistFirstRunRecipe(recipePath, recipe) {
   if (typeof recipePath !== "string" || !recipePath.trim() || typeof recipe !== "string" || !recipe.trim()) {
     throw new Error("SPECIALIST_RECIPE_INCOMPLETE: approved recipe path and content are required");
   }
-  if (/\{\{|\}\}|\[[A-Z][^\]]*\]|\b(?:TODO|TBD)\b/i.test(recipe)) {
+  if (hasUnresolvedSpecialistPlaceholder(recipe)) {
     throw new Error("SPECIALIST_RECIPE_UNFINISHED: approved recipe contains unresolved template markers");
   }
   const inputsSection = section(recipe, ["Inputs", "Sources", "What it reads"]);
