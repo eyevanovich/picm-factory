@@ -25,7 +25,7 @@ function routeSemantics(cwd, recipePath) {
   };
 }
 
-export async function runSpecialistFirstRunCommand({ commands, tools, handlers, sent, context, args, recipePath, generatedInputs = ["reference/faq-style.md"], runtimeInputs = [], initialRecipeContent, editRecipeAfterConfig = false, editConfigAfterWrite = false, persistedEdits = {} }) {
+export async function runSpecialistFirstRunCommand({ commands, tools, handlers, sent, context, args, recipePath, generatedInputs = ["reference/faq-style.md"], runtimeInputs = [], initialRecipeContent, initialConfigContent, editRecipeAfterConfig = false, editConfigAfterWrite = false, persistedEdits = {} }) {
   await commands.get("picm-new").handler(args, context);
 
   const dispatch = sent.at(-1);
@@ -105,7 +105,7 @@ export async function runSpecialistFirstRunCommand({ commands, tools, handlers, 
     toolName: "write",
     args: {
       path: ".picm/config.json",
-      content: configContent,
+      content: initialConfigContent ?? configContent,
     },
     isError: false,
   }, context);

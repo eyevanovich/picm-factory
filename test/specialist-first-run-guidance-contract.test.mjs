@@ -148,6 +148,27 @@ test("picm-new revalidates a persisted config after an edit", async () => {
   }
 });
 
+test("picm-new authorizes guidance after an invalid config is corrected", async () => {
+  const source = join(process.cwd(), "test/fixtures/layout-profiles/specialist-folder/faq-polisher");
+  const fixture = mkdtempSync(join(process.cwd(), ".specialist-guidance-"));
+  cpSync(source, fixture, { recursive: true });
+  try {
+    const h = harness();
+    const guidance = await runSpecialistFirstRunCommand({
+      ...h,
+      context: context(fixture, "specialist-corrected-config-test"),
+      args: "Create the FAQ polisher Specialist Folder",
+      recipePath: "workflows/polish-faq.md",
+      initialConfigContent: "{}",
+      editConfigAfterWrite: true,
+    });
+
+    assert.match(guidance, /Start with `workflows\/polish-faq\.md`/);
+  } finally {
+    rmSync(fixture, { recursive: true, force: true });
+  }
+});
+
 test("picm-new rejects non-local declared routes", async () => {
   const source = join(process.cwd(), "test/fixtures/layout-profiles/specialist-folder/faq-polisher");
   const fixture = mkdtempSync(join(process.cwd(), ".specialist-guidance-"));

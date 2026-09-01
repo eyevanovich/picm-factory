@@ -975,7 +975,7 @@ export function createRuntimeCoordinator({
       config = JSON.parse(await readApprovedSpecialistFile(workflow, ctx, ".picm/config.json"));
     }
     const recipePath = config?.paths?.firstRecipe;
-    if (!workflow?.specialistScaffoldApproved || !isLocalSpecialistRoute(recipePath)) {
+    if (!workflow || !isLocalSpecialistRoute(recipePath)) {
       throw new Error("SPECIALIST_GUIDANCE_NOT_APPROVED: complete approved Specialist scaffold writes first");
     }
     const finalContents = new Map();
@@ -1154,10 +1154,19 @@ export function createRuntimeCoordinator({
       if (
         workflow.command === "picm-new" &&
         workflow.privacyReviewed &&
-        workflow.scanStarted &&
-        workflow.specialistScaffoldApproved
+        workflow.scanStarted
       ) {
-        return { allowed: true };
+        try {
+          await specialistRouteSemantics(ctx);
+          return { allowed: true };
+        } catch (error) {
+          return {
+            allowed: false,
+            reason: error instanceof Error
+              ? error.message
+              : "Final Specialist scaffold state is incomplete",
+          };
+        }
       }
       return {
         allowed: false,
