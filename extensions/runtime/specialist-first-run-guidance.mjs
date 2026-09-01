@@ -39,7 +39,7 @@ export function parseSpecialistFirstRunRecipe(recipePath, recipe) {
     .flatMap((match) => match[1].split(/\s+and\s+|,\s*/))
     .map((value) => value
       .replace(/^and\s+/i, "")
-      .replace(/\s+(?:visible(?:\s+there)?|in (?:the )?review notes)$/i, "")
+      .replace(/\s+(?:visible(?:\s+(?:there|in (?:the )?(?:artifact|output|result|review notes)))?|in (?:the )?review notes)$/i, "")
       .trim())
     .filter(Boolean);
   const semantics = { recipePath, inputs, inputPaths, expectedArtifact, requiresInspectEditApprove, nextActionSource, visibleUncertainty };

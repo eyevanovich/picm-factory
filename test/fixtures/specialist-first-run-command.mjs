@@ -55,7 +55,7 @@ export async function runSpecialistFirstRunCommand({ commands, tools, handlers, 
     "CONTEXT.md",
     "identity.md",
     "rules.md",
-    "reference/faq-style.md",
+    ...generatedInputs,
     recipePath,
   ]) {
     handlers.get("tool_execution_end")({

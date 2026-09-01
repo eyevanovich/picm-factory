@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { realpathSync } from "node:fs";
+import { lstatSync, realpathSync } from "node:fs";
 import { isAbsolute, relative, resolve, sep } from "node:path";
 import { createGitReadGate } from "./git-read-gate.mjs";
 import { createMaintenanceConfigStore } from "./maintenance-config-store.mjs";
@@ -85,6 +85,15 @@ function hasCompletedPicmSetup(config) {
 function isLocalSpecialistRoute(value) {
   return typeof value === "string" && value.trim() === value && value !== "" &&
     !isAbsolute(value) && !value.split(/[\\/]/).includes("..");
+}
+
+function specialistRouteDoesNotExist(cwd, route) {
+  try {
+    lstatSync(resolve(cwd, route));
+    return false;
+  } catch (error) {
+    return error?.code === "ENOENT";
+  }
 }
 
 export function createRuntimeCoordinator({
@@ -1021,16 +1030,27 @@ export function createRuntimeCoordinator({
       : [];
     const declaredInputPaths = [...generatedInputPaths, ...runtimeInputPaths];
     const uniqueDeclarations = new Set(declaredInputPaths);
+    const plannedGeneratedInputPaths = semantics.inputPaths.filter(
+      (inputPath) => workflow.approvedWrites.has(resolve(ctx.cwd, inputPath)),
+    );
+    const plannedRuntimeInputPaths = semantics.inputPaths.filter(
+      (inputPath) => !workflow.approvedWrites.has(resolve(ctx.cwd, inputPath)),
+    );
     const exhaustiveInputInventory =
       declaredInputPaths.every(isLocalSpecialistRoute) &&
       uniqueDeclarations.size === declaredInputPaths.length &&
       uniqueDeclarations.size === semantics.inputPaths.length &&
-      semantics.inputPaths.every((inputPath) => isLocalSpecialistRoute(inputPath) && uniqueDeclarations.has(inputPath));
+      semantics.inputPaths.every((inputPath) => isLocalSpecialistRoute(inputPath) && uniqueDeclarations.has(inputPath)) &&
+      generatedInputPaths.length === plannedGeneratedInputPaths.length &&
+      generatedInputPaths.every((inputPath) => plannedGeneratedInputPaths.includes(inputPath)) &&
+      runtimeInputPaths.length === plannedRuntimeInputPaths.length &&
+      runtimeInputPaths.every((inputPath) => plannedRuntimeInputPaths.includes(inputPath));
     const localOutputRoutes =
       isLocalSpecialistRoute(semantics.expectedArtifact) &&
       isLocalSpecialistRoute(semantics.nextActionSource);
     const runtimeInputsAreNotScaffolded = runtimeInputPaths.every(
-      (inputPath) => !workflow.approvedWrites.has(resolve(ctx.cwd, inputPath)),
+      (inputPath) => !workflow.approvedWrites.has(resolve(ctx.cwd, inputPath)) &&
+        specialistRouteDoesNotExist(ctx.cwd, inputPath),
     );
     const requiredPaths = requiredSpecialistPaths(config);
     const completeInventory = requiredPaths.every((requiredPath) => {

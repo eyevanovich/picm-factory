@@ -77,6 +77,28 @@ Inspect, edit, and approve \`review/draft.md\`. Keep gaps, unsupported claims, a
   assert.deepEqual(semantics.visibleUncertainty, ["gaps", "unsupported claims", "open questions"]);
 });
 
+test("artifact-location uncertainty wording renders once", () => {
+  const semantics = parseSpecialistFirstRunRecipe(
+    "workflows/review.md",
+    `# Review
+
+## Inputs
+
+- A supplied draft.
+
+## Output
+
+Create \`review/draft.md\`.
+
+## Review gate
+
+Inspect, edit, and approve \`review/draft.md\`. Keep gaps, unsupported claims, and open questions visible in the artifact. The next action reads from \`review/draft.md\`.
+`,
+  );
+
+  assert.deepEqual(semantics.visibleUncertainty, ["gaps", "unsupported claims", "open questions"]);
+});
+
 test("artifact parsing uses the creation clause rather than a reference path", () => {
   const semantics = parseSpecialistFirstRunRecipe(
     "workflows/polish.md",
