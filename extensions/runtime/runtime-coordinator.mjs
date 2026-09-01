@@ -1030,21 +1030,16 @@ export function createRuntimeCoordinator({
       : [];
     const declaredInputPaths = [...generatedInputPaths, ...runtimeInputPaths];
     const uniqueDeclarations = new Set(declaredInputPaths);
-    const plannedGeneratedInputPaths = semantics.inputPaths.filter(
-      (inputPath) => workflow.approvedWrites.has(resolve(ctx.cwd, inputPath)),
-    );
-    const plannedRuntimeInputPaths = semantics.inputPaths.filter(
-      (inputPath) => !workflow.approvedWrites.has(resolve(ctx.cwd, inputPath)),
-    );
     const exhaustiveInputInventory =
+      semantics.inputPlanComplete === true &&
       declaredInputPaths.every(isLocalSpecialistRoute) &&
       uniqueDeclarations.size === declaredInputPaths.length &&
       uniqueDeclarations.size === semantics.inputPaths.length &&
       semantics.inputPaths.every((inputPath) => isLocalSpecialistRoute(inputPath) && uniqueDeclarations.has(inputPath)) &&
-      generatedInputPaths.length === plannedGeneratedInputPaths.length &&
-      generatedInputPaths.every((inputPath) => plannedGeneratedInputPaths.includes(inputPath)) &&
-      runtimeInputPaths.length === plannedRuntimeInputPaths.length &&
-      runtimeInputPaths.every((inputPath) => plannedRuntimeInputPaths.includes(inputPath));
+      generatedInputPaths.length === semantics.generatedInputPaths.length &&
+      generatedInputPaths.every((inputPath) => semantics.generatedInputPaths.includes(inputPath)) &&
+      runtimeInputPaths.length === semantics.runtimeInputPaths.length &&
+      runtimeInputPaths.every((inputPath) => semantics.runtimeInputPaths.includes(inputPath));
     const localOutputRoutes =
       isLocalSpecialistRoute(semantics.expectedArtifact) &&
       isLocalSpecialistRoute(semantics.nextActionSource);
