@@ -934,45 +934,57 @@ export function createRuntimeCoordinator({
 
   const currentWorkflowCommand = workflowCommand;
 
+  async function readApprovedSpecialistFile(workflow, ctx, route) {
+    if (!isLocalSpecialistRoute(route)) {
+      throw new Error("SPECIALIST_GUIDANCE_NOT_APPROVED: scaffold routes must be local");
+    }
+    const approvedPath = resolve(ctx.cwd, route);
+    if (!workflow.approvedWrites.has(approvedPath)) {
+      throw new Error("SPECIALIST_GUIDANCE_NOT_APPROVED: scaffold file must be an approved write");
+    }
+    const decision = await runtimeFor(ctx).gate.checkPath("read", route, workflow.excludedPaths);
+    if (!decision.allowed || decision.executionBinding?.canonicalPath !== approvedPath) {
+      throw new Error("SPECIALIST_GUIDANCE_NOT_APPROVED: scaffold file must pass the canonical privacy boundary");
+    }
+    const binding = runtimeFor(ctx).gate.bindPath(decision.executionBinding);
+    try {
+      return (await binding.operations.readFile(approvedPath)).toString("utf8");
+    } finally {
+      binding.release();
+    }
+  }
+
+  function requiredSpecialistPaths(config) {
+    const generatedInputPaths = Array.isArray(config?.paths?.generatedInputs)
+      ? config.paths.generatedInputs
+      : [];
+    return [
+      config?.paths?.rootInstructions,
+      config?.paths?.rootContext,
+      "identity.md",
+      "rules.md",
+      config?.paths?.firstRecipe,
+      ...generatedInputPaths,
+    ];
+  }
+
   async function specialistRouteSemantics(ctx) {
     const workflow = workflowFor(ctx);
     let config = workflow?.specialistConfig;
     if (workflow?.specialistConfigEdited) {
-      const configPath = resolve(ctx.cwd, ".picm/config.json");
-      if (!workflow.approvedWrites.has(configPath)) {
-        throw new Error("SPECIALIST_GUIDANCE_NOT_APPROVED: config must be an approved scaffold write");
-      }
-      const decision = await runtimeFor(ctx).gate.checkPath("read", ".picm/config.json", workflow.excludedPaths);
-      if (!decision.allowed || decision.executionBinding?.canonicalPath !== configPath) {
-        throw new Error("SPECIALIST_GUIDANCE_NOT_APPROVED: config path must pass the canonical privacy boundary");
-      }
-      const binding = runtimeFor(ctx).gate.bindPath(decision.executionBinding);
-      try {
-        config = JSON.parse((await binding.operations.readFile(configPath)).toString("utf8"));
-      } finally {
-        binding.release();
-      }
+      config = JSON.parse(await readApprovedSpecialistFile(workflow, ctx, ".picm/config.json"));
     }
     const recipePath = config?.paths?.firstRecipe;
     if (!workflow?.specialistScaffoldApproved || !isLocalSpecialistRoute(recipePath)) {
       throw new Error("SPECIALIST_GUIDANCE_NOT_APPROVED: complete approved Specialist scaffold writes first");
     }
-    const approvedRecipePath = resolve(ctx.cwd, recipePath);
-    if (!workflow.approvedWrites.has(approvedRecipePath)) {
-      throw new Error("SPECIALIST_GUIDANCE_NOT_APPROVED: recipe must be an approved scaffold write");
+    const finalContents = new Map();
+    for (const requiredPath of requiredSpecialistPaths(config)) {
+      const content = await readApprovedSpecialistFile(workflow, ctx, requiredPath);
+      finalContents.set(resolve(ctx.cwd, requiredPath), content);
     }
-    const decision = await runtimeFor(ctx).gate.checkPath("read", recipePath, workflow.excludedPaths);
-    if (!decision.allowed || decision.executionBinding?.canonicalPath !== approvedRecipePath) {
-      throw new Error("SPECIALIST_GUIDANCE_NOT_APPROVED: recipe path must pass the canonical privacy boundary");
-    }
-    const binding = runtimeFor(ctx).gate.bindPath(decision.executionBinding);
-    let recipe;
-    try {
-      recipe = (await binding.operations.readFile(approvedRecipePath)).toString("utf8");
-    } finally {
-      binding.release();
-    }
-    const semantics = validateSpecialistScaffold(workflow, ctx, config, recipe);
+    const recipe = finalContents.get(resolve(ctx.cwd, recipePath));
+    const semantics = validateSpecialistScaffold(workflow, ctx, config, recipe, finalContents);
     if (!semantics) {
       throw new Error("SPECIALIST_GUIDANCE_NOT_APPROVED: final Specialist routes are incomplete");
     }
@@ -996,7 +1008,7 @@ export function createRuntimeCoordinator({
   function admitToolExecution(_event, _ctx) {}
   function rejectToolExecution(_event, _ctx) {}
 
-  function validateSpecialistScaffold(workflow, ctx, config, recipe) {
+  function validateSpecialistScaffold(workflow, ctx, config, recipe, scaffoldContents = workflow.approvedWrites) {
     const recipePath = config?.paths?.firstRecipe;
     const specialistConfig = config?.generatedBy === "picm-factory" && config?.profile === "specialist-folder";
     if (!specialistConfig || !isLocalSpecialistRoute(recipePath) || typeof recipe !== "string") return undefined;
@@ -1020,17 +1032,10 @@ export function createRuntimeCoordinator({
     const runtimeInputsAreNotScaffolded = runtimeInputPaths.every(
       (inputPath) => !workflow.approvedWrites.has(resolve(ctx.cwd, inputPath)),
     );
-    const requiredPaths = [
-      config.paths?.rootInstructions,
-      config.paths?.rootContext,
-      "identity.md",
-      "rules.md",
-      recipePath,
-      ...generatedInputPaths,
-    ];
+    const requiredPaths = requiredSpecialistPaths(config);
     const completeInventory = requiredPaths.every((requiredPath) => {
-      if (typeof requiredPath !== "string" || !requiredPath.trim()) return false;
-      const content = workflow.approvedWrites.get(resolve(ctx.cwd, requiredPath));
+      if (!isLocalSpecialistRoute(requiredPath)) return false;
+      const content = scaffoldContents.get(resolve(ctx.cwd, requiredPath));
       return typeof content === "string" && content.trim() &&
         !/\{\{|\}\}|\[[A-Z][^\]]*\]|\b(?:TODO|TBD)\b/i.test(content);
     });

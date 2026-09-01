@@ -175,3 +175,21 @@ test("picm-new rejects non-local declared routes", async () => {
     rmSync(fixture, { recursive: true, force: true });
   }
 });
+
+test("picm-new rejects an incomplete persisted required file after edit", async () => {
+  const source = join(process.cwd(), "test/fixtures/layout-profiles/specialist-folder/faq-polisher");
+  const fixture = mkdtempSync(join(process.cwd(), ".specialist-guidance-"));
+  cpSync(source, fixture, { recursive: true });
+  try {
+    const h = harness();
+    await assert.rejects(runSpecialistFirstRunCommand({
+      ...h,
+      context: context(fixture, "specialist-required-file-edit-test"),
+      args: "Create the FAQ polisher Specialist Folder",
+      recipePath: "workflows/polish-faq.md",
+      persistedEdits: { "reference/faq-style.md": "{{STYLE_GUIDANCE}}\n" },
+    }), /SPECIALIST_GUIDANCE_NOT_APPROVED/);
+  } finally {
+    rmSync(fixture, { recursive: true, force: true });
+  }
+});
