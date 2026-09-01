@@ -188,6 +188,7 @@ export function createRuntimeCoordinator({
       approvedWrites: new Map(),
       specialistConfigWritten: false,
       specialistConfig: undefined,
+      specialistConfigEdited: false,
       specialistRouteSemantics: undefined,
       specialistScaffoldApproved: false,
     };
@@ -273,6 +274,7 @@ export function createRuntimeCoordinator({
       approvedWrites: new Map(),
       specialistConfigWritten: false,
       specialistConfig: undefined,
+      specialistConfigEdited: false,
       specialistRouteSemantics: undefined,
       specialistScaffoldApproved: false,
     });
@@ -934,7 +936,23 @@ export function createRuntimeCoordinator({
 
   async function specialistRouteSemantics(ctx) {
     const workflow = workflowFor(ctx);
-    const config = workflow?.specialistConfig;
+    let config = workflow?.specialistConfig;
+    if (workflow?.specialistConfigEdited) {
+      const configPath = resolve(ctx.cwd, ".picm/config.json");
+      if (!workflow.approvedWrites.has(configPath)) {
+        throw new Error("SPECIALIST_GUIDANCE_NOT_APPROVED: config must be an approved scaffold write");
+      }
+      const decision = await runtimeFor(ctx).gate.checkPath("read", ".picm/config.json", workflow.excludedPaths);
+      if (!decision.allowed || decision.executionBinding?.canonicalPath !== configPath) {
+        throw new Error("SPECIALIST_GUIDANCE_NOT_APPROVED: config path must pass the canonical privacy boundary");
+      }
+      const binding = runtimeFor(ctx).gate.bindPath(decision.executionBinding);
+      try {
+        config = JSON.parse((await binding.operations.readFile(configPath)).toString("utf8"));
+      } finally {
+        binding.release();
+      }
+    }
     const recipePath = config?.paths?.firstRecipe;
     if (!workflow?.specialistScaffoldApproved || !isLocalSpecialistRoute(recipePath)) {
       throw new Error("SPECIALIST_GUIDANCE_NOT_APPROVED: complete approved Specialist scaffold writes first");
@@ -980,7 +998,8 @@ export function createRuntimeCoordinator({
 
   function validateSpecialistScaffold(workflow, ctx, config, recipe) {
     const recipePath = config?.paths?.firstRecipe;
-    if (!workflow.specialistConfigWritten || !isLocalSpecialistRoute(recipePath) || typeof recipe !== "string") return undefined;
+    const specialistConfig = config?.generatedBy === "picm-factory" && config?.profile === "specialist-folder";
+    if (!specialistConfig || !isLocalSpecialistRoute(recipePath) || typeof recipe !== "string") return undefined;
     const semantics = parseSpecialistFirstRunRecipe(recipePath, recipe);
     const generatedInputPaths = Array.isArray(config.paths?.generatedInputs)
       ? config.paths.generatedInputs
@@ -991,10 +1010,13 @@ export function createRuntimeCoordinator({
     const declaredInputPaths = [...generatedInputPaths, ...runtimeInputPaths];
     const uniqueDeclarations = new Set(declaredInputPaths);
     const exhaustiveInputInventory =
-      declaredInputPaths.every((inputPath) => typeof inputPath === "string" && inputPath.trim()) &&
+      declaredInputPaths.every(isLocalSpecialistRoute) &&
       uniqueDeclarations.size === declaredInputPaths.length &&
       uniqueDeclarations.size === semantics.inputPaths.length &&
-      semantics.inputPaths.every((inputPath) => uniqueDeclarations.has(inputPath));
+      semantics.inputPaths.every((inputPath) => isLocalSpecialistRoute(inputPath) && uniqueDeclarations.has(inputPath));
+    const localOutputRoutes =
+      isLocalSpecialistRoute(semantics.expectedArtifact) &&
+      isLocalSpecialistRoute(semantics.nextActionSource);
     const runtimeInputsAreNotScaffolded = runtimeInputPaths.every(
       (inputPath) => !workflow.approvedWrites.has(resolve(ctx.cwd, inputPath)),
     );
@@ -1012,7 +1034,7 @@ export function createRuntimeCoordinator({
       return typeof content === "string" && content.trim() &&
         !/\{\{|\}\}|\[[A-Z][^\]]*\]|\b(?:TODO|TBD)\b/i.test(content);
     });
-    return exhaustiveInputInventory && runtimeInputsAreNotScaffolded && completeInventory
+    return exhaustiveInputInventory && localOutputRoutes && runtimeInputsAreNotScaffolded && completeInventory
       ? semantics
       : undefined;
   }
@@ -1026,10 +1048,8 @@ export function createRuntimeCoordinator({
       typeof event.args?.path === "string" &&
       resolve(ctx.cwd, event.args.path) === resolve(ctx.cwd, ".picm/config.json")
     ) {
-      workflow.specialistConfigWritten = false;
-      workflow.specialistConfig = undefined;
+      workflow.specialistConfigEdited = true;
       workflow.specialistRouteSemantics = undefined;
-      workflow.specialistScaffoldApproved = false;
     }
     if (
       workflow?.command === "picm-new" &&
@@ -1047,6 +1067,7 @@ export function createRuntimeCoordinator({
           const config = JSON.parse(event.args.content);
           workflow.specialistConfigWritten = config?.generatedBy === "picm-factory" && config?.profile === "specialist-folder";
           workflow.specialistConfig = workflow.specialistConfigWritten ? config : undefined;
+          workflow.specialistConfigEdited = false;
           const recipePath = config?.paths?.firstRecipe;
           const recipe = typeof recipePath === "string"
             ? workflow.approvedWrites.get(resolve(ctx.cwd, recipePath))
@@ -1059,6 +1080,7 @@ export function createRuntimeCoordinator({
         } catch {
           workflow.specialistConfigWritten = false;
           workflow.specialistConfig = undefined;
+          workflow.specialistConfigEdited = false;
           workflow.specialistRouteSemantics = undefined;
           workflow.specialistScaffoldApproved = false;
         }

@@ -1,5 +1,5 @@
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { dirname, join } from "node:path";
 
 function section(markdown, heading) {
   const match = markdown.match(new RegExp(`^## ${heading}\\s*\\n([\\s\\S]*?)(?=^## |(?![\\s\\S]))`, "m"));
@@ -25,7 +25,7 @@ function routeSemantics(cwd, recipePath) {
   };
 }
 
-export async function runSpecialistFirstRunCommand({ commands, tools, handlers, sent, context, args, recipePath, generatedInputs = ["reference/faq-style.md"], initialRecipeContent, editRecipeAfterConfig = false }) {
+export async function runSpecialistFirstRunCommand({ commands, tools, handlers, sent, context, args, recipePath, generatedInputs = ["reference/faq-style.md"], runtimeInputs = [], initialRecipeContent, editRecipeAfterConfig = false, editConfigAfterWrite = false }) {
   await commands.get("picm-new").handler(args, context);
 
   const dispatch = sent.at(-1);
@@ -78,27 +78,39 @@ export async function runSpecialistFirstRunCommand({ commands, tools, handlers, 
       isError: false,
     }, context);
   }
+  const configContent = JSON.stringify({
+    version: 1,
+    profile: "specialist-folder",
+    generatedBy: "picm-factory",
+    createdAt: "2026-08-26T00:00:00.000Z",
+    paths: {
+      rootInstructions: "AGENTS.md",
+      rootContext: "CONTEXT.md",
+      firstRecipe: recipePath,
+      generatedInputs,
+      runtimeInputs,
+    },
+  });
   handlers.get("tool_execution_end")({
     toolCallId: "approved-specialist-config",
     toolName: "write",
     args: {
       path: ".picm/config.json",
-      content: JSON.stringify({
-        version: 1,
-        profile: "specialist-folder",
-        generatedBy: "picm-factory",
-        createdAt: "2026-08-26T00:00:00.000Z",
-        paths: {
-          rootInstructions: "AGENTS.md",
-          rootContext: "CONTEXT.md",
-          firstRecipe: recipePath,
-          generatedInputs,
-          runtimeInputs: [],
-        },
-      }),
+      content: configContent,
     },
     isError: false,
   }, context);
+  if (editConfigAfterWrite) {
+    const configPath = join(context.cwd, ".picm/config.json");
+    mkdirSync(dirname(configPath), { recursive: true });
+    writeFileSync(configPath, configContent, "utf8");
+    handlers.get("tool_execution_end")({
+      toolCallId: "approved-specialist-config-edit",
+      toolName: "edit",
+      args: { path: ".picm/config.json" },
+      isError: false,
+    }, context);
+  }
   if (initialRecipeContent !== undefined && editRecipeAfterConfig) {
     handlers.get("tool_execution_end")({
       toolCallId: "approved-specialist-post-config-recipe-edit",

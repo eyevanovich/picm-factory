@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, cpSync, readFileSync, rmSync } from "node:fs";
+import { mkdtempSync, cpSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import picmFactoryExtension from "../extensions/picm-factory.ts";
 import { runSpecialistFirstRunCommand } from "./fixtures/specialist-first-run-command.mjs";
@@ -123,6 +123,54 @@ test("picm-new rederives guidance after a post-config recipe edit", async () => 
 
     assert.match(guidance, /Expected artifact: `review\/polished-faq\.md`/);
     assert.doesNotMatch(guidance, /stale-faq/);
+  } finally {
+    rmSync(fixture, { recursive: true, force: true });
+  }
+});
+
+test("picm-new revalidates a persisted config after an edit", async () => {
+  const source = join(process.cwd(), "test/fixtures/layout-profiles/specialist-folder/faq-polisher");
+  const fixture = mkdtempSync(join(process.cwd(), ".specialist-guidance-"));
+  cpSync(source, fixture, { recursive: true });
+  try {
+    const h = harness();
+    const guidance = await runSpecialistFirstRunCommand({
+      ...h,
+      context: context(fixture, "specialist-config-edit-test"),
+      args: "Create the FAQ polisher Specialist Folder",
+      recipePath: "workflows/polish-faq.md",
+      editConfigAfterWrite: true,
+    });
+
+    assert.match(guidance, /Start with `workflows\/polish-faq\.md`/);
+  } finally {
+    rmSync(fixture, { recursive: true, force: true });
+  }
+});
+
+test("picm-new rejects non-local declared routes", async () => {
+  const source = join(process.cwd(), "test/fixtures/layout-profiles/specialist-folder/faq-polisher");
+  const fixture = mkdtempSync(join(process.cwd(), ".specialist-guidance-"));
+  cpSync(source, fixture, { recursive: true });
+  try {
+    const h = harness();
+    const recipePath = join(fixture, "workflows/polish-faq.md");
+    writeFileSync(
+      recipePath,
+      readFileSync(recipePath, "utf8").replace(
+        "- `reference/faq-style.md` for reusable style guidance.",
+        "- `reference/faq-style.md` for reusable style guidance.\n- `../private.md` for private notes.",
+      ),
+      "utf8",
+    );
+    await assert.rejects(runSpecialistFirstRunCommand({
+      ...h,
+      context: context(fixture, "specialist-outside-route-test"),
+      args: "Create the FAQ polisher Specialist Folder",
+      recipePath: "workflows/polish-faq.md",
+      generatedInputs: ["reference/faq-style.md"],
+      runtimeInputs: ["../private.md"],
+    }), /SPECIALIST_TEST_TOOL_BLOCKED/);
   } finally {
     rmSync(fixture, { recursive: true, force: true });
   }
