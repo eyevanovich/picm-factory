@@ -24,6 +24,7 @@ import { executeBoundGrep } from "./runtime/path-execution-binding.mjs";
 import { canonicalNow } from "./runtime/maintenance-policy.mjs";
 import { createRuntimeCoordinator } from "./runtime/runtime-coordinator.mjs";
 import { createScaffoldApprovalRuntime } from "./runtime/scaffold-approval.mjs";
+import { renderSpecialistFirstRunGuidance } from "./runtime/specialist-first-run-guidance.mjs";
 
 type CommandName = "picm-new" | "picm-adopt" | "picm-maintain" | "picm-optimize" | "picm-help";
 
@@ -101,6 +102,11 @@ function buildStagePlacementContext(command: CommandName): string {
   return "\n\nStage Pipeline placement: follow the loaded skill when interpreting User arguments. Retain exactly one unambiguous affirmative root-numbered or nested placement as seed context. Treat negated, conflicting, or absent placement as unresolved and ask whether stages should be root-numbered or nested under `stages/` before previewing stage paths. Select root-numbered only after the user says they have no preference, then use the resolved placement in every preview and generated path.";
 }
 
+function buildSpecialistFirstRunContext(command: CommandName): string {
+  if (command !== "picm-new") return "";
+  return "\n\nSpecialist Folder final guidance: if the approved scaffold uses this profile, record its exact first recipe path as `paths.firstRecipe`. Exhaustively classify every backticked recipe input route as either a planned generated reusable file in `paths.generatedInputs` or a future per-run route in `paths.runtimeInputs`; neither list may omit or duplicate a route. Write the config after the completed visible scaffold, then call `picm_specialist_first_run_guidance`. Use its returned text as the final first-run guidance. The runtime parses every guidance field from the approved generated recipe and validates the classified input inventory against approved writes; do not invent optional folders, recipes, or operations.";
+}
+
 function buildPrompt(
   command: CommandName,
   args: string,
@@ -126,14 +132,15 @@ function buildPrompt(
   const batchGuidance = command === "picm-adopt" || command === "picm-maintain"
     ? `\n\n${proposalBatchGuidance}`
     : "";
+  const specialistFirstRunContext = buildSpecialistFirstRunContext(command);
   if (command === "picm-maintain" || command === "picm-optimize") {
     const workflow = command === "picm-maintain" ? "maintenance" : "optimization";
     return `Privacy-first startup — follow this order exactly:\n1. Call \`picm_scan_control\` with \`action: "preflight"\`. Do not load the skill or use any other tool yet.\n2. After preflight, if it reports \`privacyQuestionIsConcise: true\`, ask exactly:\n\n${concisePrivacyQuestion}\n\nThen call \`picm_scan_control\` with \`action: "privacy"\` and every additional exact path (an empty list for \`none\`).\n3. Otherwise, ask the user:\n\n${adoptionPrivacyQuestion}\n\nThen call \`picm_scan_control\` with \`action: "privacy"\` and every additional exact path (an empty list for \`none\`). Use \`persist: true\` only if the user requests durable exclusions and follow its summary and exact TUI confirmation requirements.\n4. After the privacy call completes, load the \`picm-factory\` skill and continue the ${workflow} workflow.\n\n${commandContext}${previewGuidance}${batchGuidance}${optimizationIntake}`;
   }
   if (privacyBootstrap) {
-    return `Privacy-first startup — follow this order exactly:\n1. Call \`picm_scan_control\` with \`action: "preflight"\`. Do not load the skill or use any other tool yet.\n2. After preflight, ask the user:\n\n${adoptionPrivacyQuestion}\n\n3. Prepare the privacy call with every additional exact path from the reply (an empty list for \`none\`). Use \`persist: true\` only if the user requests durable exclusions. Before a call with \`persist: true\`, present the complete concise \`.picm/config.json\` summary categories: affected files and operations, behavior or configuration changes, linked cross-file moves, preserved behavior, known uncertainty, and review suggestions. Use \`None\` for empty categories, explain the privacy configuration impact, and obtain the user's summary acceptance. Then call \`picm_scan_control\` with \`action: "privacy"\`; its exact TUI patch confirmation is the separate runtime write confirmation.\n4. Only after privacy review completes, load the \`picm-factory\` skill and its \`SKILL.md\`, then continue the ${mode} workflow.\n\n${commandContext}${sensitiveNonGitSafeguards}${adoptionReferenceRouting}${stagePlacementContext}${previewGuidance}${batchGuidance}`;
+    return `Privacy-first startup — follow this order exactly:\n1. Call \`picm_scan_control\` with \`action: "preflight"\`. Do not load the skill or use any other tool yet.\n2. After preflight, ask the user:\n\n${adoptionPrivacyQuestion}\n\n3. Prepare the privacy call with every additional exact path from the reply (an empty list for \`none\`). Use \`persist: true\` only if the user requests durable exclusions. Before a call with \`persist: true\`, present the complete concise \`.picm/config.json\` summary categories: affected files and operations, behavior or configuration changes, linked cross-file moves, preserved behavior, known uncertainty, and review suggestions. Use \`None\` for empty categories, explain the privacy configuration impact, and obtain the user's summary acceptance. Then call \`picm_scan_control\` with \`action: "privacy"\`; its exact TUI patch confirmation is the separate runtime write confirmation.\n4. Only after privacy review completes, load the \`picm-factory\` skill and its \`SKILL.md\`, then continue the ${mode} workflow.\n\n${commandContext}${sensitiveNonGitSafeguards}${adoptionReferenceRouting}${stagePlacementContext}${specialistFirstRunContext}${previewGuidance}${batchGuidance}`;
   }
-  return `Use the picm-factory skill. Load its SKILL.md before proceeding.\n\n${commandContext}${stagePlacementContext}${previewGuidance}${batchGuidance}`;
+  return `Use the picm-factory skill. Load its SKILL.md before proceeding.\n\n${commandContext}${stagePlacementContext}${specialistFirstRunContext}${previewGuidance}${batchGuidance}`;
 }
 
 type PicmFactoryExtensionOptions = {
@@ -231,6 +238,24 @@ export default function picmFactoryExtension(
   const recordProposalAudit = (audit: any, ctx: ExtensionContext) => {
     pi.appendEntry(proposalBatchEntryType, { cwd: ctx.cwd, ...audit });
   };
+
+  pi.registerTool({
+    name: "picm_specialist_first_run_guidance",
+    label: "PiCM Specialist First-Run Guidance",
+    description: "Render final Specialist Folder guidance from an approved generated recipe",
+    promptSnippet: "Render route-derived final guidance after approving a Specialist Folder scaffold",
+    promptGuidelines: [
+      "After approved Specialist config and recipe writes, call with no arguments and use the returned text as the final first-run guidance.",
+    ],
+    parameters: Type.Object({}),
+    async execute(_toolCallId, _params, _signal, _onUpdate, ctx) {
+      if (!ctx || coordinator.workflowCommand(ctx) !== "picm-new") {
+        throw new Error("SPECIALIST_GUIDANCE_NOT_AUTHORIZED: invoke /picm-new before rendering final guidance");
+      }
+      const guidance = renderSpecialistFirstRunGuidance(await coordinator.specialistRouteSemantics(ctx));
+      return { content: [{ type: "text", text: guidance }], details: { guidance } };
+    },
+  });
 
   pi.registerTool({
     name: "picm_scan_control",

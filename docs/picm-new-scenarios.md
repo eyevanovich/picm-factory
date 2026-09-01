@@ -189,5 +189,7 @@ Team / Role OS specifics:
 
 Specialist Folder specifics:
 
-- final guidance names the first workflow/task recipe and first output to inspect
-- it tells the user to promote lessons into stable rules/examples only after review shows they should affect future runs
+- final guidance derives every detail from approved generated routes; it names the exact first workflow/task recipe path, its inputs, and expected artifact
+- it requires an explicit human inspect/edit/approve gate, keeps recipe-named uncertainty visible, and names the approved artifact as where the next specialist action reads from
+- it tells the user to promote lessons into an approved existing stable rules/examples/reference route only after review shows they should affect future runs; it does not invent optional folders, recipes, or operations
+- it recommends `/picm-maintain` after the first real use or a specialist workflow, routing, or stable-guidance change

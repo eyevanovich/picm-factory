@@ -463,9 +463,12 @@ Specialist Folder smoke scenario:
 Expected behavior:
 
 - Recommends Specialist Folder and avoids speculative example/reference areas unless justified.
-- Final transcript names the first workflow/task recipe to start with.
-- Final transcript says to inspect the first specialist output before promoting lessons into stable rules/examples.
-- Final transcript recommends `/picm-maintain` after first real use or when the voice/process changes.
+- Final transcript derives its checklist from the approved generated routes: it names the exact first workflow/task recipe, its inputs, and expected artifact.
+- Final transcript requires an explicit inspect/edit/approve gate, keeps recipe-named uncertainty visible, and names the approved artifact as where the next specialist action reads from.
+- Final transcript says to promote lessons into an approved existing stable rules/examples/reference route only after review proves they affect future runs; it does not invent optional folders, recipes, or operations.
+- Final transcript recommends `/picm-maintain` after first real use or when the specialist workflow, routing, or stable guidance changes.
+
+Focused fixture reproduction: `test/fixtures/layout-profiles/specialist-folder/faq-polisher/workflows/polish-faq.md` is the reported Specialist route. Its first run uses the rough FAQ answer and `reference/faq-style.md`, creates `review/polished-faq.md`, requires human inspect/edit/approval with unsupported claims and unresolved questions visible, and routes a subsequent action through the approved edited draft.
 
 Observed `picm-fvs` smoke notes:
 

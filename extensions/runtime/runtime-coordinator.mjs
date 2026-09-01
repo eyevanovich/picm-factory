@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { realpathSync } from "node:fs";
-import { relative, sep } from "node:path";
+import { isAbsolute, relative, resolve, sep } from "node:path";
 import { createGitReadGate } from "./git-read-gate.mjs";
 import { createMaintenanceConfigStore } from "./maintenance-config-store.mjs";
 import { createMaintenanceController } from "./maintenance-controller.mjs";
@@ -12,6 +12,10 @@ import {
   proposalAudit,
   proposalSummary,
 } from "./proposal-batch.mjs";
+import {
+  hasUnresolvedSpecialistPlaceholder,
+  parseSpecialistFirstRunRecipe,
+} from "./specialist-first-run-guidance.mjs";
 
 const EXPLICIT_SCAN_COMMANDS = new Set(["picm-new", "picm-adopt", "picm-maintain", "picm-optimize"]);
 const GUARDED_PATH_TOOLS = new Set(["read", "edit", "write", "grep", "rg", "find", "ls"]);
@@ -77,6 +81,11 @@ function hasCompletedPicmSetup(config) {
       isRecord(config.paths)
     )
   );
+}
+
+function isLocalSpecialistRoute(value) {
+  return typeof value === "string" && value.trim() === value && value !== "" &&
+    !isAbsolute(value) && !value.split(/[\\/]/).includes("..");
 }
 
 export function createRuntimeCoordinator({
@@ -177,6 +186,12 @@ export function createRuntimeCoordinator({
       pendingNewWorkflowIntentSource: undefined,
       completed: false,
       excludedPaths: [],
+      approvedWrites: new Map(),
+      specialistConfigWritten: false,
+      specialistConfig: undefined,
+      specialistConfigEdited: false,
+      specialistRouteSemantics: undefined,
+      specialistScaffoldApproved: false,
     };
     scanWorkflows.set(sessionId, workflow);
     activeScans.delete(sessionId);
@@ -257,6 +272,12 @@ export function createRuntimeCoordinator({
           : undefined,
       completed,
       excludedPaths,
+      approvedWrites: new Map(),
+      specialistConfigWritten: false,
+      specialistConfig: undefined,
+      specialistConfigEdited: false,
+      specialistRouteSemantics: undefined,
+      specialistScaffoldApproved: false,
     });
     return true;
   }
@@ -914,6 +935,63 @@ export function createRuntimeCoordinator({
 
   const currentWorkflowCommand = workflowCommand;
 
+  async function readApprovedSpecialistFile(workflow, ctx, route) {
+    if (!isLocalSpecialistRoute(route)) {
+      throw new Error("SPECIALIST_GUIDANCE_NOT_APPROVED: scaffold routes must be local");
+    }
+    const approvedPath = resolve(ctx.cwd, route);
+    if (!workflow.approvedWrites.has(approvedPath)) {
+      throw new Error("SPECIALIST_GUIDANCE_NOT_APPROVED: scaffold file must be an approved write");
+    }
+    const decision = await runtimeFor(ctx).gate.checkPath("read", route, workflow.excludedPaths);
+    if (!decision.allowed || decision.executionBinding?.canonicalPath !== approvedPath) {
+      throw new Error("SPECIALIST_GUIDANCE_NOT_APPROVED: scaffold file must pass the canonical privacy boundary");
+    }
+    const binding = runtimeFor(ctx).gate.bindPath(decision.executionBinding);
+    try {
+      return (await binding.operations.readFile(approvedPath)).toString("utf8");
+    } finally {
+      binding.release();
+    }
+  }
+
+  function requiredSpecialistPaths(config) {
+    const generatedInputPaths = Array.isArray(config?.paths?.generatedInputs)
+      ? config.paths.generatedInputs
+      : [];
+    return [
+      config?.paths?.rootInstructions,
+      config?.paths?.rootContext,
+      "identity.md",
+      "rules.md",
+      config?.paths?.firstRecipe,
+      ...generatedInputPaths,
+    ];
+  }
+
+  async function specialistRouteSemantics(ctx) {
+    const workflow = workflowFor(ctx);
+    let config = workflow?.specialistConfig;
+    if (workflow?.specialistConfigEdited) {
+      config = JSON.parse(await readApprovedSpecialistFile(workflow, ctx, ".picm/config.json"));
+    }
+    const recipePath = config?.paths?.firstRecipe;
+    if (!workflow || !isLocalSpecialistRoute(recipePath)) {
+      throw new Error("SPECIALIST_GUIDANCE_NOT_APPROVED: complete approved Specialist scaffold writes first");
+    }
+    const finalContents = new Map();
+    for (const requiredPath of requiredSpecialistPaths(config)) {
+      const content = await readApprovedSpecialistFile(workflow, ctx, requiredPath);
+      finalContents.set(resolve(ctx.cwd, requiredPath), content);
+    }
+    const recipe = finalContents.get(resolve(ctx.cwd, recipePath));
+    const semantics = validateSpecialistScaffold(workflow, ctx, config, recipe, finalContents);
+    if (!semantics) {
+      throw new Error("SPECIALIST_GUIDANCE_NOT_APPROVED: final Specialist routes are incomplete");
+    }
+    return semantics;
+  }
+
   function isAutomatic(_ctx) {
     return false;
   }
@@ -931,7 +1009,89 @@ export function createRuntimeCoordinator({
   function admitToolExecution(_event, _ctx) {}
   function rejectToolExecution(_event, _ctx) {}
 
+  function validateSpecialistScaffold(workflow, ctx, config, recipe, scaffoldContents = workflow.approvedWrites) {
+    const recipePath = config?.paths?.firstRecipe;
+    const specialistConfig = config?.generatedBy === "picm-factory" && config?.profile === "specialist-folder";
+    if (!specialistConfig || !isLocalSpecialistRoute(recipePath) || typeof recipe !== "string") return undefined;
+    const semantics = parseSpecialistFirstRunRecipe(recipePath, recipe);
+    const generatedInputPaths = Array.isArray(config.paths?.generatedInputs)
+      ? config.paths.generatedInputs
+      : [];
+    const runtimeInputPaths = Array.isArray(config.paths?.runtimeInputs)
+      ? config.paths.runtimeInputs
+      : [];
+    const declaredInputPaths = [...generatedInputPaths, ...runtimeInputPaths];
+    const uniqueDeclarations = new Set(declaredInputPaths);
+    const exhaustiveInputInventory =
+      declaredInputPaths.every(isLocalSpecialistRoute) &&
+      uniqueDeclarations.size === declaredInputPaths.length &&
+      uniqueDeclarations.size === semantics.inputPaths.length &&
+      semantics.inputPaths.every((inputPath) => isLocalSpecialistRoute(inputPath) && uniqueDeclarations.has(inputPath));
+    const localOutputRoutes =
+      isLocalSpecialistRoute(semantics.expectedArtifact) &&
+      isLocalSpecialistRoute(semantics.nextActionSource);
+    const runtimeInputsAreNotScaffolded = runtimeInputPaths.every(
+      (inputPath) => !workflow.approvedWrites.has(resolve(ctx.cwd, inputPath)),
+    );
+    const requiredPaths = requiredSpecialistPaths(config);
+    const completeInventory = requiredPaths.every((requiredPath) => {
+      if (!isLocalSpecialistRoute(requiredPath)) return false;
+      const content = scaffoldContents.get(resolve(ctx.cwd, requiredPath));
+      return typeof content === "string" && content.trim() &&
+        !hasUnresolvedSpecialistPlaceholder(content);
+    });
+    return exhaustiveInputInventory && localOutputRoutes && runtimeInputsAreNotScaffolded && completeInventory
+      ? semantics
+      : undefined;
+  }
+
   function endToolExecution(event, ctx) {
+    const workflow = workflowFor(ctx);
+    if (
+      workflow?.command === "picm-new" &&
+      event.toolName === "edit" &&
+      event.isError !== true &&
+      typeof event.args?.path === "string" &&
+      resolve(ctx.cwd, event.args.path) === resolve(ctx.cwd, ".picm/config.json")
+    ) {
+      workflow.specialistConfigEdited = true;
+      workflow.specialistRouteSemantics = undefined;
+    }
+    if (
+      workflow?.command === "picm-new" &&
+      event.toolName === "write" &&
+      event.isError !== true &&
+      typeof event.args?.path === "string" &&
+      typeof event.args?.content === "string"
+    ) {
+      const path = resolve(ctx.cwd, event.args.path);
+      workflow.specialistScaffoldApproved = false;
+      workflow.specialistRouteSemantics = undefined;
+      workflow.approvedWrites.set(path, event.args.content);
+      if (path === resolve(ctx.cwd, ".picm/config.json")) {
+        try {
+          const config = JSON.parse(event.args.content);
+          workflow.specialistConfigWritten = config?.generatedBy === "picm-factory" && config?.profile === "specialist-folder";
+          workflow.specialistConfig = workflow.specialistConfigWritten ? config : undefined;
+          workflow.specialistConfigEdited = false;
+          const recipePath = config?.paths?.firstRecipe;
+          const recipe = typeof recipePath === "string"
+            ? workflow.approvedWrites.get(resolve(ctx.cwd, recipePath))
+            : undefined;
+          const semantics = validateSpecialistScaffold(workflow, ctx, config, recipe);
+          if (semantics) {
+            workflow.specialistRouteSemantics = semantics;
+            workflow.specialistScaffoldApproved = true;
+          }
+        } catch {
+          workflow.specialistConfigWritten = false;
+          workflow.specialistConfig = undefined;
+          workflow.specialistConfigEdited = false;
+          workflow.specialistRouteSemantics = undefined;
+          workflow.specialistScaffoldApproved = false;
+        }
+      }
+    }
     if (typeof event.toolCallId !== "string") return;
     const sessionId = sessionIdFor(ctx);
     const key = `${sessionId}:${event.toolCallId}`;
@@ -989,6 +1149,30 @@ export function createRuntimeCoordinator({
 
     if (workflow?.command === "picm-new" && event.toolName === "picm_scaffold_proposal" && !scan) {
       return { allowed: true };
+    }
+
+    if (workflow && event.toolName === "picm_specialist_first_run_guidance") {
+      if (
+        workflow.command === "picm-new" &&
+        workflow.privacyReviewed &&
+        workflow.scanStarted
+      ) {
+        try {
+          await specialistRouteSemantics(ctx);
+          return { allowed: true };
+        } catch (error) {
+          return {
+            allowed: false,
+            reason: error instanceof Error
+              ? error.message
+              : "Final Specialist scaffold state is incomplete",
+          };
+        }
+      }
+      return {
+        allowed: false,
+        reason: "Render Specialist guidance only after approved Specialist scaffold config and recipe writes from this picm-new run",
+      };
     }
 
     if (workflow && event.toolName === "picm_maintenance_policy") {
@@ -1250,6 +1434,7 @@ export function createRuntimeCoordinator({
     restoreWorkflow,
     scanControl,
     settle,
+    specialistRouteSemantics,
     startToolExecution,
     startup,
   };
