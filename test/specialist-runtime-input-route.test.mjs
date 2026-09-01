@@ -26,9 +26,6 @@ Inspect, edit, and approve \`review/polished.md\`. Keep unsupported claims visib
     "Reusable guidance at `knowledge/style.md`.",
   ]);
   assert.deepEqual(semantics.inputPaths, ["reference/faq.md", "knowledge/style.md"]);
-  assert.deepEqual(semantics.runtimeInputPaths, ["reference/faq.md"]);
-  assert.deepEqual(semantics.generatedInputPaths, ["knowledge/style.md"]);
-  assert.equal(semantics.inputPlanComplete, true);
 });
 
 test("uncertainty clauses normalize supported visibility wording", () => {
@@ -205,4 +202,27 @@ Create \`review/output.md\`.
 Inspect the source, then edit and approve \`review/output.md\`. Keep open questions visible. The next action reads from \`review/output.md\`.
 `,
   ), /SPECIALIST_GUIDANCE_INVALID/);
+});
+
+test("review gate accepts pronouns bound to the artifact", () => {
+  const semantics = parseSpecialistFirstRunRecipe(
+    "workflows/review.md",
+    `# Review
+
+## Inputs
+
+- Use \`knowledge/style.md\` when polishing.
+
+## Output
+
+Create \`review/output.md\`.
+
+## Review gate
+
+Inspect and edit \`review/output.md\`, then explicitly approve it. Keep open questions visible. The next action reads from \`review/output.md\`.
+`,
+  );
+
+  assert.equal(semantics.reviewGateArtifact, "review/output.md");
+  assert.equal(semantics.requiresInspectEditApprove, true);
 });

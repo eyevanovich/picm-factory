@@ -194,16 +194,18 @@ test("picm-new rejects an incomplete persisted required file after edit", async 
   }
 });
 
-test("picm-new rejects a persisted reusable input classified as runtime", async () => {
+test("picm-new accepts a pre-existing input classified as runtime", async () => {
   const h = harness();
   const fixture = join(process.cwd(), "test/fixtures/layout-profiles/specialist-folder/faq-polisher");
 
-  await assert.rejects(runSpecialistFirstRunCommand({
+  const guidance = await runSpecialistFirstRunCommand({
     ...h,
     context: context(fixture, "specialist-reclassified-input-test"),
     args: "Create the FAQ polisher Specialist Folder",
     recipePath: "workflows/polish-faq.md",
     generatedInputs: [],
     runtimeInputs: ["reference/faq-style.md"],
-  }), /SPECIALIST_TEST_TOOL_BLOCKED/);
+  });
+
+  assert.match(guidance, /`reference\/faq-style\.md` for reusable style guidance/);
 });

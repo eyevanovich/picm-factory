@@ -18,30 +18,13 @@ function reviewGateArtifactPath(reviewSection) {
   const gatePatterns = [
     /\binspect(?:s|ed|ing)?\b\s*,\s*edit(?:s|ed|ing)?\b\s*,\s*(?:and\s+)?(?:explicitly\s+)?approv(?:e|es|ed|ing)\b\s+`([^`]+)`/gi,
     /\binspection(?:s)?\b\s*,\s*edits?\b\s*,\s*(?:and\s+)?(?:explicit\s+)?approvals?\b\s+(?:of\s+)?`([^`]+)`/gi,
+    /\binspect(?:s|ed|ing)?\b\s+and\s+edit(?:s|ed|ing)?\b\s+`([^`]+)`\s*,?\s*(?:then\s+)?(?:explicitly\s+)?approv(?:e|es|ed|ing)\b\s+it\b/gi,
+    /\binspect(?:s|ed|ing)?\b\s+`([^`]+)`\s*,\s*edit(?:s|ed|ing)?\b\s+it\s*,\s*(?:and\s+)?(?:explicitly\s+)?approv(?:e|es|ed|ing)\b\s+it\b/gi,
   ];
   const candidates = [...new Set(gatePatterns.flatMap((pattern) =>
     [...reviewSection.matchAll(pattern)].map((match) => match[1]),
   ))];
   return candidates.length === 1 ? candidates[0] : undefined;
-}
-
-function classifyInputPaths(inputs) {
-  const generatedInputPaths = [];
-  const runtimeInputPaths = [];
-  let complete = true;
-  for (const input of inputs) {
-    const paths = [...input.matchAll(/`([^`]+)`/g)].map((match) => match[1]);
-    if (paths.length === 0) continue;
-    const roleText = input.replace(/`[^`]+`/g, " ");
-    const generated = /\b(?:reusable|stable|shared)\b/i.test(roleText);
-    const runtime = /\b(?:future|per[- ]run|run[- ]specific|supplied for this run|provided for this run|for each run|each run)\b/i.test(roleText);
-    if (generated === runtime) {
-      complete = false;
-      continue;
-    }
-    (generated ? generatedInputPaths : runtimeInputPaths).push(...paths);
-  }
-  return { generatedInputPaths, runtimeInputPaths, complete };
 }
 
 export function parseSpecialistFirstRunRecipe(recipePath, recipe) {
@@ -62,7 +45,6 @@ export function parseSpecialistFirstRunRecipe(recipePath, recipe) {
   const inputPaths = [...new Set(inputs.flatMap((input) =>
     [...input.matchAll(/`([^`]+)`/g)].map((match) => match[1]),
   ))];
-  const inputPlan = classifyInputPaths(inputs);
   const expectedArtifact = expectedArtifactPath(artifactSection);
   const reviewGateArtifact = reviewGateArtifactPath(reviewSection);
   const requiresInspectEditApprove = reviewGateArtifact === expectedArtifact;
@@ -78,9 +60,6 @@ export function parseSpecialistFirstRunRecipe(recipePath, recipe) {
     recipePath,
     inputs,
     inputPaths,
-    generatedInputPaths: inputPlan.generatedInputPaths,
-    runtimeInputPaths: inputPlan.runtimeInputPaths,
-    inputPlanComplete: inputPlan.complete,
     expectedArtifact,
     reviewGateArtifact,
     requiresInspectEditApprove,
