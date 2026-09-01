@@ -413,18 +413,23 @@ export function createRuntimeCoordinator({
       }
 
       const selectedIntent = params.intent === "cancel" ? "cancelled" : params.intent;
+      let adoptionWasAlreadyAdopted = false;
+      if (selectedIntent === "adopt-existing") {
+        const current = await runtimeFor(ctx).store.read();
+        requireCurrentWorkflow(sessionId, workflow);
+        if (!current.ok) throw new Error(`${current.code}: ${current.message}`);
+        adoptionWasAlreadyAdopted = current.config?.adoption?.status === "adopted";
+      }
+
       workflow.newWorkflowIntentRequired = false;
       workflow.newWorkflowIntent = selectedIntent;
       workflow.pendingNewWorkflowIntent = undefined;
       workflow.pendingNewWorkflowIntentSource = undefined;
 
       if (selectedIntent === "adopt-existing") {
-        const current = await runtimeFor(ctx).store.read();
-        requireCurrentWorkflow(sessionId, workflow);
-        if (!current.ok) throw new Error(`${current.code}: ${current.message}`);
         workflow.command = "picm-adopt";
         workflow.adoptionBaselineCaptured = true;
-        workflow.adoptionWasAlreadyAdopted = current.config?.adoption?.status === "adopted";
+        workflow.adoptionWasAlreadyAdopted = adoptionWasAlreadyAdopted;
       }
 
       return {

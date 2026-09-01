@@ -481,6 +481,47 @@ test("direct architecture choice survives session restoration with provenance", 
   assert.equal(selected.details.newWorkflowIntent, "adopt-existing");
 });
 
+test("failed adoption validation leaves the architecture choice pending", async (t) => {
+  const cwd = fixture(t);
+  writeFileSync(join(cwd, "AGENTS.md"), "existing architecture\n");
+  const h = harness();
+  const ctx = h.context(cwd, "tui", "atomic-adopt-intent");
+
+  await h.commands.get("picm-new").handler("customer research pipeline", ctx);
+  for (const action of ["preflight", "privacy", "begin", "inventory", "end"]) {
+    const params = action === "privacy" ? { action, excludedPaths: [] } : { action };
+    await h.scanControl.execute(action, params, undefined, undefined, ctx);
+  }
+  await h.handlers.get("input")({ text: "adopt existing", source: "interactive" }, ctx);
+  writeFileSync(join(cwd, ".picm/config.json"), "invalid json\n");
+
+  await assert.rejects(
+    h.scanControl.execute(
+      "new-intent",
+      { action: "new-intent", intent: "adopt-existing" },
+      undefined,
+      undefined,
+      ctx,
+    ),
+    /CONFIG_INVALID_JSON/,
+  );
+  await assert.rejects(
+    h.scanControl.execute("begin", { action: "begin" }, undefined, undefined, ctx),
+    /PICM_NEW_INTENT_PENDING/,
+  );
+
+  writeFileSync(join(cwd, ".picm/config.json"), '{"version":1}\n');
+  const selected = await h.scanControl.execute(
+    "new-intent",
+    { action: "new-intent", intent: "adopt-existing" },
+    undefined,
+    undefined,
+    ctx,
+  );
+  assert.equal(selected.details.command, "picm-adopt");
+  assert.equal(selected.details.newWorkflowIntent, "adopt-existing");
+});
+
 test("picm-new outside TUI keeps its non-bootstrap skill dispatch", async (t) => {
   const cwd = fixture(t);
   const h = harness();
