@@ -24,7 +24,7 @@ const NEW_WORKFLOW_ARCHITECTURE_FILES = new Set([
   "rules.md",
   "examples.md",
 ]);
-const NEW_WORKFLOW_ARCHITECTURE_DIRECTORIES = ["workflows", "reference", "stages", ".picm"];
+const NEW_WORKFLOW_ARCHITECTURE_DIRECTORIES = ["workflows", "reference", "stages"];
 const NEW_WORKFLOW_INTENTS = new Set(["add-replace", "adopt-existing", "cancelled"]);
 
 function directNewWorkflowIntent(text) {
@@ -145,6 +145,7 @@ export function createRuntimeCoordinator({
       newWorkflowIntentRequired: workflow.newWorkflowIntentRequired,
       newWorkflowIntent: workflow.newWorkflowIntent,
       pendingNewWorkflowIntent: workflow.pendingNewWorkflowIntent,
+      pendingNewWorkflowIntentSource: workflow.pendingNewWorkflowIntentSource,
       completed: workflow.completed,
       excludedPaths: [...workflow.excludedPaths],
     };
@@ -173,6 +174,7 @@ export function createRuntimeCoordinator({
       newWorkflowIntentRequired: false,
       newWorkflowIntent: undefined,
       pendingNewWorkflowIntent: undefined,
+      pendingNewWorkflowIntentSource: undefined,
       completed: false,
       excludedPaths: [],
     };
@@ -239,7 +241,20 @@ export function createRuntimeCoordinator({
         typeof state.newWorkflowIntent === "string" && NEW_WORKFLOW_INTENTS.has(state.newWorkflowIntent)
           ? state.newWorkflowIntent
           : undefined,
-      pendingNewWorkflowIntent: undefined,
+      pendingNewWorkflowIntent:
+        state.command === "picm-new" &&
+        state.newWorkflowIntentRequired === true &&
+        state.pendingNewWorkflowIntentSource === "direct-user-reply" &&
+        directNewWorkflowIntent(state.pendingNewWorkflowIntent) === state.pendingNewWorkflowIntent
+          ? state.pendingNewWorkflowIntent
+          : undefined,
+      pendingNewWorkflowIntentSource:
+        state.command === "picm-new" &&
+        state.newWorkflowIntentRequired === true &&
+        state.pendingNewWorkflowIntentSource === "direct-user-reply" &&
+        directNewWorkflowIntent(state.pendingNewWorkflowIntent) === state.pendingNewWorkflowIntent
+          ? "direct-user-reply"
+          : undefined,
       completed,
       excludedPaths,
     });
@@ -401,6 +416,7 @@ export function createRuntimeCoordinator({
       workflow.newWorkflowIntentRequired = false;
       workflow.newWorkflowIntent = selectedIntent;
       workflow.pendingNewWorkflowIntent = undefined;
+      workflow.pendingNewWorkflowIntentSource = undefined;
 
       if (selectedIntent === "adopt-existing") {
         const current = await runtimeFor(ctx).store.read();
@@ -512,6 +528,7 @@ export function createRuntimeCoordinator({
           workflow.newWorkflowIntentRequired = false;
           workflow.newWorkflowIntent = "cancelled";
           workflow.pendingNewWorkflowIntent = undefined;
+          workflow.pendingNewWorkflowIntentSource = undefined;
         } else {
           throw new Error("PICM_NEW_INTENT_PENDING: record the user's existing-architecture intent before completing /picm-new");
         }
@@ -862,6 +879,10 @@ export function createRuntimeCoordinator({
     const workflow = workflowFor(ctx);
     if (!workflow || workflow.command !== "picm-new" || !workflow.newWorkflowIntentRequired) return;
     workflow.pendingNewWorkflowIntent = directNewWorkflowIntent(text);
+    workflow.pendingNewWorkflowIntentSource = workflow.pendingNewWorkflowIntent
+      ? "direct-user-reply"
+      : undefined;
+    return workflowState(workflow);
   }
 
   function newWorkflowContinuity(ctx) {

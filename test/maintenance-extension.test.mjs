@@ -420,6 +420,54 @@ test("existing architecture detection stays within a nested picm-new workspace",
   assert.equal(localArchitecture.details.newWorkflowIntentRequired, true);
 });
 
+test("privacy-only picm metadata does not count as existing architecture", async (t) => {
+  const cwd = fixture(t);
+  writeFileSync(join(cwd, ".picm/config.json"), JSON.stringify({
+    version: 1,
+    privacy: { excludedPaths: ["private"] },
+  }));
+  const h = harness();
+  const ctx = h.context(cwd, "tui", "privacy-only-metadata");
+
+  await h.commands.get("picm-new").handler("fresh workflow", ctx);
+  await h.scanControl.execute("preflight", { action: "preflight" }, undefined, undefined, ctx);
+  await h.scanControl.execute("privacy", { action: "privacy", excludedPaths: [] }, undefined, undefined, ctx);
+  await h.scanControl.execute("begin", { action: "begin" }, undefined, undefined, ctx);
+  const inventory = await h.scanControl.execute("inventory", { action: "inventory" }, undefined, undefined, ctx);
+
+  assert.equal(inventory.details.newWorkflowIntentRequired, false);
+});
+
+test("direct architecture choice survives session restoration with provenance", async (t) => {
+  const cwd = fixture(t);
+  writeFileSync(join(cwd, "AGENTS.md"), "existing architecture\n");
+  const entries = [];
+  const initial = harness({ entries });
+  const ctx = initial.context(cwd, "tui", "restored-new-intent");
+
+  await initial.commands.get("picm-new").handler("customer research pipeline", ctx);
+  for (const action of ["preflight", "privacy", "begin", "inventory", "end"]) {
+    const params = action === "privacy" ? { action, excludedPaths: [] } : { action };
+    await initial.scanControl.execute(action, params, undefined, undefined, ctx);
+  }
+  await initial.handlers.get("input")({ text: "adopt existing", source: "interactive" }, ctx);
+
+  const restored = harness({ entries });
+  const restoredCtx = restored.context(cwd, "tui", "restored-new-intent");
+  await restored.handlers.get("session_start")({ reason: "resume" }, restoredCtx);
+  const selected = await restored.scanControl.execute(
+    "new-intent",
+    { action: "new-intent", intent: "adopt-existing" },
+    undefined,
+    undefined,
+    restoredCtx,
+  );
+
+  assert.equal(selected.details.command, "picm-adopt");
+  assert.equal(selected.details.initialIntent, "customer research pipeline");
+  assert.equal(selected.details.newWorkflowIntent, "adopt-existing");
+});
+
 test("picm-new outside TUI keeps its non-bootstrap skill dispatch", async (t) => {
   const cwd = fixture(t);
   const h = harness();
