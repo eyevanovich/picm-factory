@@ -108,6 +108,16 @@ async function withMixedProposalFixture(run) {
   }
 }
 
+function createCuratedAdoptionFixture() {
+  const root = mkdtempSync(join(tmpdir(), "picm-curated-adoption-"));
+  cpSync(resolve("test", "fixtures", "coding-repository", "existing-doc-duplication"), root, {
+    recursive: true,
+  });
+  git(root, "init", "-q");
+  git(root, "add", ".");
+  return root;
+}
+
 function extensionHarness({
   entries = [],
   sendError,
@@ -1525,6 +1535,106 @@ test("explicit PiCM commands enforce privacy review, session scope, and durable 
     await control.execute("complete", { action: "complete" }, undefined, undefined, ctx);
     assert.equal(await h.handlers.get("tool_call")({ toolName: "bash", input: { command: "git diff" } }, ctx), undefined);
   });
+});
+
+test("Curated coding adoption reopens a protected phase before inspection and completes without writes", async (t) => {
+  const root = createCuratedAdoptionFixture();
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+
+  const h = extensionHarness();
+  const ctx = h.context(root, "curated-adoption-lifecycle");
+  const control = h.tools.get("picm_scan_control");
+  const batch = h.tools.get("picm_proposal_batch");
+  await h.commands.get("picm-adopt").handler("coding", ctx);
+  const deliveredGuidance = h.sent.at(-1);
+  const mappingChoiceIndex = deliveredGuidance.indexOf("after mapping and adoption-depth choices");
+  const inspectionBeginIndex = deliveredGuidance.indexOf('action: "begin"', mappingChoiceIndex);
+  const proposalResolutionIndex = deliveredGuidance.indexOf("through proposal resolution", inspectionBeginIndex);
+  const inspectionEndIndex = deliveredGuidance.indexOf('action: "end"', proposalResolutionIndex);
+  const terminalCompleteIndex = deliveredGuidance.indexOf('action: "complete"', inspectionEndIndex);
+  assert.ok(
+    mappingChoiceIndex >= 0 &&
+    mappingChoiceIndex < inspectionBeginIndex &&
+    inspectionBeginIndex < proposalResolutionIndex &&
+    proposalResolutionIndex < inspectionEndIndex &&
+    inspectionEndIndex < terminalCompleteIndex,
+  );
+  await control.execute("preflight", { action: "preflight" }, undefined, undefined, ctx);
+  await control.execute("privacy", { action: "privacy", excludedPaths: [] }, undefined, undefined, ctx);
+
+  await control.execute("begin", { action: "begin" }, undefined, undefined, ctx);
+  const initialInventory = await control.execute("inventory", { action: "inventory" }, undefined, undefined, ctx);
+  assert.equal(initialInventory.details.candidates.includes("AGENTS.md"), true);
+  await control.execute("end", { action: "end" }, undefined, undefined, ctx);
+
+  const closedPhaseRead = await h.handlers.get("tool_call")(
+    { toolName: "read", input: { path: "docs/ARCHITECTURE.md" } },
+    ctx,
+  );
+  assert.equal(closedPhaseRead.block, true);
+  assert.match(closedPhaseRead.reason, /Begin the privacy-reviewed PiCM scan/);
+
+  await control.execute("begin", { action: "begin" }, undefined, undefined, ctx);
+  const inspectionInventory = await control.execute("inventory", { action: "inventory" }, undefined, undefined, ctx);
+  assert.equal(inspectionInventory.details.candidates.includes("docs/ARCHITECTURE.md"), true);
+  const reads = await preflightParallelToolCalls(h, ctx, [
+    {
+      id: "curated-architecture",
+      toolName: "read",
+      input: { path: "docs/ARCHITECTURE.md" },
+      tool: h.tools.get("read"),
+    },
+    {
+      id: "curated-development",
+      toolName: "read",
+      input: { path: "docs/development.md" },
+      tool: h.tools.get("read"),
+    },
+  ]);
+  assert.equal(reads.every((call) => call.blocked === undefined), true);
+  const results = await Promise.all(executePreflightedToolCalls(h, ctx, reads));
+  assert.equal(results.every((result) => result.isError === false), true);
+  assert.match(results[0].result.content[0].text, /Architecture/);
+  assert.match(results[1].result.content[0].text, /src\/index\.js/);
+
+  const prepared = await batch.execute("prepare", {
+    action: "prepare",
+    operations: [{
+      type: "create",
+      path: ".picm/adoption-report.md",
+      content: "# Curated adoption proposal\n",
+    }],
+  }, undefined, undefined, ctx);
+  assert.equal(prepared.details.ok, true);
+  const presented = await batch.execute("present", {
+    action: "present",
+    proposalId: prepared.details.proposalId,
+    digest: prepared.details.digest,
+  }, undefined, undefined, ctx);
+  assert.equal(presented.details.ok, true);
+  await h.handlers.get("before_agent_start")({ prompt: "decline" }, ctx);
+  const cancelled = await batch.execute("cancel", {
+    action: "cancel",
+    proposalId: prepared.details.proposalId,
+  }, undefined, undefined, ctx);
+  assert.equal(cancelled.details.ok, true);
+  assert.equal(existsSync(join(root, ".picm", "adoption-report.md")), false);
+
+  await control.execute("end", { action: "end" }, undefined, undefined, ctx);
+  const complete = await control.execute("complete", { action: "complete" }, undefined, undefined, ctx);
+  assert.equal(complete.details.completed, true);
+  assert.equal(existsSync(join(root, ".picm", "config.json")), false);
+  t.diagnostic(JSON.stringify({
+    initialPhase: { inventoryIncluded: "AGENTS.md", ended: true },
+    betweenPhases: { projectReadBlocked: true, reason: closedPhaseRead.reason },
+    curatedInspectionPhase: {
+      inventoryIncluded: "docs/ARCHITECTURE.md",
+      guardedReads: ["docs/ARCHITECTURE.md", "docs/development.md"],
+      ended: true,
+    },
+    proposal: { presented: presented.details.ok, declined: true, cancelled: cancelled.details.ok },
+    terminal: { completed: complete.details.completed, proposalDeclineWroteFiles: false },
+  }, null, 2));
 });
 
 test("privacy-reviewed scan authorization and exclusions survive resuming the same session", async () => {
