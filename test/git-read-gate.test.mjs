@@ -1546,6 +1546,19 @@ test("Curated coding adoption reopens a protected phase before inspection and co
   const control = h.tools.get("picm_scan_control");
   const batch = h.tools.get("picm_proposal_batch");
   await h.commands.get("picm-adopt").handler("coding", ctx);
+  const deliveredGuidance = h.sent.at(-1);
+  const mappingChoiceIndex = deliveredGuidance.indexOf("after mapping and adoption-depth choices");
+  const inspectionBeginIndex = deliveredGuidance.indexOf('action: "begin"', mappingChoiceIndex);
+  const proposalResolutionIndex = deliveredGuidance.indexOf("through proposal resolution", inspectionBeginIndex);
+  const inspectionEndIndex = deliveredGuidance.indexOf('action: "end"', proposalResolutionIndex);
+  const terminalCompleteIndex = deliveredGuidance.indexOf('action: "complete"', inspectionEndIndex);
+  assert.ok(
+    mappingChoiceIndex >= 0 &&
+    mappingChoiceIndex < inspectionBeginIndex &&
+    inspectionBeginIndex < proposalResolutionIndex &&
+    proposalResolutionIndex < inspectionEndIndex &&
+    inspectionEndIndex < terminalCompleteIndex,
+  );
   await control.execute("preflight", { action: "preflight" }, undefined, undefined, ctx);
   await control.execute("privacy", { action: "privacy", excludedPaths: [] }, undefined, undefined, ctx);
 
