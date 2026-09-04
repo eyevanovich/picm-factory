@@ -1544,6 +1544,7 @@ test("Curated coding adoption reopens a protected phase before inspection and co
   const h = extensionHarness();
   const ctx = h.context(root, "curated-adoption-lifecycle");
   const control = h.tools.get("picm_scan_control");
+  const batch = h.tools.get("picm_proposal_batch");
   await h.commands.get("picm-adopt").handler("coding", ctx);
   const lifecycleGuidance = control.promptGuidelines.find((guideline) =>
     guideline.includes("coding mapping and adoption-depth choices")
@@ -1590,6 +1591,29 @@ test("Curated coding adoption reopens a protected phase before inspection and co
   assert.match(results[0].result.content[0].text, /Architecture/);
   assert.match(results[1].result.content[0].text, /src\/index\.js/);
 
+  const prepared = await batch.execute("prepare", {
+    action: "prepare",
+    operations: [{
+      type: "create",
+      path: ".picm/adoption-report.md",
+      content: "# Curated adoption proposal\n",
+    }],
+  }, undefined, undefined, ctx);
+  assert.equal(prepared.details.ok, true);
+  const presented = await batch.execute("present", {
+    action: "present",
+    proposalId: prepared.details.proposalId,
+    digest: prepared.details.digest,
+  }, undefined, undefined, ctx);
+  assert.equal(presented.details.ok, true);
+  await h.handlers.get("before_agent_start")({ prompt: "decline" }, ctx);
+  const cancelled = await batch.execute("cancel", {
+    action: "cancel",
+    proposalId: prepared.details.proposalId,
+  }, undefined, undefined, ctx);
+  assert.equal(cancelled.details.ok, true);
+  assert.equal(existsSync(join(root, ".picm", "adoption-report.md")), false);
+
   await control.execute("end", { action: "end" }, undefined, undefined, ctx);
   const complete = await control.execute("complete", { action: "complete" }, undefined, undefined, ctx);
   assert.equal(complete.details.completed, true);
@@ -1602,7 +1626,8 @@ test("Curated coding adoption reopens a protected phase before inspection and co
       guardedReads: ["docs/ARCHITECTURE.md", "docs/development.md"],
       ended: true,
     },
-    terminal: { completed: complete.details.completed, proposalDeclineWroteConfig: false },
+    proposal: { presented: presented.details.ok, declined: true, cancelled: cancelled.details.ok },
+    terminal: { completed: complete.details.completed, proposalDeclineWroteFiles: false },
   }, null, 2));
 });
 
