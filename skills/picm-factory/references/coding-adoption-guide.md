@@ -111,9 +111,9 @@ Treat hints as strong evidence, then verify what can be checked safely. Preserve
 
 ## Scan-phase lifecycle
 
-The shallow classification and initial orientation scan is one protected phase. Call `end` before asking the user to choose mapping approach and adoption depth. After those choices (and any optional boundary hints), call `begin` again before any project or resource read for the Strict examination, map analysis, or Curated documentation inventory. Use protected inventory and guarded reads only while that phase is active, then call `end` cleanly before presenting its proposal.
+The shallow classification and initial orientation scan is one protected phase. Call `end` before asking the user to choose mapping approach and adoption depth. After those choices (and any optional boundary hints), call `begin` again before any project or resource read for the Strict examination, map analysis, or Curated documentation inventory. Use protected inventory and guarded reads only while that phase is active. Keep the phase active while preparing, presenting, and resolving its proposal, then call `end` cleanly.
 
-An `end` is an intentional no-read boundary. Do not retry a gate-blocked project/resource read after it; begin the next inspection phase first when further inspection is needed. If the user declines a Curated proposal, preserve the no-write result, do not reopen a scan just to revisit the proposal, and call `complete` after the ended phase before reporting.
+An `end` is an intentional no-read boundary. Do not retry a gate-blocked project/resource read after it; begin the next inspection phase first when further inspection is needed. If the user declines a Curated proposal, cancel it while the inspection phase is active, preserve the no-write result, end the phase, and call `complete` before reporting. Do not reopen a scan just to revisit the proposal.
 
 ## Scan depth
 
