@@ -20,8 +20,11 @@ Fork the repository, then clone your fork:
 ```bash
 git clone https://github.com/YOUR-USERNAME/picm-factory.git
 cd picm-factory
+npm ci
 npm run check
 ```
+
+Use Node 24 for development. The project is tested with Node 24.19.0 and npm 11.17.0.
 
 Create a focused branch and keep unrelated changes separate.
 
