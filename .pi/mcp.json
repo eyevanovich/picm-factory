@@ -1,0 +1,16 @@
+{
+  "mcpServers": {
+    "open-brain": {
+      "disabled": true
+    },
+    "engram": {
+      "disabled": true
+    },
+    "context-mode": {
+      "disabled": true
+    },
+    "obsidian": {
+      "disabled": true
+    }
+  }
+}
