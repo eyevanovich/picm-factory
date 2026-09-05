@@ -23,3 +23,6 @@ private/
 .dolt/
 *.db
 /.pi/hindsight
+/.agents/skills/beads
+/.claude
+/.codex

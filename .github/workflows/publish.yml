@@ -36,7 +36,7 @@ jobs:
           package-manager-cache: false
 
       - name: Install validation dependencies
-        run: npm install --ignore-scripts --no-package-lock --no-audit --no-fund
+        run: npm ci --ignore-scripts --no-audit --no-fund
 
       - name: Verify GitHub Release
         shell: bash

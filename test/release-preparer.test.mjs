@@ -1,6 +1,13 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -29,6 +36,65 @@ function writePinnedDocs(root, version) {
     join(root, "skills/picm-factory/SKILL.md"),
     `Install with pi install -l npm:@eyevanovich/picm-factory@${version}\n`,
   );
+}
+
+function packageLock(version) {
+  return {
+    name: "fixture",
+    version,
+    lockfileVersion: 3,
+    requires: true,
+    packages: {
+      "": {
+        name: "fixture",
+        version,
+        dependencies: { "fixture-dependency": "1.0.0" },
+      },
+      "node_modules/fixture-dependency": {
+        version: "1.0.0",
+        resolved: "https://registry.npmjs.org/fixture-dependency/-/fixture-dependency-1.0.0.tgz",
+        integrity: "sha512-synthetic-lock-fixture",
+      },
+    },
+  };
+}
+
+function writePackageLock(root, lock) {
+  writeFileSync(join(root, "package-lock.json"), `${JSON.stringify(lock, null, 2)}\n`);
+}
+
+function createTaggedReleaseFixture(root, lock = packageLock("0.1.2")) {
+  const files = {
+    "package.json": `${JSON.stringify({ name: "fixture", version: "0.1.2" }, null, 2)}\n`,
+    "CHANGELOG.md": "# Changelog\n\nFixture history.\n\n## [0.1.2] - 2026-07-21\n\n- Bootstrap.\n",
+  };
+  writeFileSync(join(root, "package.json"), files["package.json"]);
+  writeFileSync(join(root, "CHANGELOG.md"), files["CHANGELOG.md"]);
+  writePinnedDocs(root, "0.1.2");
+  writePackageLock(root, lock);
+  for (const path of ["package-lock.json", "README.md", "skills/picm-factory/SKILL.md"]) {
+    files[path] = readFileSync(join(root, path), "utf8");
+  }
+
+  git(root, "init", "-q");
+  git(root, "config", "user.name", "Release Test");
+  git(root, "config", "user.email", "release-test@example.invalid");
+  git(
+    root,
+    "add",
+    "package.json",
+    "package-lock.json",
+    "CHANGELOG.md",
+    "README.md",
+    "skills/picm-factory/SKILL.md",
+  );
+  git(root, "commit", "-qm", "chore: bootstrap");
+  git(root, "tag", "--no-sign", "v0.1.2");
+  writeFileSync(join(root, "feature.txt"), "feature\n");
+  git(root, "add", "feature.txt");
+  git(root, "commit", "-qm", "feat: add fixture feature");
+
+  return files;
 }
 
 test("maps Conventional Commits to literal SemVer bumps", () => {
@@ -191,12 +257,22 @@ test("leaves release files unchanged when post-tag commits are not merged pull r
     writeFileSync(join(root, "package.json"), packageText);
     writeFileSync(join(root, "CHANGELOG.md"), changelogText);
     writePinnedDocs(root, "0.1.2");
+    writePackageLock(root, packageLock("0.1.2"));
+    const lockText = readFileSync(join(root, "package-lock.json"), "utf8");
     const readmeText = readFileSync(join(root, "README.md"), "utf8");
     const skillText = readFileSync(join(root, "skills/picm-factory/SKILL.md"), "utf8");
     git(root, "init", "-q");
     git(root, "config", "user.name", "Release Test");
     git(root, "config", "user.email", "release-test@example.invalid");
-    git(root, "add", "package.json", "CHANGELOG.md", "README.md", "skills/picm-factory/SKILL.md");
+    git(
+      root,
+      "add",
+      "package.json",
+      "package-lock.json",
+      "CHANGELOG.md",
+      "README.md",
+      "skills/picm-factory/SKILL.md",
+    );
     git(root, "commit", "-qm", "chore: bootstrap");
     git(root, "tag", "--no-sign", "v0.1.2");
     writeFileSync(join(root, "direct.txt"), "direct\n");
@@ -215,6 +291,7 @@ test("leaves release files unchanged when post-tag commits are not merged pull r
       /No releasable feat, fix, or breaking commits/,
     );
     assert.equal(readFileSync(join(root, "package.json"), "utf8"), packageText);
+    assert.equal(readFileSync(join(root, "package-lock.json"), "utf8"), lockText);
     assert.equal(readFileSync(join(root, "CHANGELOG.md"), "utf8"), changelogText);
     assert.equal(readFileSync(join(root, "README.md"), "utf8"), readmeText);
     assert.equal(readFileSync(join(root, "skills/picm-factory/SKILL.md"), "utf8"), skillText);
@@ -235,10 +312,22 @@ test("prepares package, changelog, and release notes from commits after the late
       "# Changelog\n\nFixture history.\n\n## [0.1.2] - 2026-07-21\n\n- Bootstrap.\n",
     );
     writePinnedDocs(root, "0.1.2");
+    writePackageLock(root, packageLock("0.1.2"));
+    const initialLock = JSON.parse(readFileSync(join(root, "package-lock.json"), "utf8"));
+    const lockedDependencyGraph = { ...initialLock.packages };
+    delete lockedDependencyGraph[""];
     git(root, "init", "-q");
     git(root, "config", "user.name", "Release Test");
     git(root, "config", "user.email", "release-test@example.invalid");
-    git(root, "add", "package.json", "CHANGELOG.md", "README.md", "skills/picm-factory/SKILL.md");
+    git(
+      root,
+      "add",
+      "package.json",
+      "package-lock.json",
+      "CHANGELOG.md",
+      "README.md",
+      "skills/picm-factory/SKILL.md",
+    );
     git(root, "commit", "-qm", "chore: bootstrap");
     git(root, "tag", "--no-sign", "v0.1.2");
 
@@ -262,6 +351,13 @@ test("prepares package, changelog, and release notes from commits after the late
       { baseTag: "v0.1.2", bump: "minor", version: "0.2.0", tag: "v0.2.0" },
     );
     assert.equal(JSON.parse(readFileSync(join(root, "package.json"), "utf8")).version, "0.2.0");
+    const preparedLock = JSON.parse(readFileSync(join(root, "package-lock.json"), "utf8"));
+    assert.equal(preparedLock.version, "0.2.0");
+    assert.equal(preparedLock.packages[""].version, "0.2.0");
+    assert.deepEqual(preparedLock.packages[""].dependencies, initialLock.packages[""].dependencies);
+    const preparedDependencyGraph = { ...preparedLock.packages };
+    delete preparedDependencyGraph[""];
+    assert.deepEqual(preparedDependencyGraph, lockedDependencyGraph);
     assert.match(readFileSync(join(root, "CHANGELOG.md"), "utf8"), /^## \[0\.2\.0\]/m);
     assert.match(
       readFileSync(join(root, "README.md"), "utf8"),
@@ -277,13 +373,58 @@ test("prepares package, changelog, and release notes from commits after the late
   }
 });
 
-test("release workflows install peer dependencies before validation", () => {
-  const install = "npm install --ignore-scripts --no-package-lock --no-audit --no-fund";
+test("does not write release files during a dry run", () => {
+  const root = mkdtempSync(join(tmpdir(), "picm-release-dry-run-test-"));
+  try {
+    const files = createTaggedReleaseFixture(root);
+    const notesFile = join(root, "release-notes.md");
+
+    const result = prepareRelease({
+      root,
+      releaseDate: "2026-07-22",
+      notesFile,
+      dryRun: true,
+    });
+
+    assert.equal(result.version, "0.2.0");
+    for (const [path, text] of Object.entries(files)) {
+      assert.equal(readFileSync(join(root, path), "utf8"), text);
+    }
+    assert.equal(existsSync(notesFile), false);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("rejects invalid package-lock metadata before release writes", () => {
+  const root = mkdtempSync(join(tmpdir(), "picm-release-invalid-lock-test-"));
+  try {
+    const lock = packageLock("0.1.2");
+    delete lock.packages[""].version;
+    const files = createTaggedReleaseFixture(root, lock);
+
+    assert.throws(
+      () => prepareRelease({ root, releaseDate: "2026-07-22" }),
+      /package-lock\.json packages\[""\] must contain a version/,
+    );
+    for (const [path, text] of Object.entries(files)) {
+      assert.equal(readFileSync(join(root, path), "utf8"), text);
+    }
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("release workflows install from the committed lockfile before validation", () => {
+  const install = "npm ci --ignore-scripts --no-audit --no-fund";
   const release = readFileSync(".github/workflows/release.yml", "utf8");
   const publish = readFileSync(".github/workflows/publish.yml", "utf8");
+  const releaseCommit =
+    "git add package.json package-lock.json CHANGELOG.md README.md skills/picm-factory/SKILL.md";
 
   assert.ok(release.indexOf(install) >= 0);
   assert.ok(release.indexOf(install) < release.indexOf("npm run check"));
   assert.ok(publish.indexOf(install) >= 0);
   assert.ok(publish.indexOf(install) < publish.indexOf("npm publish"));
+  assert.ok(release.includes(releaseCommit));
 });

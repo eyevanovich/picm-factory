@@ -234,6 +234,29 @@ function insertChangelogEntry(changelog, notes) {
     .trimStart()}`;
 }
 
+function isObject(value) {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+function synchronizePackageLockVersion(packageLock, version) {
+  if (!isObject(packageLock) || typeof packageLock.lockfileVersion !== "number") {
+    throw new Error("package-lock.json must contain a numeric lockfileVersion");
+  }
+  if (typeof packageLock.version !== "string") {
+    throw new Error("package-lock.json must contain a top-level version");
+  }
+  if (!isObject(packageLock.packages)) {
+    throw new Error("package-lock.json must contain a packages object");
+  }
+  if (!isObject(packageLock.packages[""]) || typeof packageLock.packages[""].version !== "string") {
+    throw new Error('package-lock.json packages[""] must contain a version');
+  }
+
+  packageLock.version = version;
+  packageLock.packages[""].version = version;
+  return packageLock;
+}
+
 export function prepareRelease({
   root = process.cwd(),
   releaseDate = new Date().toISOString().slice(0, 10),
@@ -252,10 +275,12 @@ export function prepareRelease({
   }
 
   const packagePath = resolve(root, "package.json");
+  const packageLockPath = resolve(root, "package-lock.json");
   const changelogPath = resolve(root, "CHANGELOG.md");
   const readmePath = resolve(root, "README.md");
   const skillPath = resolve(root, "skills/picm-factory/SKILL.md");
   const pkg = JSON.parse(readFileSync(packagePath, "utf8"));
+  const packageLock = JSON.parse(readFileSync(packageLockPath, "utf8"));
   const baseTag = latestReleaseTag(root);
   const baseVersion = baseTag.slice(1);
   if (pkg.version !== baseVersion) {
@@ -290,6 +315,7 @@ export function prepareRelease({
   }
 
   const notes = buildReleaseNotes(version, releaseDate, commits);
+  const synchronizedPackageLock = synchronizePackageLockVersion(packageLock, version);
   const changelog = readFileSync(changelogPath, "utf8");
   const readme = updatePinnedInstallVersion(readFileSync(readmePath, "utf8"), version);
   const skill = updatePinnedInstallVersion(readFileSync(skillPath, "utf8"), version);
@@ -300,6 +326,7 @@ export function prepareRelease({
   if (!dryRun) {
     pkg.version = version;
     writeFileSync(packagePath, `${JSON.stringify(pkg, null, 2)}\n`);
+    writeFileSync(packageLockPath, `${JSON.stringify(synchronizedPackageLock, null, 2)}\n`);
     writeFileSync(changelogPath, insertChangelogEntry(changelog, notes));
     writeFileSync(readmePath, readme);
     writeFileSync(skillPath, skill);

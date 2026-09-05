@@ -24,8 +24,8 @@ Use a Conventional Commit pull-request title. For detailed changelog entries, ad
 1. Merge normal feature/fix pull requests with Conventional Commit titles.
 2. Open **Actions → Create release → Run workflow** and select `main`.
 3. The workflow finds the merged `main` pull requests associated with commits after the latest release tag and selects the highest required SemVer bump from their titles.
-4. It updates `package.json`, synchronizes pinned install commands in `README.md` and `skills/picm-factory/SKILL.md`, and prepends generated notes to `CHANGELOG.md`, preferring each PR's reviewed `## What Changed` bullets over its title.
-5. It installs the declared Pi runtime peers for validation with lifecycle scripts disabled and without creating a package lock, runs `npm run check`, creates a `chore: release v<version>` commit directly on `main`, and atomically pushes that commit with the matching tag.
+4. It updates `package.json`, synchronizes the lockfile's root-package version without changing the locked dependency graph, updates pinned install commands in `README.md` and `skills/picm-factory/SKILL.md`, and prepends generated notes to `CHANGELOG.md`, preferring each PR's reviewed `## What Changed` bullets over its title.
+5. It installs validation dependencies from the committed lockfile with lifecycle scripts disabled, runs `npm run check`, creates a `chore: release v<version>` commit directly on `main`, and atomically pushes that commit with the matching tag.
 6. It creates the GitHub Release and explicitly dispatches `publish.yml`.
 7. `publish.yml` installs the same validation dependencies under those restrictions, requires that GitHub Release, checks that its tag matches `package.json`, runs package validation through `prepublishOnly`, and publishes through npm trusted publishing. Pushing a tag alone cannot invoke publication.
 8. Verify the release on:

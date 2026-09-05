@@ -740,7 +740,7 @@ const releaseWorkflowSignals = [
   "actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6",
   "node scripts/prepare-release.mjs --require-merged-prs",
   "npm run check",
-  "git add package.json CHANGELOG.md README.md skills/picm-factory/SKILL.md",
+  "git add package.json package-lock.json CHANGELOG.md README.md skills/picm-factory/SKILL.md",
   'git config user.name "${RELEASE_APP_SLUG}[bot]"',
   "git push --atomic origin",
   "gh release create",
