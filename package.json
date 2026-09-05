@@ -35,6 +35,9 @@
     "check": "node --test test/*.test.mjs && node scripts/check-package.mjs",
     "prepublishOnly": "npm run check"
   },
+  "devDependencies": {
+    "@earendil-works/pi-server": "0.85.0"
+  },
   "peerDependencies": {
     "@earendil-works/pi-ai": "*",
     "@earendil-works/pi-coding-agent": "*",
