@@ -2,7 +2,7 @@
 
 ## Summary
 
-PiCM Factory uses a small repository-owned Node.js release preparer inside a manually dispatched GitHub Actions workflow. It finds merged `main` pull requests associated with commits after the latest release tag, maps Conventional Commit markers in their titles and bodies to SemVer, updates `package.json` and `CHANGELOG.md`, synchronizes the pinned install commands named in the [release guide](releasing.md), commits those files directly to `main`, creates the tag and GitHub Release, and dispatches the separate npm trusted-publishing workflow.
+PiCM Factory uses a small repository-owned Node.js release preparer inside a manually dispatched GitHub Actions workflow. It finds merged `main` pull requests associated with commits after the latest release tag, maps Conventional Commit markers in their titles and bodies to SemVer, updates the release files defined in the [release guide](releasing.md), commits them directly to `main`, creates the tag and GitHub Release, and dispatches the separate npm trusted-publishing workflow.
 
 This design keeps the repository setting that prohibits GitHub Actions from creating or approving pull requests. It also works with the selected-actions policy that permits only GitHub-owned actions.
 
