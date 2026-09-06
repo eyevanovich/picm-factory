@@ -18,7 +18,6 @@ import {
   mkdir as mkdirDirectory,
   readFile as readFileAsync,
   realpath as realpathFile,
-  rmdir as removeDirectory,
   writeFile as writeFileAsync,
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -1251,7 +1250,7 @@ async function defaultRunGit(cwd, args) {
   }
 }
 
-test("guarded write bindings fail closed before directory ownership races", async () => {
+test("guarded write bindings create missing directories", async () => {
   await withFixture(async ({ root, packageRoot }) => {
     const gate = createGitReadGate({ cwd: root, packageRoot });
     const decision = await gate.checkPath("write", "batch-created/file.md");
@@ -1259,17 +1258,14 @@ test("guarded write bindings fail closed before directory ownership races", asyn
     const binding = gate.bindPath(decision.executionBinding);
     const directory = join(root, "batch-created");
 
-    await assert.rejects(
-      binding.operations.mkdir(directory),
-      /atomic directory ownership and cleanup are unavailable/,
-    );
-    assert.equal(existsSync(directory), false);
+    await binding.operations.mkdir(directory);
+    assert.equal(existsSync(directory), true);
     binding.release();
     await gate.dispose();
   });
 });
 
-test("approved proposal batches gate missing parent directories before mutation", async () => {
+test("approved proposal batches create guarded parent directories", async () => {
   await withFixture(async ({ root }) => {
     const h = extensionHarness();
     const ctx = h.context(root, "proposal-created-parents");
@@ -1305,20 +1301,19 @@ test("approved proposal batches gate missing parent directories before mutation"
     }, undefined, undefined, ctx);
     assert.equal(presented.details.ok, true);
     await h.handlers.get("before_agent_start")({ prompt: "approve" }, ctx);
-    await assert.rejects(
-      batch.execute(
-        "apply",
-        { action: "apply", proposalId: prepared.details.proposalId },
-        undefined,
-        undefined,
-        ctx,
-      ),
-      /atomic directory ownership and cleanup are unavailable/,
+    const applied = await batch.execute(
+      "apply",
+      { action: "apply", proposalId: prepared.details.proposalId },
+      undefined,
+      undefined,
+      ctx,
     );
 
-    assert.equal(existsSync(join(root, ".picm")), false);
-    assert.equal(existsSync(join(root, "relocated")), false);
-    assert.equal(readFileSync(join(root, "docs", "guide.md"), "utf8"), "guide\n");
+    assert.equal(applied.details.ok, true);
+    assert.equal(readFileSync(join(root, ".picm", "config.json"), "utf8"), config);
+    assert.equal(readFileSync(join(root, ".picm", "adoption-report.md"), "utf8"), report);
+    assert.equal(readFileSync(join(root, "relocated", "nested", "guide.md"), "utf8"), guide);
+    assert.equal(existsSync(join(root, "docs", "guide.md")), false);
   });
 });
 
@@ -1349,7 +1344,7 @@ test("approved proposal batches create and move beneath existing parents", async
   });
 });
 
-test("proposal rollback removes only empty batch-owned parent directories", async () => {
+test("proposal rollback preserves created parents when portable conditional removal is unavailable", async () => {
   await withFixture(async ({ root, packageRoot }) => {
     mkdirSync(join(root, "existing-empty"));
     write(join(root, "existing-content", ".keep"), "keep\n");
@@ -1357,23 +1352,37 @@ test("proposal rollback removes only empty batch-owned parent directories", asyn
     const abort = new AbortController();
     let writes = 0;
     let mkdirs = 0;
+    let replacedDirectory = false;
     const gate = {
       checkPath: (...args) => baseGate.checkPath(...args),
       bindPath(plan) {
         const binding = baseGate.bindPath(plan);
         const writeFile = binding.operations.writeFile;
+        const unlink = binding.operations.unlink;
         binding.operations.mkdir = async (path, options) => {
           mkdirs += 1;
           await mkdirDirectory(path, options);
           return { dev: 1, ino: mkdirs };
         };
-        binding.operations.rmdir = (path) => removeDirectory(path);
         binding.operations.writeFile = async (...args) => {
           const result = await writeFile(...args);
           writes += 1;
-          if (writes === 4) abort.abort();
+          if (writes === 4) {
+            write(join(root, "existing-content", "deep", "external.md"), "external\n");
+            abort.abort();
+          }
           return result;
         };
+        binding.operations.unlink = async (path) => {
+          const result = await unlink(path);
+          if (!replacedDirectory && path.endsWith(`${sep}batch-owned${sep}deep${sep}first.md`)) {
+            renameSync(join(root, "batch-owned", "deep"), join(root, "batch-owned", "displaced"));
+            mkdirSync(join(root, "batch-owned", "deep"));
+            replacedDirectory = true;
+          }
+          return result;
+        };
+        binding.operations.rmdir = () => assert.fail("rollback must not remove parent directories by pathname");
         return binding;
       },
     };
@@ -1391,11 +1400,14 @@ test("proposal rollback removes only empty batch-owned parent directories", asyn
     );
     assert.equal(writes, 4);
     assert.equal(mkdirs, 6);
-    assert.equal(existsSync(join(root, "batch-owned")), false);
+    assert.equal(existsSync(join(root, "batch-owned")), true);
+    assert.equal(existsSync(join(root, "batch-owned", "deep")), true);
+    assert.equal(existsSync(join(root, "batch-owned", "displaced")), true);
     assert.equal(existsSync(join(root, "existing-empty")), true);
-    assert.equal(existsSync(join(root, "existing-empty", "deep")), false);
+    assert.equal(existsSync(join(root, "existing-empty", "deep")), true);
     assert.equal(readFileSync(join(root, "existing-content", ".keep"), "utf8"), "keep\n");
-    assert.equal(existsSync(join(root, "existing-content", "deep")), false);
+    assert.equal(existsSync(join(root, "existing-content", "deep")), true);
+    assert.equal(readFileSync(join(root, "existing-content", "deep", "external.md"), "utf8"), "external\n");
     await baseGate.dispose();
   });
 });

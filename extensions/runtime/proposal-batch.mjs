@@ -162,26 +162,20 @@ function destinationParents(operation) {
     relativeParent = dirname(relativeParent);
     absoluteParent = dirname(absoluteParent);
   }
-  return parents.reverse().map((parent, index) => ({ ...parent, depth: index + 1 }));
+  return parents.reverse();
 }
 
-async function createDestinationParents(operation, ownedDirectories) {
+async function createDestinationParents(operation) {
   for (const parent of destinationParents(operation)) {
-    if (ownedDirectories.has(parent.absolutePath)) continue;
     try {
-      const identity = await operation.destination.operations.mkdir(parent.absolutePath, { recursive: false });
-      ownedDirectories.set(parent.absolutePath, {
-        ...parent,
-        binding: operation.destination,
-        identity,
-      });
+      await operation.destination.operations.mkdir(parent.absolutePath, { recursive: false });
     } catch (error) {
       if (error?.code !== "EEXIST") throw error;
     }
   }
 }
 
-async function rollback(attempted, ownedDirectories) {
+async function rollback(attempted) {
   const failures = [];
   for (const operation of [...attempted].reverse()) {
     if (!operation.mutationStarted) continue;
@@ -202,15 +196,6 @@ async function rollback(attempted, ownedDirectories) {
       }
     } catch (error) {
       failures.push(error instanceof Error ? error.message : String(error));
-    }
-  }
-  for (const directory of [...ownedDirectories.values()].sort((left, right) => right.depth - left.depth)) {
-    try {
-      await directory.binding.operations.rmdir(directory.absolutePath, directory.identity);
-    } catch (error) {
-      if (!["ENOENT", "ENOTEMPTY", "EEXIST", "PICM_DIRECTORY_REPLACED"].includes(error?.code)) {
-        failures.push(error instanceof Error ? error.message : String(error));
-      }
     }
   }
   return failures;
@@ -300,7 +285,6 @@ export async function applyProposalBatch(batch, { gate, excludedPaths = [], sign
     throw error;
   }
   const attempted = [];
-  const ownedDirectories = new Map();
   try {
     for (const operation of operations) {
       throwIfAborted(signal);
@@ -308,7 +292,7 @@ export async function applyProposalBatch(batch, { gate, excludedPaths = [], sign
       if (operation.type === "create") {
         await requireMissing(operation.destination, operation.path);
         throwIfAborted(signal);
-        await createDestinationParents(operation, ownedDirectories);
+        await createDestinationParents(operation);
         operation.mutationStarted = true;
         await operation.destination.operations.writeFile(operation.destination.absolutePath, operation.content);
         continue;
@@ -332,7 +316,7 @@ export async function applyProposalBatch(batch, { gate, excludedPaths = [], sign
       } else {
         await requireMissing(operation.destination, operation.path);
         throwIfAborted(signal);
-        await createDestinationParents(operation, ownedDirectories);
+        await createDestinationParents(operation);
         operation.mutationStarted = true;
         operation.destinationWritten = true;
         await operation.destination.operations.writeFile(operation.destination.absolutePath, operation.content);
@@ -344,7 +328,7 @@ export async function applyProposalBatch(batch, { gate, excludedPaths = [], sign
     }
     throwIfAborted(signal);
   } catch (error) {
-    const failures = await rollback(attempted, ownedDirectories);
+    const failures = await rollback(attempted);
     if (failures.length > 0) {
       throw proposalError(
         "PICM_PROPOSAL_ROLLBACK_FAILED",
