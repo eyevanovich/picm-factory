@@ -15,7 +15,6 @@ import {
 } from "node:fs";
 import {
   access as accessFile,
-  mkdir as mkdirDirectory,
   readFile as readFileAsync,
   realpath as realpathFile,
   writeFile as writeFileAsync,
@@ -1250,7 +1249,7 @@ async function defaultRunGit(cwd, args) {
   }
 }
 
-test("guarded write bindings create missing directories", async () => {
+test("guarded pathname mkdir creates directories with residual filesystem TOCTOU", async () => {
   await withFixture(async ({ root, packageRoot }) => {
     const gate = createGitReadGate({ cwd: root, packageRoot });
     const decision = await gate.checkPath("write", "batch-created/file.md");
@@ -1351,7 +1350,6 @@ test("proposal rollback preserves created parents when portable conditional remo
     const baseGate = createGitReadGate({ cwd: root, packageRoot });
     const abort = new AbortController();
     let writes = 0;
-    let mkdirs = 0;
     let replacedDirectory = false;
     const gate = {
       checkPath: (...args) => baseGate.checkPath(...args),
@@ -1359,11 +1357,6 @@ test("proposal rollback preserves created parents when portable conditional remo
         const binding = baseGate.bindPath(plan);
         const writeFile = binding.operations.writeFile;
         const unlink = binding.operations.unlink;
-        binding.operations.mkdir = async (path, options) => {
-          mkdirs += 1;
-          await mkdirDirectory(path, options);
-          return { dev: 1, ino: mkdirs };
-        };
         binding.operations.writeFile = async (...args) => {
           const result = await writeFile(...args);
           writes += 1;
@@ -1399,7 +1392,6 @@ test("proposal rollback preserves created parents when portable conditional remo
       (error) => error.code === "PICM_PROPOSAL_ABORTED",
     );
     assert.equal(writes, 4);
-    assert.equal(mkdirs, 6);
     assert.equal(existsSync(join(root, "batch-owned")), true);
     assert.equal(existsSync(join(root, "batch-owned", "deep")), true);
     assert.equal(existsSync(join(root, "batch-owned", "displaced")), true);
