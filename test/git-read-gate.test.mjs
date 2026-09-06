@@ -1419,6 +1419,178 @@ test("approved adoption and maintenance batches apply mixed operations atomicall
   }
 });
 
+test("approved batches reauthorize every path before mutation against current exclusions", async () => {
+  const originalGlobalConfig = process.env.GIT_CONFIG_GLOBAL;
+  const globalConfig = join(tmpdir(), `picm-proposal-global-${process.pid}-${Date.now()}.gitconfig`);
+  const globalExcludes = `${globalConfig}.exclude`;
+  write(globalExcludes, "");
+  write(globalConfig, `[core]\n\texcludesFile = ${globalExcludes}\n`);
+  process.env.GIT_CONFIG_GLOBAL = globalConfig;
+
+  try {
+    await withFixture(async ({ root }) => {
+      const h = extensionHarness();
+      const ctx = h.context(root, "fresh-proposal-authorization");
+      const control = h.tools.get("picm_scan_control");
+      const batch = h.tools.get("picm_proposal_batch");
+      const sentinelContent = "sentinel before\n";
+      const sentinelUpdatedContent = "sentinel after\n";
+      const sourceContents = {
+        nestedModify: "nested before\n",
+        localDelete: "local before\n",
+        globalMove: "global source before\n",
+        sessionMove: "session source before\n",
+      };
+
+      for (const name of ["root", "nested", "local", "global", "session"]) {
+        write(join(root, `${name}-sentinel.md`), sentinelContent);
+      }
+      write(join(root, "nested", ".gitignore"), "# initially unprotected\n");
+      write(join(root, "nested", "nested-modify.md"), sourceContents.nestedModify);
+      write(join(root, "local-delete.md"), sourceContents.localDelete);
+      write(join(root, "global-move-source.md"), sourceContents.globalMove);
+      write(join(root, "session-move-source.md"), sourceContents.sessionMove);
+      git(
+        root,
+        "add",
+        "root-sentinel.md",
+        "nested-sentinel.md",
+        "local-sentinel.md",
+        "global-sentinel.md",
+        "session-sentinel.md",
+        "nested/.gitignore",
+        "nested/nested-modify.md",
+        "local-delete.md",
+        "global-move-source.md",
+        "session-move-source.md",
+      );
+
+      await h.commands.get("picm-adopt").handler("coding", ctx);
+      await control.execute("preflight", { action: "preflight" }, undefined, undefined, ctx);
+      await control.execute("privacy", { action: "privacy", excludedPaths: [] }, undefined, undefined, ctx);
+      await control.execute("begin", { action: "begin" }, undefined, undefined, ctx);
+
+      const prepareApproved = async (operations) => {
+        const prepared = await batch.execute(
+          "prepare",
+          { action: "prepare", operations },
+          undefined,
+          undefined,
+          ctx,
+        );
+        assert.equal(prepared.details.ok, true);
+        const presented = await batch.execute(
+          "present",
+          {
+            action: "present",
+            proposalId: prepared.details.proposalId,
+            digest: prepared.details.digest,
+          },
+          undefined,
+          undefined,
+          ctx,
+        );
+        assert.equal(presented.details.ok, true);
+        await h.handlers.get("before_agent_start")({ prompt: "approve" }, ctx);
+        return prepared.details.proposalId;
+      };
+
+      const assertBlocked = async (proposalId) => {
+        await assert.rejects(
+          batch.execute("apply", { action: "apply", proposalId }, undefined, undefined, ctx),
+          (error) => {
+            assert.equal(error.code, "PICM_PROPOSAL_PATH_BLOCKED");
+            assert.match(error.message, /PICM_PROPOSAL_PATH_BLOCKED/);
+            return true;
+          },
+        );
+      };
+
+      const rootCreateProposal = await prepareApproved([
+        { type: "modify", path: "root-sentinel.md", expectedContent: sentinelContent, content: sentinelUpdatedContent },
+        { type: "create", path: "root-create.md", content: "must not be created\n" },
+      ]);
+      writeFileSync(
+        join(root, ".gitignore"),
+        `${readFileSync(join(root, ".gitignore"), "utf8")}root-create.md\n`,
+      );
+      await assertBlocked(rootCreateProposal);
+      assert.equal(readFileSync(join(root, "root-sentinel.md"), "utf8"), sentinelContent);
+      assert.equal(existsSync(join(root, "root-create.md")), false);
+
+      const nestedModifyProposal = await prepareApproved([
+        { type: "modify", path: "nested-sentinel.md", expectedContent: sentinelContent, content: sentinelUpdatedContent },
+        {
+          type: "modify",
+          path: "nested/nested-modify.md",
+          expectedContent: sourceContents.nestedModify,
+          content: "nested after\n",
+        },
+      ]);
+      writeFileSync(join(root, "nested", ".gitignore"), "nested-modify.md\n");
+      await assertBlocked(nestedModifyProposal);
+      assert.equal(readFileSync(join(root, "nested-sentinel.md"), "utf8"), sentinelContent);
+      assert.equal(readFileSync(join(root, "nested", "nested-modify.md"), "utf8"), sourceContents.nestedModify);
+
+      const localDeleteProposal = await prepareApproved([
+        { type: "modify", path: "local-sentinel.md", expectedContent: sentinelContent, content: sentinelUpdatedContent },
+        { type: "delete", path: "local-delete.md", expectedContent: sourceContents.localDelete },
+      ]);
+      writeFileSync(
+        join(root, ".git", "info", "exclude"),
+        `${readFileSync(join(root, ".git", "info", "exclude"), "utf8")}\nlocal-delete.md\n`,
+      );
+      await assertBlocked(localDeleteProposal);
+      assert.equal(readFileSync(join(root, "local-sentinel.md"), "utf8"), sentinelContent);
+      assert.equal(readFileSync(join(root, "local-delete.md"), "utf8"), sourceContents.localDelete);
+
+      const globalMoveSourceProposal = await prepareApproved([
+        { type: "modify", path: "global-sentinel.md", expectedContent: sentinelContent, content: sentinelUpdatedContent },
+        {
+          type: "move",
+          from: "global-move-source.md",
+          path: "global-move-destination.md",
+          expectedContent: sourceContents.globalMove,
+          content: "global destination after\n",
+        },
+      ]);
+      writeFileSync(globalExcludes, "global-move-source.md\n");
+      await assertBlocked(globalMoveSourceProposal);
+      assert.equal(readFileSync(join(root, "global-sentinel.md"), "utf8"), sentinelContent);
+      assert.equal(readFileSync(join(root, "global-move-source.md"), "utf8"), sourceContents.globalMove);
+      assert.equal(existsSync(join(root, "global-move-destination.md")), false);
+
+      const sessionMoveDestinationProposal = await prepareApproved([
+        { type: "modify", path: "session-sentinel.md", expectedContent: sentinelContent, content: sentinelUpdatedContent },
+        {
+          type: "move",
+          from: "session-move-source.md",
+          path: "session-move-destination.md",
+          expectedContent: sourceContents.sessionMove,
+          content: "session destination after\n",
+        },
+      ]);
+      await control.execute(
+        "privacy",
+        { action: "privacy", excludedPaths: ["session-move-destination.md"] },
+        undefined,
+        undefined,
+        ctx,
+      );
+      await control.execute("begin", { action: "begin" }, undefined, undefined, ctx);
+      await assertBlocked(sessionMoveDestinationProposal);
+      assert.equal(readFileSync(join(root, "session-sentinel.md"), "utf8"), sentinelContent);
+      assert.equal(readFileSync(join(root, "session-move-source.md"), "utf8"), sourceContents.sessionMove);
+      assert.equal(existsSync(join(root, "session-move-destination.md")), false);
+    });
+  } finally {
+    if (originalGlobalConfig === undefined) delete process.env.GIT_CONFIG_GLOBAL;
+    else process.env.GIT_CONFIG_GLOBAL = originalGlobalConfig;
+    rmSync(globalConfig, { force: true });
+    rmSync(globalExcludes, { force: true });
+  }
+});
+
 test("extension gate is inactive outside explicit PiCM scan phases", async () => {
   await withFixture(async ({ root }) => {
     const h = extensionHarness();

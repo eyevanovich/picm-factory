@@ -212,10 +212,43 @@ export async function prepareProposalBatch({ gate, excludedPaths = [], operation
   };
 }
 
-export async function applyProposalBatch(batch, { signal } = {}) {
+async function rebindProposalOperations(batch, gate, excludedPaths) {
+  const reboundOperations = [];
+  for (const operation of batch.operations) {
+    if (operation.type === "create") {
+      const destination = await requireAllowedBinding(gate, "write", operation.path, excludedPaths);
+      reboundOperations.push({ ...operation, destination });
+      continue;
+    }
+
+    const sourcePath = operation.type === "move" ? operation.from : operation.path;
+    const source = await requireAllowedBinding(gate, "edit", sourcePath, excludedPaths);
+    if (operation.type === "move") {
+      const destination = await requireAllowedBinding(gate, "write", operation.path, excludedPaths);
+      reboundOperations.push({ ...operation, source, destination });
+    } else {
+      reboundOperations.push({ ...operation, source });
+    }
+  }
+
+  for (const operation of reboundOperations) {
+    if (operation.type === "create") {
+      await requireMissing(operation.destination, operation.path);
+      continue;
+    }
+
+    const sourcePath = operation.type === "move" ? operation.from : operation.path;
+    operation.originalContent = await requireExpectedContent(operation.source, sourcePath, operation.expectedContent);
+    if (operation.type === "move") await requireMissing(operation.destination, operation.path);
+  }
+  return reboundOperations;
+}
+
+export async function applyProposalBatch(batch, { gate, excludedPaths = [], signal } = {}) {
+  const operations = await rebindProposalOperations(batch, gate, excludedPaths);
   const attempted = [];
   try {
-    for (const operation of batch.operations) {
+    for (const operation of operations) {
       throwIfAborted(signal);
       attempted.push(operation);
       if (operation.type === "create") {

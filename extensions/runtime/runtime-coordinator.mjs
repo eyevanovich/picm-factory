@@ -787,7 +787,11 @@ export function createRuntimeCoordinator({
     current.status = "applying";
     try {
       throwIfAborted(execution.signal, "PICM_PROPOSAL_ABORTED");
-      const result = await applyProposalBatch(current.batch, { signal: execution.signal });
+      const result = await applyProposalBatch(current.batch, {
+        gate: runtimeFor(ctx).gate,
+        excludedPaths: scan.excludedPaths,
+        signal: execution.signal,
+      });
       requireCurrentWorkflow(sessionId, workflow);
       current.status = "applied";
       return {
