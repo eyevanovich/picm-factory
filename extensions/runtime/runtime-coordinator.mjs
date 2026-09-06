@@ -289,7 +289,11 @@ export function createRuntimeCoordinator({
   }
 
   function throwIfAborted(signal, code) {
-    if (signal?.aborted) throw new Error(`${code}: operation was cancelled before mutation`);
+    if (signal?.aborted) {
+      const error = new Error(`${code}: operation was cancelled before mutation`);
+      error.code = code;
+      throw error;
+    }
   }
 
   async function runScanControl(ctx, params, execution = {}) {
@@ -787,9 +791,17 @@ export function createRuntimeCoordinator({
     current.status = "applying";
     try {
       throwIfAborted(execution.signal, "PICM_PROPOSAL_ABORTED");
+      const persisted = await runtimeFor(ctx).store.readPrivacyForReview();
+      throwIfAborted(execution.signal, "PICM_PROPOSAL_ABORTED");
+      if (!persisted.ok) throw new Error(`${persisted.code}: ${persisted.message}`);
+      const applyExcludedPaths = mergePrivacyExcludedPaths(
+        ctx.cwd,
+        scan.excludedPaths,
+        persisted.privacy?.excludedPaths ?? [],
+      );
       const result = await applyProposalBatch(current.batch, {
         gate: runtimeFor(ctx).gate,
-        excludedPaths: scan.excludedPaths,
+        excludedPaths: applyExcludedPaths,
         signal: execution.signal,
       });
       requireCurrentWorkflow(sessionId, workflow);

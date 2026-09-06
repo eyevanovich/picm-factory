@@ -34,6 +34,7 @@ import picmFactoryExtension from "../extensions/picm-factory.ts";
 import { createGitReadGate } from "../extensions/runtime/git-read-gate.mjs";
 import { executeBoundGrep } from "../extensions/runtime/path-execution-binding.mjs";
 import { createPolicy } from "../extensions/runtime/maintenance-policy.mjs";
+import { applyProposalBatch } from "../extensions/runtime/proposal-batch.mjs";
 import { createRuntimeCoordinator } from "../extensions/runtime/runtime-coordinator.mjs";
 
 function git(root, ...args) {
@@ -1582,6 +1583,19 @@ test("approved batches reauthorize every path before mutation against current ex
       assert.equal(readFileSync(join(root, "session-sentinel.md"), "utf8"), sentinelContent);
       assert.equal(readFileSync(join(root, "session-move-source.md"), "utf8"), sourceContents.sessionMove);
       assert.equal(existsSync(join(root, "session-move-destination.md")), false);
+
+      const persistedProposal = await prepareApproved([
+        { type: "modify", path: "root-sentinel.md", expectedContent: sentinelContent, content: sentinelUpdatedContent },
+        { type: "create", path: "persisted-create.md", content: "must not be created\n" },
+      ]);
+      write(join(root, ".picm", "config.json"), JSON.stringify({
+        version: 1,
+        generatedBy: "picm-factory",
+        privacy: { excludedPaths: ["persisted-create.md"] },
+      }));
+      await assertBlocked(persistedProposal);
+      assert.equal(readFileSync(join(root, "root-sentinel.md"), "utf8"), sentinelContent);
+      assert.equal(existsSync(join(root, "persisted-create.md")), false);
     });
   } finally {
     if (originalGlobalConfig === undefined) delete process.env.GIT_CONFIG_GLOBAL;
@@ -1589,6 +1603,30 @@ test("approved batches reauthorize every path before mutation against current ex
     rmSync(globalConfig, { force: true });
     rmSync(globalExcludes, { force: true });
   }
+});
+
+test("proposal reauthorization preserves cancellation precedence", async () => {
+  const abort = new AbortController();
+  const gate = {
+    async checkPath() {
+      abort.abort();
+      return { allowed: false, reason: "newly protected" };
+    },
+    bindPath() {
+      throw new Error("blocked decisions must not bind");
+    },
+  };
+  const batch = {
+    id: "cancelled-reauthorization",
+    digest: "digest",
+    operations: [{ type: "create", path: "blocked.md", content: "blocked\n" }],
+    auditOperations: [{ type: "create", path: "blocked.md" }],
+  };
+
+  await assert.rejects(
+    applyProposalBatch(batch, { gate, signal: abort.signal }),
+    (error) => error.code === "PICM_PROPOSAL_ABORTED",
+  );
 });
 
 test("extension gate is inactive outside explicit PiCM scan phases", async () => {

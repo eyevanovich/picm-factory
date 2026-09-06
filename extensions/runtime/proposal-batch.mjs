@@ -212,19 +212,23 @@ export async function prepareProposalBatch({ gate, excludedPaths = [], operation
   };
 }
 
-async function rebindProposalOperations(batch, gate, excludedPaths) {
+async function rebindProposalOperations(batch, gate, excludedPaths, signal) {
   const reboundOperations = [];
   for (const operation of batch.operations) {
+    throwIfAborted(signal);
     if (operation.type === "create") {
       const destination = await requireAllowedBinding(gate, "write", operation.path, excludedPaths);
+      throwIfAborted(signal);
       reboundOperations.push({ ...operation, destination });
       continue;
     }
 
     const sourcePath = operation.type === "move" ? operation.from : operation.path;
     const source = await requireAllowedBinding(gate, "edit", sourcePath, excludedPaths);
+    throwIfAborted(signal);
     if (operation.type === "move") {
       const destination = await requireAllowedBinding(gate, "write", operation.path, excludedPaths);
+      throwIfAborted(signal);
       reboundOperations.push({ ...operation, source, destination });
     } else {
       reboundOperations.push({ ...operation, source });
@@ -232,20 +236,32 @@ async function rebindProposalOperations(batch, gate, excludedPaths) {
   }
 
   for (const operation of reboundOperations) {
+    throwIfAborted(signal);
     if (operation.type === "create") {
       await requireMissing(operation.destination, operation.path);
+      throwIfAborted(signal);
       continue;
     }
 
     const sourcePath = operation.type === "move" ? operation.from : operation.path;
     operation.originalContent = await requireExpectedContent(operation.source, sourcePath, operation.expectedContent);
-    if (operation.type === "move") await requireMissing(operation.destination, operation.path);
+    throwIfAborted(signal);
+    if (operation.type === "move") {
+      await requireMissing(operation.destination, operation.path);
+      throwIfAborted(signal);
+    }
   }
   return reboundOperations;
 }
 
 export async function applyProposalBatch(batch, { gate, excludedPaths = [], signal } = {}) {
-  const operations = await rebindProposalOperations(batch, gate, excludedPaths);
+  let operations;
+  try {
+    operations = await rebindProposalOperations(batch, gate, excludedPaths, signal);
+  } catch (error) {
+    throwIfAborted(signal);
+    throw error;
+  }
   const attempted = [];
   try {
     for (const operation of operations) {
