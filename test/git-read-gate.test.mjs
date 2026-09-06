@@ -18,6 +18,7 @@ import {
   mkdir as mkdirDirectory,
   readFile as readFileAsync,
   realpath as realpathFile,
+  rmdir as removeDirectory,
   writeFile as writeFileAsync,
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -1250,7 +1251,7 @@ async function defaultRunGit(cwd, args) {
   }
 }
 
-test("guarded write bindings remove only unchanged empty batch directories", async () => {
+test("guarded write bindings fail closed before directory ownership races", async () => {
   await withFixture(async ({ root, packageRoot }) => {
     const gate = createGitReadGate({ cwd: root, packageRoot });
     const decision = await gate.checkPath("write", "batch-created/file.md");
@@ -1258,32 +1259,17 @@ test("guarded write bindings remove only unchanged empty batch directories", asy
     const binding = gate.bindPath(decision.executionBinding);
     const directory = join(root, "batch-created");
 
-    const identity = await binding.operations.mkdir(directory);
-    const file = join(directory, "file.md");
-    await binding.operations.writeFile(file, "batch content\n");
     await assert.rejects(
-      binding.operations.rmdir(directory, identity),
-      (error) => ["ENOTEMPTY", "EEXIST", "EPERM"].includes(error.code),
+      binding.operations.mkdir(directory),
+      /atomic directory ownership and cleanup are unavailable/,
     );
-    assert.equal(existsSync(file), true);
-    await binding.operations.unlink(file);
-    await binding.operations.rmdir(directory, identity);
     assert.equal(existsSync(directory), false);
-
-    const replacedIdentity = await binding.operations.mkdir(directory);
-    rmSync(directory, { recursive: true });
-    mkdirSync(directory);
-    await assert.rejects(
-      binding.operations.rmdir(directory, replacedIdentity),
-      /owned directory was replaced after creation/,
-    );
-    assert.equal(existsSync(directory), true);
     binding.release();
     await gate.dispose();
   });
 });
 
-test("approved proposal batches create guarded parent directories for scaffold files and moves", async () => {
+test("approved proposal batches gate missing parent directories before mutation", async () => {
   await withFixture(async ({ root }) => {
     const h = extensionHarness();
     const ctx = h.context(root, "proposal-created-parents");
@@ -1319,19 +1305,20 @@ test("approved proposal batches create guarded parent directories for scaffold f
     }, undefined, undefined, ctx);
     assert.equal(presented.details.ok, true);
     await h.handlers.get("before_agent_start")({ prompt: "approve" }, ctx);
-    const applied = await batch.execute(
-      "apply",
-      { action: "apply", proposalId: prepared.details.proposalId },
-      undefined,
-      undefined,
-      ctx,
+    await assert.rejects(
+      batch.execute(
+        "apply",
+        { action: "apply", proposalId: prepared.details.proposalId },
+        undefined,
+        undefined,
+        ctx,
+      ),
+      /atomic directory ownership and cleanup are unavailable/,
     );
 
-    assert.equal(applied.details.ok, true);
-    assert.equal(readFileSync(join(root, ".picm", "config.json"), "utf8"), config);
-    assert.equal(readFileSync(join(root, ".picm", "adoption-report.md"), "utf8"), report);
-    assert.equal(readFileSync(join(root, "relocated", "nested", "guide.md"), "utf8"), guide);
-    assert.equal(existsSync(join(root, "docs", "guide.md")), false);
+    assert.equal(existsSync(join(root, ".picm")), false);
+    assert.equal(existsSync(join(root, "relocated")), false);
+    assert.equal(readFileSync(join(root, "docs", "guide.md"), "utf8"), "guide\n");
   });
 });
 
@@ -1347,12 +1334,13 @@ test("proposal rollback removes only empty batch-owned parent directories", asyn
       checkPath: (...args) => baseGate.checkPath(...args),
       bindPath(plan) {
         const binding = baseGate.bindPath(plan);
-        const mkdir = binding.operations.mkdir;
         const writeFile = binding.operations.writeFile;
-        binding.operations.mkdir = async (...args) => {
+        binding.operations.mkdir = async (path, options) => {
           mkdirs += 1;
-          return mkdir(...args);
+          await mkdirDirectory(path, options);
+          return { dev: 1, ino: mkdirs };
         };
+        binding.operations.rmdir = (path) => removeDirectory(path);
         binding.operations.writeFile = async (...args) => {
           const result = await writeFile(...args);
           writes += 1;

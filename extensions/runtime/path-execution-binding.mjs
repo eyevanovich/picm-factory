@@ -778,25 +778,9 @@ export function createPathExecutionBinding(plan, limitOverrides) {
           ? {
               mkdir: async (dir, options) => {
                 const target = await assertBoundTarget(dir, { allowAncestor: true });
-                await fsPromises.mkdir(target, { recursive: true, ...options });
-                const stat = await fsPromises.lstat(target);
-                if (stat.isSymbolicLink() || !stat.isDirectory()) {
-                  fail("created directory changed after validation");
-                }
-                return fileIdentity(stat);
-              },
-              rmdir: async (path, expectedIdentity) => {
-                const target = await assertBoundTarget(path, { allowAncestor: true });
-                const stat = await fsPromises.lstat(target);
-                if (stat.isSymbolicLink()) fail("target became a symlink after validation");
-                if (!stat.isDirectory()) fail("target is not a directory");
-                if (
-                  expectedIdentity &&
-                  (stat.dev !== expectedIdentity.dev || stat.ino !== expectedIdentity.ino)
-                ) {
-                  fail("owned directory was replaced after creation");
-                }
-                return fsPromises.rmdir(target);
+                void target;
+                void options;
+                fail("atomic directory ownership and cleanup are unavailable");
               },
               lstat: async (path) => {
                 const target = await assertBoundTarget(path);

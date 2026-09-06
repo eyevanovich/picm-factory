@@ -208,7 +208,7 @@ async function rollback(attempted, ownedDirectories) {
     try {
       await directory.binding.operations.rmdir(directory.absolutePath, directory.identity);
     } catch (error) {
-      if (error?.code !== "ENOENT") {
+      if (!["ENOENT", "ENOTEMPTY", "EEXIST", "PICM_DIRECTORY_REPLACED"].includes(error?.code)) {
         failures.push(error instanceof Error ? error.message : String(error));
       }
     }
