@@ -1322,6 +1322,33 @@ test("approved proposal batches gate missing parent directories before mutation"
   });
 });
 
+test("approved proposal batches create and move beneath existing parents", async () => {
+  await withFixture(async ({ root, packageRoot }) => {
+    const gate = createGitReadGate({ cwd: root, packageRoot });
+    const batch = await prepareProposalBatch({
+      gate,
+      operations: [
+        { type: "create", path: "docs/new.md", content: "new\n" },
+        {
+          type: "move",
+          from: "safe.txt",
+          path: "docs/moved.md",
+          expectedContent: "safe\n",
+          content: "moved\n",
+        },
+      ],
+    });
+
+    const result = await applyProposalBatch(batch, { gate });
+
+    assert.equal(result.ok, true);
+    assert.equal(readFileSync(join(root, "docs", "new.md"), "utf8"), "new\n");
+    assert.equal(readFileSync(join(root, "docs", "moved.md"), "utf8"), "moved\n");
+    assert.equal(existsSync(join(root, "safe.txt")), false);
+    await gate.dispose();
+  });
+});
+
 test("proposal rollback removes only empty batch-owned parent directories", async () => {
   await withFixture(async ({ root, packageRoot }) => {
     mkdirSync(join(root, "existing-empty"));

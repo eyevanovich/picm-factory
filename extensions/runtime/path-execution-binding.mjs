@@ -778,9 +778,23 @@ export function createPathExecutionBinding(plan, limitOverrides) {
           ? {
               mkdir: async (dir, options) => {
                 const target = await assertBoundTarget(dir, { allowAncestor: true });
-                void target;
                 void options;
-                fail("atomic directory ownership and cleanup are unavailable");
+                try {
+                  const stat = await fsPromises.lstat(target);
+                  if (stat.isSymbolicLink() || !stat.isDirectory()) {
+                    fail("existing parent is not a safe directory");
+                  }
+                } catch (error) {
+                  if (error?.code === "ENOENT") {
+                    fail("atomic directory ownership and cleanup are unavailable");
+                  }
+                  throw error;
+                }
+                throw Object.assign(new Error(`EEXIST: directory already exists, mkdir '${target}'`), {
+                  code: "EEXIST",
+                  path: target,
+                  syscall: "mkdir",
+                });
               },
               lstat: async (path) => {
                 const target = await assertBoundTarget(path);
