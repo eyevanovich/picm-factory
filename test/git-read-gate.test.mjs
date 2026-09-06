@@ -34,7 +34,7 @@ import picmFactoryExtension from "../extensions/picm-factory.ts";
 import { createGitReadGate } from "../extensions/runtime/git-read-gate.mjs";
 import { executeBoundGrep } from "../extensions/runtime/path-execution-binding.mjs";
 import { createPolicy } from "../extensions/runtime/maintenance-policy.mjs";
-import { applyProposalBatch } from "../extensions/runtime/proposal-batch.mjs";
+import { applyProposalBatch, prepareProposalBatch } from "../extensions/runtime/proposal-batch.mjs";
 import { createRuntimeCoordinator } from "../extensions/runtime/runtime-coordinator.mjs";
 
 function git(root, ...args) {
@@ -1249,6 +1249,175 @@ async function defaultRunGit(cwd, args) {
     return { code: error.status ?? 1, stdout: error.stdout ?? "", stderr: error.stderr ?? "" };
   }
 }
+
+test("guarded write bindings remove only unchanged empty batch directories", async () => {
+  await withFixture(async ({ root, packageRoot }) => {
+    const gate = createGitReadGate({ cwd: root, packageRoot });
+    const decision = await gate.checkPath("write", "batch-created/file.md");
+    assert.equal(decision.allowed, true);
+    const binding = gate.bindPath(decision.executionBinding);
+    const directory = join(root, "batch-created");
+
+    const identity = await binding.operations.mkdir(directory);
+    const file = join(directory, "file.md");
+    await binding.operations.writeFile(file, "batch content\n");
+    await assert.rejects(
+      binding.operations.rmdir(directory, identity),
+      (error) => ["ENOTEMPTY", "EEXIST", "EPERM"].includes(error.code),
+    );
+    assert.equal(existsSync(file), true);
+    await binding.operations.unlink(file);
+    await binding.operations.rmdir(directory, identity);
+    assert.equal(existsSync(directory), false);
+
+    const replacedIdentity = await binding.operations.mkdir(directory);
+    rmSync(directory, { recursive: true });
+    mkdirSync(directory);
+    await assert.rejects(
+      binding.operations.rmdir(directory, replacedIdentity),
+      /owned directory was replaced after creation/,
+    );
+    assert.equal(existsSync(directory), true);
+    binding.release();
+    await gate.dispose();
+  });
+});
+
+test("approved proposal batches create guarded parent directories for scaffold files and moves", async () => {
+  await withFixture(async ({ root }) => {
+    const h = extensionHarness();
+    const ctx = h.context(root, "proposal-created-parents");
+    const control = h.tools.get("picm_scan_control");
+    const batch = h.tools.get("picm_proposal_batch");
+    const config = "{\n  \"version\": 1\n}\n";
+    const report = "# Adoption report\n";
+    const guide = "# Moved guide\n";
+
+    await h.commands.get("picm-adopt").handler("coding", ctx);
+    await control.execute("preflight", { action: "preflight" }, undefined, undefined, ctx);
+    await control.execute("privacy", { action: "privacy", excludedPaths: [] }, undefined, undefined, ctx);
+    await control.execute("begin", { action: "begin" }, undefined, undefined, ctx);
+
+    const prepared = await batch.execute("prepare", {
+      action: "prepare",
+      operations: [
+        { type: "create", path: ".picm/config.json", content: config },
+        { type: "create", path: ".picm/adoption-report.md", content: report },
+        {
+          type: "move",
+          from: "docs/guide.md",
+          path: "relocated/nested/guide.md",
+          expectedContent: "guide\n",
+          content: guide,
+        },
+      ],
+    }, undefined, undefined, ctx);
+    const presented = await batch.execute("present", {
+      action: "present",
+      proposalId: prepared.details.proposalId,
+      digest: prepared.details.digest,
+    }, undefined, undefined, ctx);
+    assert.equal(presented.details.ok, true);
+    await h.handlers.get("before_agent_start")({ prompt: "approve" }, ctx);
+    const applied = await batch.execute(
+      "apply",
+      { action: "apply", proposalId: prepared.details.proposalId },
+      undefined,
+      undefined,
+      ctx,
+    );
+
+    assert.equal(applied.details.ok, true);
+    assert.equal(readFileSync(join(root, ".picm", "config.json"), "utf8"), config);
+    assert.equal(readFileSync(join(root, ".picm", "adoption-report.md"), "utf8"), report);
+    assert.equal(readFileSync(join(root, "relocated", "nested", "guide.md"), "utf8"), guide);
+    assert.equal(existsSync(join(root, "docs", "guide.md")), false);
+  });
+});
+
+test("proposal rollback removes only empty batch-owned parent directories", async () => {
+  await withFixture(async ({ root, packageRoot }) => {
+    mkdirSync(join(root, "existing-empty"));
+    write(join(root, "existing-content", ".keep"), "keep\n");
+    const baseGate = createGitReadGate({ cwd: root, packageRoot });
+    const abort = new AbortController();
+    let writes = 0;
+    let mkdirs = 0;
+    const gate = {
+      checkPath: (...args) => baseGate.checkPath(...args),
+      bindPath(plan) {
+        const binding = baseGate.bindPath(plan);
+        const mkdir = binding.operations.mkdir;
+        const writeFile = binding.operations.writeFile;
+        binding.operations.mkdir = async (...args) => {
+          mkdirs += 1;
+          return mkdir(...args);
+        };
+        binding.operations.writeFile = async (...args) => {
+          const result = await writeFile(...args);
+          writes += 1;
+          if (writes === 4) abort.abort();
+          return result;
+        };
+        return binding;
+      },
+    };
+    const operations = [
+      { type: "create", path: "batch-owned/deep/first.md", content: "first\n" },
+      { type: "create", path: "batch-owned/deep/second.md", content: "second\n" },
+      { type: "create", path: "existing-empty/deep/third.md", content: "third\n" },
+      { type: "create", path: "existing-content/deep/fourth.md", content: "fourth\n" },
+    ];
+    const batch = await prepareProposalBatch({ gate, operations });
+
+    await assert.rejects(
+      applyProposalBatch(batch, { gate, signal: abort.signal }),
+      (error) => error.code === "PICM_PROPOSAL_ABORTED",
+    );
+    assert.equal(writes, 4);
+    assert.equal(mkdirs, 6);
+    assert.equal(existsSync(join(root, "batch-owned")), false);
+    assert.equal(existsSync(join(root, "existing-empty")), true);
+    assert.equal(existsSync(join(root, "existing-empty", "deep")), false);
+    assert.equal(readFileSync(join(root, "existing-content", ".keep"), "utf8"), "keep\n");
+    assert.equal(existsSync(join(root, "existing-content", "deep")), false);
+    await baseGate.dispose();
+  });
+});
+
+test("proposal parent creation is denied before mkdir for symlinks and exclusions", async (t) => {
+  if (process.platform === "win32") {
+    t.skip("symlink behavior is platform-specific");
+    return;
+  }
+  await withFixture(async ({ root, packageRoot }) => {
+    const gate = createGitReadGate({ cwd: root, packageRoot });
+    mkdirSync(join(root, "private-target"));
+    symlinkSync("private-target", join(root, "linked-parent"), "dir");
+    const batch = (path) => ({
+      id: `batch:${path}`,
+      digest: path,
+      operations: [{ type: "create", path, content: "blocked\n" }],
+      auditOperations: [{ type: "create", path }],
+    });
+
+    await assert.rejects(
+      applyProposalBatch(batch("linked-parent/nested/file.md"), { gate }),
+      (error) => error.code === "PICM_PROPOSAL_PATH_BLOCKED",
+    );
+    assert.equal(existsSync(join(root, "private-target", "nested")), false);
+
+    await assert.rejects(
+      applyProposalBatch(batch("excluded-parent/nested/file.md"), {
+        gate,
+        excludedPaths: ["excluded-parent"],
+      }),
+      (error) => error.code === "PICM_PROPOSAL_PATH_BLOCKED",
+    );
+    assert.equal(existsSync(join(root, "excluded-parent")), false);
+    await gate.dispose();
+  });
+});
 
 test("approved adoption and maintenance batches apply mixed operations atomically without Bash", async () => {
   for (const [command, args] of [["picm-adopt", "coding"], ["picm-maintain", "strict"]]) {
