@@ -1845,6 +1845,12 @@ test("approved adoption and maintenance batches apply exact mixed operations wit
       ]);
       assert.equal(readFileSync(join(root, "AGENTS.md"), "utf8"), updatedAgents);
       assert.equal(existsSync(join(root, "reference/approval-notes.md")), false);
+      const abortedCancel = await batch.execute("cancel", {
+        action: "cancel",
+        proposalId: aborted.details.proposalId,
+      }, undefined, undefined, ctx);
+      assert.equal(abortedCancel.details.ok, false);
+      assert.equal(abortedCancel.details.code, "PICM_PROPOSAL_REPLACEMENT_REQUIRED");
       await h.handlers.get("before_agent_start")({ prompt: "approve" }, ctx);
       const replay = await apply(aborted.details.proposalId);
       assert.equal(replay.details.ok, false);
@@ -1872,6 +1878,12 @@ test("approved adoption and maintenance batches apply exact mixed operations wit
       assert.equal(existsSync(join(root, "reference/approval-notes.md")), false);
       assert.equal(readFileSync(join(root, "routing/legacy-route.md"), "utf8"), "# Legacy routing\n\nUse the existing specialist folders for task routing.\n");
       assert.equal(readFileSync(join(root, "reference/obsolete.md"), "utf8"), "# Drifted note\n");
+      const failedCancel = await batch.execute("cancel", {
+        action: "cancel",
+        proposalId: stale.details.proposalId,
+      }, undefined, undefined, ctx);
+      assert.equal(failedCancel.details.ok, false);
+      assert.equal(failedCancel.details.code, "PICM_PROPOSAL_REPLACEMENT_REQUIRED");
       await h.handlers.get("before_agent_start")({ prompt: "approve" }, ctx);
       const failedReplay = await apply(stale.details.proposalId);
       assert.equal(failedReplay.details.ok, false);

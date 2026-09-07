@@ -19,6 +19,7 @@ import {
 
 const EXPLICIT_SCAN_COMMANDS = new Set(["picm-new", "picm-adopt", "picm-maintain", "picm-optimize"]);
 const GUARDED_PATH_TOOLS = new Set(["read", "edit", "write", "grep", "rg", "find", "ls"]);
+const TERMINAL_PROPOSAL_STATUSES = new Set(["applied", "failed", "aborted", "cancelled", "revision-required"]);
 const NEW_WORKFLOW_ARCHITECTURE_FILES = new Set([
   "AGENTS.md",
   "CLAUDE.md",
@@ -661,13 +662,7 @@ export function createRuntimeCoordinator({
   function observeProposalResponse(ctx, prompt) {
     const sessionId = sessionIdFor(ctx);
     const current = proposalBatches.get(sessionId);
-    if (
-      !current ||
-      current.cwd !== ctx.cwd ||
-      current.status === "applied" ||
-      current.status === "failed" ||
-      current.status === "aborted"
-    ) return undefined;
+    if (!current || current.cwd !== ctx.cwd || TERMINAL_PROPOSAL_STATUSES.has(current.status)) return undefined;
     const status = proposalResponseStatus(prompt);
     if (!current.presentation && status === "approved") {
       return proposalAudit(current.batch, "approval-observed", { approval: "pending" });
@@ -775,6 +770,13 @@ export function createRuntimeCoordinator({
       };
     }
     if (params.action === "cancel") {
+      if (TERMINAL_PROPOSAL_STATUSES.has(current.status)) {
+        return {
+          ok: false,
+          code: "PICM_PROPOSAL_REPLACEMENT_REQUIRED",
+          message: "Prepare a replacement batch after the current proposal was resolved",
+        };
+      }
       current.status = "cancelled";
       return {
         ok: true,
