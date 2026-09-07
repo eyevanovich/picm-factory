@@ -1377,6 +1377,31 @@ test("approved proposal batches create and move beneath existing parents", async
   });
 });
 
+test("proposal prevalidation rejects ancestor conflicts before path binding", async () => {
+  const createNested = { type: "create", path: "parent/child.md", content: "nested\n" };
+  const conflicts = [
+    { type: "create", path: "parent", content: "parent\n" },
+    { type: "modify", path: "parent", expectedContent: "old\n", content: "new\n" },
+    { type: "delete", path: "parent", expectedContent: "old\n" },
+    { type: "move", from: "parent", path: "moved.md", expectedContent: "old\n", content: "moved\n" },
+    { type: "move", from: "source.md", path: "parent", expectedContent: "old\n", content: "moved\n" },
+  ];
+
+  for (const conflict of conflicts) {
+    for (const operations of [[conflict, createNested], [createNested, conflict]]) {
+      const gate = {
+        checkPath() {
+          assert.fail("ancestor conflicts must fail before path binding");
+        },
+      };
+      await assert.rejects(
+        prepareProposalBatch({ gate, operations }),
+        (error) => error.code === "PICM_PROPOSAL_INVALID" && /conflicting ancestor paths/.test(error.message),
+      );
+    }
+  }
+});
+
 test("proposal cancellation keeps issued writes and created parents", async () => {
   await withFixture(async ({ root, packageRoot }) => {
     mkdirSync(join(root, "existing-empty"));

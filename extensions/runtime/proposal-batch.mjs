@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
-import { dirname, isAbsolute, normalize } from "node:path";
+import { dirname, isAbsolute, normalize, sep } from "node:path";
 
 const OPERATION_TYPES = new Set(["create", "modify", "delete", "move"]);
 
@@ -71,14 +71,22 @@ function validateOperations(operations) {
     throw proposalError("PICM_PROPOSAL_INVALID", "operations must be a non-empty array");
   }
   const normalized = operations.map(validateOperation);
-  const touched = new Set();
+  const touched = [];
   for (const operation of normalized) {
     const paths = operation.type === "move" ? [operation.from, operation.path] : [operation.path];
     for (const path of paths) {
-      if (touched.has(path)) {
-        throw proposalError("PICM_PROPOSAL_INVALID", `multiple operations affect ${path}`);
+      for (const existing of touched) {
+        if (path === existing) {
+          throw proposalError("PICM_PROPOSAL_INVALID", `multiple operations affect ${path}`);
+        }
+        if (path.startsWith(`${existing}${sep}`) || existing.startsWith(`${path}${sep}`)) {
+          throw proposalError(
+            "PICM_PROPOSAL_INVALID",
+            `operations affect conflicting ancestor paths ${existing} and ${path}`,
+          );
+        }
       }
-      touched.add(path);
+      touched.push(path);
     }
   }
   return normalized;
