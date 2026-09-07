@@ -780,7 +780,16 @@ export function createPathExecutionBinding(plan, limitOverrides) {
                 const target = await assertBoundTarget(dir, { allowAncestor: true });
                 // Node offers no portable directory-relative mkdir primitive, so an external
                 // filesystem actor can still replace an ancestor after this application gate.
-                return fsPromises.mkdir(target, { recursive: false, ...options });
+                try {
+                  return await fsPromises.mkdir(target, { recursive: false, ...options });
+                } catch (error) {
+                  if (options === undefined && error?.code === "EEXIST") {
+                    const current = await assertBoundTarget(target, { allowAncestor: true });
+                    const st = await fsPromises.lstat(current);
+                    if (st.isDirectory()) return;
+                  }
+                  throw error;
+                }
               },
               lstat: async (path) => {
                 const target = await assertBoundTarget(path);

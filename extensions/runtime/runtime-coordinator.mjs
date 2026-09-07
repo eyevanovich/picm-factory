@@ -770,6 +770,14 @@ export function createRuntimeCoordinator({
       };
     }
     if (params.action === "cancel") {
+      if (current.status === "cancelled") {
+        return {
+          ok: true,
+          action: "cancel",
+          proposalId: current.batch.id,
+          audit: proposalAudit(current.batch, "cancelled", { command: workflow.command }),
+        };
+      }
       if (TERMINAL_PROPOSAL_STATUSES.has(current.status)) {
         return {
           ok: false,

@@ -8,6 +8,7 @@ import {
   mkdirSync,
   mkdtempSync,
   readFileSync,
+  realpathSync,
   renameSync,
   rmSync,
   symlinkSync,
@@ -20,7 +21,7 @@ import {
   writeFile as writeFileAsync,
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { dirname, join, resolve, sep } from "node:path";
+import { dirname, join, relative, resolve, sep } from "node:path";
 import { PassThrough } from "node:stream";
 import test from "node:test";
 
@@ -31,7 +32,7 @@ import {
 } from "@earendil-works/pi-coding-agent";
 import picmFactoryExtension from "../extensions/picm-factory.ts";
 import { createGitReadGate } from "../extensions/runtime/git-read-gate.mjs";
-import { executeBoundGrep } from "../extensions/runtime/path-execution-binding.mjs";
+import { createPathExecutionBinding, executeBoundGrep } from "../extensions/runtime/path-execution-binding.mjs";
 import { createPolicy } from "../extensions/runtime/maintenance-policy.mjs";
 import { applyProposalBatch, prepareProposalBatch } from "../extensions/runtime/proposal-batch.mjs";
 import { createRuntimeCoordinator } from "../extensions/runtime/runtime-coordinator.mjs";
@@ -955,6 +956,38 @@ test("execution bindings initialize and release cleanly", async () => {
     assert.equal(typeof binding.operations.readFile, "function");
     binding.release();
     await gate.dispose();
+  });
+});
+
+test("bound write mkdir accepts only ordinary existing directories", async (t) => {
+  await withFixture(async ({ root }) => {
+    const canonicalRoot = realpathSync(root);
+    const binding = (path) => createPathExecutionBinding({
+      toolName: "write",
+      absolutePath: path,
+      canonicalPath: join(canonicalRoot, relative(root, path)),
+    });
+    const existingDirectory = join(root, "output");
+    await binding(join(existingDirectory, "new.txt")).operations.mkdir(existingDirectory);
+    await assert.rejects(
+      binding(join(root, "safe.txt", "new.txt")).operations.mkdir(join(root, "safe.txt")),
+      (error) => error?.code === "EEXIST",
+    );
+    await assert.rejects(
+      binding(join(existingDirectory, "new.txt")).operations.mkdir(existingDirectory, { recursive: false }),
+      (error) => error?.code === "EEXIST",
+    );
+
+    if (process.platform !== "win32") {
+      const symlink = join(root, "output-link");
+      symlinkSync("output", symlink, "dir");
+      await assert.rejects(
+        binding(join(symlink, "new.txt")).operations.mkdir(symlink),
+        /symlink/,
+      );
+    } else {
+      t.diagnostic("symlink collision assertion is platform-specific");
+    }
   });
 });
 
@@ -2335,6 +2368,18 @@ test("Curated coding adoption reopens a protected phase before inspection and co
     proposalId: prepared.details.proposalId,
   }, undefined, undefined, ctx);
   assert.equal(cancelled.details.ok, true);
+  const repeatedCancellation = await batch.execute("cancel", {
+    action: "cancel",
+    proposalId: prepared.details.proposalId,
+  }, undefined, undefined, ctx);
+  assert.equal(repeatedCancellation.details.ok, true);
+  await h.handlers.get("before_agent_start")({ prompt: "approve" }, ctx);
+  const cancelledReplay = await batch.execute("apply", {
+    action: "apply",
+    proposalId: prepared.details.proposalId,
+  }, undefined, undefined, ctx);
+  assert.equal(cancelledReplay.details.ok, false);
+  assert.equal(cancelledReplay.details.code, "PICM_PROPOSAL_NOT_APPROVED");
   assert.equal(existsSync(join(root, ".picm", "adoption-report.md")), false);
 
   await control.execute("end", { action: "end" }, undefined, undefined, ctx);
