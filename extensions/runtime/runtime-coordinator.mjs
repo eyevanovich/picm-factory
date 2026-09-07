@@ -661,7 +661,13 @@ export function createRuntimeCoordinator({
   function observeProposalResponse(ctx, prompt) {
     const sessionId = sessionIdFor(ctx);
     const current = proposalBatches.get(sessionId);
-    if (!current || current.cwd !== ctx.cwd || current.status === "applied") return undefined;
+    if (
+      !current ||
+      current.cwd !== ctx.cwd ||
+      current.status === "applied" ||
+      current.status === "failed" ||
+      current.status === "aborted"
+    ) return undefined;
     const status = proposalResponseStatus(prompt);
     if (!current.presentation && status === "approved") {
       return proposalAudit(current.batch, "approval-observed", { approval: "pending" });

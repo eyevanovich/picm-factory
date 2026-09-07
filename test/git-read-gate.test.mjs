@@ -1826,30 +1826,34 @@ test("approved adoption and maintenance batches apply exact mixed operations wit
         JSON.stringify(operations(), null, 2),
       ].join("\n"));
       await h.handlers.get("before_agent_start")({ prompt: "approve" }, ctx);
-      let abortChecks = 0;
       const abortAfterFirstMutation = {
         get aborted() {
-          abortChecks += 1;
-          return abortChecks >= 4;
+          return readFileSync(join(root, "AGENTS.md"), "utf8") === updatedAgents;
         },
       };
       const abortedResult = await apply(aborted.details.proposalId, abortAfterFirstMutation);
       assert.equal(abortedResult.details.ok, false);
       assert.equal(abortedResult.details.code, "PICM_PROPOSAL_ABORTED");
-      assert.deepEqual(abortedResult.details.results, operations().map(({ type, path, from }) => ({
-        type,
-        ...(from ? { from } : {}),
-        path,
-        status: "unattempted",
-      })));
-      assert.equal(readFileSync(join(root, "AGENTS.md"), "utf8"), originalAgents);
+      assert.deepEqual(abortedResult.details.results, [
+        { type: "modify", path: "AGENTS.md", status: "completed" },
+        ...operations().slice(1).map(({ type, path, from }) => ({
+          type,
+          ...(from ? { from } : {}),
+          path,
+          status: "unattempted",
+        })),
+      ]);
+      assert.equal(readFileSync(join(root, "AGENTS.md"), "utf8"), updatedAgents);
       assert.equal(existsSync(join(root, "reference/approval-notes.md")), false);
+      await h.handlers.get("before_agent_start")({ prompt: "approve" }, ctx);
       const replay = await apply(aborted.details.proposalId);
       assert.equal(replay.details.ok, false);
       assert.equal(replay.details.code, "PICM_PROPOSAL_NOT_APPROVED");
+      assert.equal(readFileSync(join(root, "AGENTS.md"), "utf8"), updatedAgents);
       const abortedAudit = [...entries].reverse().find((entry) => entry.customType === "picm-proposal-batch" && entry.data.status === "aborted");
       assert.ok(abortedAudit);
       assert.deepEqual(abortedAudit.data.results, abortedResult.details.results);
+      writeFileSync(join(root, "AGENTS.md"), originalAgents);
 
       const stale = await prepare();
       await present(stale);
@@ -1868,6 +1872,10 @@ test("approved adoption and maintenance batches apply exact mixed operations wit
       assert.equal(existsSync(join(root, "reference/approval-notes.md")), false);
       assert.equal(readFileSync(join(root, "routing/legacy-route.md"), "utf8"), "# Legacy routing\n\nUse the existing specialist folders for task routing.\n");
       assert.equal(readFileSync(join(root, "reference/obsolete.md"), "utf8"), "# Drifted note\n");
+      await h.handlers.get("before_agent_start")({ prompt: "approve" }, ctx);
+      const failedReplay = await apply(stale.details.proposalId);
+      assert.equal(failedReplay.details.ok, false);
+      assert.equal(failedReplay.details.code, "PICM_PROPOSAL_NOT_APPROVED");
 
       const approved = await prepare("# Drifted note\n");
       const presented = await present(approved);
