@@ -28,6 +28,14 @@ Treat every maintenance-policy preview, including a one-day cadence, as no-write
 
 For the privacy/configuration impact, explain that the accepted policy would durably record reminder timestamps in a non-ignored, regular, non-symlink `.picm/config.json` beneath a regular `.picm/` directory. Explain that it is advisory: nothing runs while Pi is closed or outside an eligible interactive TUI session; when due, it presents Run Now and Defer, and Run Now still enters the ordinary privacy-reviewed maintenance flow with normal write approvals. Explicit summary acceptance is no-write. Only after that acceptance may the agent call `apply` using exactly the preview's `previewId`; the tool's exact TUI patch confirmation, not summary acceptance, controls whether the policy is applied.
 
+## Settings publication and late cancellation
+
+Settings updates commit when the prepared config replaces `.picm/config.json`. Cancellation observed before publication prevents the replacement; an already-issued replacement may still finish. Once published, the settings stay committed: late cancellation never restores the old config. A later directory-sync failure means the settings were saved but crash durability is uncertain; report the returned warning, not an unchanged file or a reset that needs repeating.
+
+A completed maintenance pass whose completion settings are published remains completed after late cancellation. Stopping before that publication leaves the prior schedule intact. If the workflow itself changed while publication was in flight, its stale completion is still rejected; the settings may already be saved, so inspect the current allowed state rather than assuming nothing happened or automatically retrying.
+
+Older versions may have left `config.json.rollback-*` files. PiCM neither creates new cancellation snapshots nor restores or deletes those legacy files automatically. Ask the user to preserve and compare any needed copy before an explicitly approved recovery or cleanup; never bypass privacy checks to inspect it. This settings rule does not change the proposal-batch rollback contract above.
+
 ## Summary preview template
 
 Enumerate every affected file once and keep linked actions visibly connected. Use the literal `None` for every empty category.

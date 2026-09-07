@@ -218,18 +218,21 @@ test("cycle reset cancellation before rename preserves the prior policy", async 
     /PICM_SCAN_ABORTED/,
   );
   assert.deepEqual(JSON.parse(await fs.readFile(path, "utf8")).maintenance, monthly);
+  assert.deepEqual(await fs.readdir(join(cwd, ".picm")), ["config.json"]);
 });
 
-test("cycle reset cancellation during rename rolls back the committed policy", async (t) => {
+test("cycle reset cancellation during rename keeps the committed policy", async (t) => {
   const { cwd, gate } = await repository(t);
   const path = join(cwd, ".picm/config.json");
   await fs.mkdir(join(cwd, ".picm"));
   await fs.writeFile(path, `${JSON.stringify({ version: 1, maintenance: monthly }, null, 2)}\n`);
   const abort = new AbortController();
+  let renames = 0;
   const renamingFs = {
     ...fs,
     async rename(from, to) {
       await fs.rename(from, to);
+      renames += 1;
       if (from.includes(".tmp-")) abort.abort();
     },
   };
@@ -238,73 +241,157 @@ test("cycle reset cancellation during rename rolls back the committed policy", a
     now: () => new Date("2026-02-01T00:00:00.000Z"),
   });
 
-  await assert.rejects(
-    controller.resetExistingCycle({ signal: abort.signal }),
-    /PICM_SCAN_ABORTED/,
-  );
-  assert.deepEqual(JSON.parse(await fs.readFile(path, "utf8")).maintenance, monthly);
+  const result = await controller.resetExistingCycle({ signal: abort.signal });
+  assert.equal(abort.signal.aborted, true);
+  assert.equal(result.ok, true);
+  assert.equal(result.changed, true);
+  assert.equal(result.committed, true);
+  assert.equal(result.maintenance.lastCycleAt, "2026-02-01T00:00:00.000Z");
+  assert.deepEqual(JSON.parse(await fs.readFile(path, "utf8")).maintenance, result.maintenance);
+  assert.equal(renames, 1);
+  assert.deepEqual(await fs.readdir(join(cwd, ".picm")), ["config.json"]);
 });
 
-test("cycle reset cancellation during failed directory sync restores the prior policy", async (t) => {
+test("cancellation during first config publication keeps the new file", async (t) => {
   const { cwd, gate } = await repository(t);
-  const path = join(cwd, ".picm/config.json");
-  await fs.mkdir(join(cwd, ".picm"));
-  await fs.writeFile(path, `${JSON.stringify({ version: 1, maintenance: monthly }, null, 2)}\n`);
   const abort = new AbortController();
-  const abortingSyncFs = {
-    ...fs,
-    async open(openPath, flags, mode) {
-      const handle = await fs.open(openPath, flags, mode);
-      if (openPath === join(cwd, ".picm") && flags === "r") {
-        return {
-          async sync() {
-            abort.abort();
-            throw new Error("synthetic directory sync failure");
-          },
-          async close() { await handle.close(); },
-        };
-      }
-      return handle;
+  const store = createMaintenanceConfigStore({
+    cwd,
+    gate,
+    fs: {
+      ...fs,
+      async rename(from, to) {
+        await fs.rename(from, to);
+        abort.abort();
+      },
     },
-  };
-  const controller = createMaintenanceController({
-    store: createMaintenanceConfigStore({ cwd, gate, fs: abortingSyncFs }),
-    now: () => new Date("2026-02-01T00:00:00.000Z"),
   });
 
-  await assert.rejects(controller.resetExistingCycle({ signal: abort.signal }), /PICM_SCAN_ABORTED/);
-  assert.deepEqual(JSON.parse(await fs.readFile(path, "utf8")).maintenance, monthly);
+  const result = await store.compareAndUpdateMaintenance(undefined, monthly, { signal: abort.signal });
+  assert.equal(result.ok, true);
+  assert.equal(result.committed, true);
+  assert.deepEqual(JSON.parse(await fs.readFile(store.configPath, "utf8")).maintenance, monthly);
+  assert.deepEqual(await fs.readdir(join(cwd, ".picm")), ["config.json"]);
 });
 
-test("failed cancellation rollback preserves recoverable prior config", async (t) => {
+for (const failure of ["sync", "close"]) {
+  test(`cycle reset cancellation during directory ${failure} failure reports a committed policy`, async (t) => {
+    const { cwd, gate } = await repository(t);
+    const path = join(cwd, ".picm/config.json");
+    await fs.mkdir(join(cwd, ".picm"));
+    await fs.writeFile(path, `${JSON.stringify({ version: 1, maintenance: monthly }, null, 2)}\n`);
+    const abort = new AbortController();
+    const abortingFs = {
+      ...fs,
+      async open(openPath, flags, mode) {
+        const handle = await fs.open(openPath, flags, mode);
+        if (openPath === join(cwd, ".picm") && flags === "r") {
+          return {
+            async sync() {
+              if (failure === "sync") {
+                abort.abort();
+                throw new Error("synthetic directory sync failure");
+              }
+              await handle.sync();
+            },
+            async close() {
+              await handle.close();
+              if (failure === "close") {
+                abort.abort();
+                throw new Error("synthetic directory close failure");
+              }
+            },
+          };
+        }
+        return handle;
+      },
+    };
+    const controller = createMaintenanceController({
+      store: createMaintenanceConfigStore({ cwd, gate, fs: abortingFs }),
+      now: () => new Date("2026-02-01T00:00:00.000Z"),
+    });
+
+    const result = await controller.resetExistingCycle({ signal: abort.signal });
+    assert.equal(result.ok, true);
+    assert.equal(result.committed, true);
+    assert.equal(result.code, "CONFIG_COMMITTED_SYNC_FAILED");
+    assert.match(result.warning, new RegExp(`synthetic directory ${failure} failure`));
+    assert.equal(result.maintenance.lastCycleAt, "2026-02-01T00:00:00.000Z");
+    assert.deepEqual(JSON.parse(await fs.readFile(path, "utf8")).maintenance, result.maintenance);
+    assert.deepEqual(await fs.readdir(join(cwd, ".picm")), ["config.json"]);
+  });
+}
+
+test("late cancellation preserves an external replacement and leaves legacy rollback files alone", async (t) => {
   const { cwd, gate } = await repository(t);
   const path = join(cwd, ".picm/config.json");
+  const legacyPath = `${path}.rollback-legacy`;
+  const original = `${JSON.stringify({ version: 1, maintenance: monthly }, null, 2)}\n`;
+  const external = '{"version":7,"custom":"external replacement"}\n';
   await fs.mkdir(join(cwd, ".picm"));
-  await fs.writeFile(path, `${JSON.stringify({ version: 1, maintenance: monthly }, null, 2)}\n`);
+  await fs.writeFile(path, original);
+  await fs.writeFile(legacyPath, original);
   const abort = new AbortController();
-  const failingRollbackFs = {
+  let rollbackLinks = 0;
+  const replacingFs = {
     ...fs,
-    async rename(from, to) {
-      if (from.includes(".rollback-")) throw new Error("synthetic rollback rename failure");
-      await fs.rename(from, to);
-      if (from.includes(".tmp-")) abort.abort();
+    async link(from, to) {
+      if (to.includes(".rollback-")) rollbackLinks += 1;
+      return fs.link(from, to);
     },
-    async copyFile(from, to) {
-      if (from.includes(".rollback-")) throw new Error("synthetic rollback copy failure");
-      return fs.copyFile(from, to);
+    async rename(from, to) {
+      await fs.rename(from, to);
+      if (from.includes(".tmp-")) {
+        await fs.writeFile(`${path}.external`, external);
+        await fs.rename(`${path}.external`, path);
+        abort.abort();
+      }
     },
   };
   const controller = createMaintenanceController({
-    store: createMaintenanceConfigStore({ cwd, gate, fs: failingRollbackFs }),
+    store: createMaintenanceConfigStore({ cwd, gate, fs: replacingFs }),
     now: () => new Date("2026-02-01T00:00:00.000Z"),
   });
 
   const result = await controller.resetExistingCycle({ signal: abort.signal });
-  assert.equal(result.ok, false);
-  assert.equal(result.code, "CONFIG_ABORT_ROLLBACK_FAILED");
-  assert.match(result.message, /Recover .*config\.json from .*\.rollback-/);
-  const rollback = (await fs.readdir(join(cwd, ".picm"))).find((entry) => entry.includes(".rollback-"));
-  assert.deepEqual(JSON.parse(await fs.readFile(join(cwd, ".picm", rollback), "utf8")).maintenance, monthly);
+  assert.equal(result.ok, true);
+  assert.equal(result.committed, true);
+  assert.equal(await fs.readFile(path, "utf8"), external);
+  assert.equal(await fs.readFile(legacyPath, "utf8"), original);
+  assert.equal(rollbackLinks, 0);
+  assert.deepEqual((await fs.readdir(join(cwd, ".picm"))).sort(), ["config.json", "config.json.rollback-legacy"]);
+});
+
+test("lock cleanup failure after a cancelled commit does not undo the policy", async (t) => {
+  const { cwd, gate } = await repository(t);
+  const path = join(cwd, ".picm/config.json");
+  await fs.mkdir(join(cwd, ".picm"));
+  await fs.writeFile(path, `${JSON.stringify({ version: 1, maintenance: monthly })}\n`);
+  const abort = new AbortController();
+  const controller = createMaintenanceController({
+    store: createMaintenanceConfigStore({
+      cwd,
+      gate,
+      fs: {
+        ...fs,
+        async rename(from, to) {
+          await fs.rename(from, to);
+          if (from.includes(".tmp-")) abort.abort();
+        },
+        async unlink(target) {
+          if (target === `${path}.lock`) throw new Error("synthetic lock cleanup failure");
+          return fs.unlink(target);
+        },
+      },
+    }),
+    now: () => new Date("2026-02-01T00:00:00.000Z"),
+  });
+
+  const result = await controller.resetExistingCycle({ signal: abort.signal });
+  assert.equal(result.ok, true);
+  assert.equal(result.committed, true);
+  assert.deepEqual(JSON.parse(await fs.readFile(path, "utf8")).maintenance, result.maintenance);
+  assert.deepEqual((await fs.readdir(join(cwd, ".picm"))).sort(), ["config.json", "config.json.lock"]);
 });
 
 test("post-rename directory sync failure reports a committed change", async (t) => {

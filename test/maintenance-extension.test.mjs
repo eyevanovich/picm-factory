@@ -803,42 +803,121 @@ test("an already-aborted maintenance completion leaves the scheduled cycle and w
   assert.equal(status.details.maintenanceResetAttempted, false);
 });
 
-test("an abort during the config rename leaves maintenance completion incomplete", async (t) => {
+for (const failDirectorySync of [false, true]) {
+  test(`an abort after config publication completes maintenance${failDirectorySync ? " with a durability warning" : ""}`, async (t) => {
+    const cwd = fixture(t, oldDue("nudge"));
+    const abort = new AbortController();
+    let publications = 0;
+    const renamingFs = {
+      ...promiseFs,
+      async rename(from, to) {
+        await promiseFs.rename(from, to);
+        if (from.includes(".tmp-")) {
+          publications += 1;
+          abort.abort();
+        }
+      },
+      async open(path, flags, mode) {
+        const handle = await promiseFs.open(path, flags, mode);
+        if (failDirectorySync && path === join(cwd, ".picm") && flags === "r") {
+          return {
+            async sync() { throw new Error("synthetic directory sync failure"); },
+            async close() { await handle.close(); },
+          };
+        }
+        return handle;
+      },
+    };
+    const h = harness({
+      extensionOptions: {
+        createCoordinator: (options) => createRuntimeCoordinator({
+          ...options,
+          createConfigStore: (storeOptions) => createMaintenanceConfigStore({ ...storeOptions, fs: renamingFs }),
+        }),
+      },
+    });
+    const ctx = h.context(cwd, "tui", "rename-abort-maintenance-session");
+    h.widgets.set("picm-maintenance-reminder", { lines: ["PiCM maintenance is due"] });
+
+    await h.commands.get("picm-maintain").handler("strict", ctx);
+    await h.scanControl.execute("id", { action: "preflight" }, undefined, undefined, ctx);
+    await h.scanControl.execute("id", { action: "privacy", excludedPaths: [], persist: false }, undefined, undefined, ctx);
+    await h.scanControl.execute("id", { action: "begin" }, undefined, undefined, ctx);
+    await h.scanControl.execute("id", { action: "end" }, undefined, undefined, ctx);
+
+    const result = await h.scanControl.execute("id", { action: "complete" }, abort.signal, undefined, ctx);
+    assert.equal(abort.signal.aborted, true);
+    assert.equal(result.details.completed, true);
+    assert.equal(result.details.maintenanceResetAttempted, true);
+    assert.equal(result.details.maintenanceReset.ok, true);
+    assert.equal(result.details.maintenanceReset.committed, true);
+    assert.equal(h.widgets.has("picm-maintenance-reminder"), false);
+    assert.equal(h.entries.some((entry) => entry.data.status === "completed"), true);
+    assert.deepEqual(
+      JSON.parse(readFileSync(join(cwd, ".picm/config.json"), "utf8")).maintenance,
+      result.details.maintenanceReset.maintenance,
+    );
+    assert.notEqual(result.details.maintenanceReset.maintenance.lastCycleAt, "2020-01-01T00:00:00.000Z");
+    if (failDirectorySync) {
+      assert.equal(result.details.maintenanceReset.code, "CONFIG_COMMITTED_SYNC_FAILED");
+      assert.match(result.content[0].text, /synthetic directory sync failure/);
+    }
+
+    const repeated = await h.scanControl.execute("id", { action: "complete" }, undefined, undefined, ctx);
+    assert.equal(repeated.details.completed, true);
+    assert.equal(publications, 1);
+  });
+}
+
+test("a committed reset cannot complete a replacement workflow", async (t) => {
   const cwd = fixture(t, oldDue("nudge"));
   const abort = new AbortController();
-  const renamingFs = {
-    ...promiseFs,
-    async rename(from, to) {
-      await promiseFs.rename(from, to);
-      if (from.includes(".tmp-")) abort.abort();
-    },
-  };
+  let coordinator;
+  let ctx;
   const h = harness({
     extensionOptions: {
-      createCoordinator: (options) => createRuntimeCoordinator({
-        ...options,
-        createConfigStore: (storeOptions) => createMaintenanceConfigStore({ ...storeOptions, fs: renamingFs }),
-      }),
+      createCoordinator: (options) => {
+        coordinator = createRuntimeCoordinator({
+          ...options,
+          createConfigStore: (storeOptions) => createMaintenanceConfigStore({
+            ...storeOptions,
+            fs: {
+              ...promiseFs,
+              async rename(from, to) {
+                await promiseFs.rename(from, to);
+                if (from.includes(".tmp-")) {
+                  coordinator.authorizeWorkflow(ctx, "picm-adopt");
+                  abort.abort();
+                }
+              },
+            },
+          }),
+        });
+        return coordinator;
+      },
     },
   });
-  const ctx = h.context(cwd, "tui", "rename-abort-maintenance-session");
-  const before = readFileSync(join(cwd, ".picm/config.json"), "utf8");
-
+  ctx = h.context(cwd, "tui", "replaced-maintenance-session");
+  h.widgets.set("picm-maintenance-reminder", { lines: ["PiCM maintenance is due"] });
   await h.commands.get("picm-maintain").handler("strict", ctx);
-  await h.scanControl.execute("id", { action: "preflight" }, undefined, undefined, ctx);
-  await h.scanControl.execute("id", { action: "privacy", excludedPaths: [], persist: false }, undefined, undefined, ctx);
-  await h.scanControl.execute("id", { action: "begin" }, undefined, undefined, ctx);
-  await h.scanControl.execute("id", { action: "end" }, undefined, undefined, ctx);
+  for (const action of ["preflight", "privacy", "begin", "end"]) {
+    const params = action === "privacy" ? { action, excludedPaths: [] } : { action };
+    await h.scanControl.execute(action, params, undefined, undefined, ctx);
+  }
 
   await assert.rejects(
-    h.scanControl.execute("id", { action: "complete" }, abort.signal, undefined, ctx),
-    /PICM_SCAN_ABORTED/,
+    h.scanControl.execute("complete", { action: "complete" }, abort.signal, undefined, ctx),
+    /PICM_SCAN_STALE/,
   );
-  assert.equal(readFileSync(join(cwd, ".picm/config.json"), "utf8"), before);
-  await h.scanControl.execute("begin", { action: "begin" }, undefined, undefined, ctx);
+  assert.notEqual(
+    JSON.parse(readFileSync(join(cwd, ".picm/config.json"), "utf8")).maintenance.lastCycleAt,
+    "2020-01-01T00:00:00.000Z",
+  );
+  assert.equal(h.widgets.has("picm-maintenance-reminder"), true);
+  assert.equal(h.entries.some((entry) => entry.data.status === "completed"), false);
   const status = await h.scanControl.execute("status", { action: "status" }, undefined, undefined, ctx);
+  assert.equal(status.details.command, "picm-adopt");
   assert.equal(status.details.completed, false);
-  assert.equal(status.details.maintenanceResetAttempted, false);
 });
 
 test("Legacy automatic and nudge modes both present the reminder selector rather than auto-dispatching", async (t) => {

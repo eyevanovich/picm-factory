@@ -226,43 +226,6 @@ export function createMaintenanceConfigStore({
     let lockToken;
     let tempHandle;
     const tempPath = `${configPath}.tmp-${process.pid}-${randomId()}`;
-    const rollbackPath = `${configPath}.rollback-${process.pid}-${randomId()}`;
-    let rollbackReady = false;
-    let configCommitted = false;
-
-    async function rollbackAbortedCommit() {
-      try {
-        if (rollbackReady) {
-          try {
-            await fs.rename(rollbackPath, configPath);
-          } catch (renameError) {
-            try {
-              await fs.copyFile(rollbackPath, configPath);
-              await fs.unlink(rollbackPath);
-            } catch (copyError) {
-              const error = new Error(
-                `Cancelled config update could not restore the prior config (${messageOf(renameError)}; ${messageOf(copyError)}). Recover ${configPath} from ${rollbackPath}, then retry maintenance completion.`,
-              );
-              error.code = "CONFIG_ABORT_ROLLBACK_FAILED";
-              throw error;
-            }
-          }
-        } else {
-          await fs.unlink(configPath);
-        }
-        configCommitted = false;
-        rollbackReady = false;
-        throwIfAborted(signal);
-      } catch (error) {
-        if (error?.code === "PICM_SCAN_ABORTED" || error?.code === "CONFIG_ABORT_ROLLBACK_FAILED") throw error;
-        const recoveryError = new Error(
-          `Cancelled config update could not restore the prior config (${messageOf(error)}). Recover ${configPath} from ${rollbackPath}, then retry maintenance completion.`,
-        );
-        recoveryError.code = "CONFIG_ABORT_ROLLBACK_FAILED";
-        throw recoveryError;
-      }
-    }
-
     try {
       await fs.mkdir(directory, { recursive: true });
       const beforeLock = await validateDirectory();
@@ -328,13 +291,8 @@ export function createMaintenanceConfigStore({
         if (!beforeRenameAccess.ok) return beforeRenameAccess;
       }
       throwIfAborted(signal);
-      if (signal && current.exists) {
-        await fs.link(configPath, rollbackPath);
-        rollbackReady = true;
-      }
       await fs.rename(tempPath, configPath);
-      configCommitted = true;
-      if (signal?.aborted) await rollbackAbortedCommit();
+      // Publication commits the update; late cancellation cannot undo it.
 
       try {
         const directoryHandle = await fs.open(directory, "r");
@@ -343,16 +301,13 @@ export function createMaintenanceConfigStore({
         } finally {
           await directoryHandle.close();
         }
-        if (signal?.aborted) await rollbackAbortedCommit();
       } catch (error) {
-        if (error?.code === "PICM_SCAN_ABORTED") throw error;
-        if (signal?.aborted) await rollbackAbortedCommit();
         return {
           ok: true,
           changed: true,
           committed: true,
           code: "CONFIG_COMMITTED_SYNC_FAILED",
-          warning: `PiCM config was committed but directory sync failed: ${messageOf(error)}`,
+          warning: `PiCM config was committed but directory sync failed; crash durability is uncertain: ${messageOf(error)}`,
           exists: true,
           config: nextConfig,
           [field]: validValue,
@@ -361,14 +316,10 @@ export function createMaintenanceConfigStore({
       return { ok: true, changed: true, committed: true, exists: true, config: nextConfig, [field]: validValue };
     } catch (error) {
       if (error?.code === "PICM_SCAN_ABORTED") throw error;
-      if (error?.code === "CONFIG_ABORT_ROLLBACK_FAILED") return errorDecision(error.code, messageOf(error));
       return errorDecision("CONFIG_WRITE_FAILED", messageOf(error));
     } finally {
       try { await tempHandle?.close(); } catch {}
       try { await fs.unlink(tempPath); } catch {}
-      if (!configCommitted || !signal?.aborted) {
-        try { await fs.unlink(rollbackPath); } catch {}
-      }
       try { await lockHandle?.close(); } catch {}
       if (lockHandle) {
         try {
