@@ -6,7 +6,7 @@ status: accepted
 
 PiCM helps people maintain project-specific agent instructions and workflows; it is not a transactional database or a sandbox against hostile programs on the same machine. We choose guarded, individually committed changes with honest partial results and user-controlled recovery instead of automatic rollback and race-proof pathname guarantees. This removes failure-prone undo machinery without giving up privacy, project scope, or exact approval.
 
-**Implementation status:** partially implemented. `picm-x6c.16` implements settings publication as the commit point, without post-save cancellation rollback. Proposal-batch rollback and the other pending changes still follow existing runtime behavior. Beads epic `picm-x6c` tracks delivery; migrate each remaining slice with its guidance and tests, and do not bypass current tools based on this target decision.
+**Implementation status:** partially implemented. `picm-x6c.16` implements settings publication as the commit point, without post-save cancellation rollback. `picm-x6c.3` commits approved proposal operations individually, reports partial results, and does not automatically undo completed files or created parents. The other pending changes still follow existing runtime behavior. Beads epic `picm-x6c` tracks delivery; migrate each remaining slice with its guidance and tests, and do not bypass current tools based on this target decision.
 
 ## Why this decision
 

@@ -1316,6 +1316,40 @@ test("approved proposal batches create guarded parent directories", async () => 
   });
 });
 
+test("proposal results remain visible when the post-apply session audit fails", async () => {
+  await withFixture(async ({ root }) => {
+    const h = extensionHarness({
+      appendError(_customType, data) {
+        return data?.status === "applied" ? new Error("synthetic audit failure") : undefined;
+      },
+    });
+    const ctx = h.context(root, "proposal-audit-failure");
+    const control = h.tools.get("picm_scan_control");
+    const batch = h.tools.get("picm_proposal_batch");
+
+    await h.commands.get("picm-adopt").handler("coding", ctx);
+    await control.execute("preflight", { action: "preflight" }, undefined, undefined, ctx);
+    await control.execute("privacy", { action: "privacy", excludedPaths: [] }, undefined, undefined, ctx);
+    await control.execute("begin", { action: "begin" }, undefined, undefined, ctx);
+    const prepared = await batch.execute("prepare", {
+      action: "prepare",
+      operations: [{ type: "create", path: "audit-result.md", content: "written\n" }],
+    }, undefined, undefined, ctx);
+    await batch.execute("present", {
+      action: "present",
+      proposalId: prepared.details.proposalId,
+      digest: prepared.details.digest,
+    }, undefined, undefined, ctx);
+    await h.handlers.get("before_agent_start")({ prompt: "approve" }, ctx);
+
+    const result = await batch.execute("apply", { action: "apply", proposalId: prepared.details.proposalId }, undefined, undefined, ctx);
+    assert.equal(result.details.ok, true);
+    assert.equal(result.details.auditWarning, "The session audit could not be recorded; the reported file effects were not undone.");
+    assert.deepEqual(result.details.results, [{ type: "create", path: "audit-result.md", status: "completed" }]);
+    assert.equal(readFileSync(join(root, "audit-result.md"), "utf8"), "written\n");
+  });
+});
+
 test("approved proposal batches create and move beneath existing parents", async () => {
   await withFixture(async ({ root, packageRoot }) => {
     const gate = createGitReadGate({ cwd: root, packageRoot });
@@ -1343,20 +1377,18 @@ test("approved proposal batches create and move beneath existing parents", async
   });
 });
 
-test("proposal rollback preserves created parents when portable conditional removal is unavailable", async () => {
+test("proposal cancellation keeps issued writes and created parents", async () => {
   await withFixture(async ({ root, packageRoot }) => {
     mkdirSync(join(root, "existing-empty"));
     write(join(root, "existing-content", ".keep"), "keep\n");
     const baseGate = createGitReadGate({ cwd: root, packageRoot });
     const abort = new AbortController();
     let writes = 0;
-    let replacedDirectory = false;
     const gate = {
       checkPath: (...args) => baseGate.checkPath(...args),
       bindPath(plan) {
         const binding = baseGate.bindPath(plan);
         const writeFile = binding.operations.writeFile;
-        const unlink = binding.operations.unlink;
         binding.operations.writeFile = async (...args) => {
           const result = await writeFile(...args);
           writes += 1;
@@ -1366,16 +1398,8 @@ test("proposal rollback preserves created parents when portable conditional remo
           }
           return result;
         };
-        binding.operations.unlink = async (path) => {
-          const result = await unlink(path);
-          if (!replacedDirectory && path.endsWith(`${sep}batch-owned${sep}deep${sep}first.md`)) {
-            renameSync(join(root, "batch-owned", "deep"), join(root, "batch-owned", "displaced"));
-            mkdirSync(join(root, "batch-owned", "deep"));
-            replacedDirectory = true;
-          }
-          return result;
-        };
-        binding.operations.rmdir = () => assert.fail("rollback must not remove parent directories by pathname");
+        binding.operations.unlink = () => assert.fail("partial batches must not undo completed files");
+        binding.operations.rmdir = () => assert.fail("partial batches must not remove parent directories");
         return binding;
       },
     };
@@ -1387,19 +1411,250 @@ test("proposal rollback preserves created parents when portable conditional remo
     ];
     const batch = await prepareProposalBatch({ gate, operations });
 
-    await assert.rejects(
-      applyProposalBatch(batch, { gate, signal: abort.signal }),
-      (error) => error.code === "PICM_PROPOSAL_ABORTED",
-    );
+    const result = await applyProposalBatch(batch, { gate, signal: abort.signal });
+    assert.equal(result.ok, false);
+    assert.equal(result.code, "PICM_PROPOSAL_ABORTED");
+    assert.deepEqual(result.results, [
+      { type: "create", path: "batch-owned/deep/first.md", status: "completed", createdParents: ["batch-owned", "batch-owned/deep"] },
+      { type: "create", path: "batch-owned/deep/second.md", status: "completed" },
+      { type: "create", path: "existing-empty/deep/third.md", status: "completed", createdParents: ["existing-empty/deep"] },
+      { type: "create", path: "existing-content/deep/fourth.md", status: "completed", createdParents: ["existing-content/deep"] },
+    ]);
     assert.equal(writes, 4);
-    assert.equal(existsSync(join(root, "batch-owned")), true);
-    assert.equal(existsSync(join(root, "batch-owned", "deep")), true);
-    assert.equal(existsSync(join(root, "batch-owned", "displaced")), true);
-    assert.equal(existsSync(join(root, "existing-empty")), true);
-    assert.equal(existsSync(join(root, "existing-empty", "deep")), true);
+    assert.equal(readFileSync(join(root, "batch-owned", "deep", "first.md"), "utf8"), "first\n");
+    assert.equal(readFileSync(join(root, "batch-owned", "deep", "second.md"), "utf8"), "second\n");
+    assert.equal(readFileSync(join(root, "existing-empty", "deep", "third.md"), "utf8"), "third\n");
+    assert.equal(readFileSync(join(root, "existing-content", "deep", "fourth.md"), "utf8"), "fourth\n");
     assert.equal(readFileSync(join(root, "existing-content", ".keep"), "utf8"), "keep\n");
-    assert.equal(existsSync(join(root, "existing-content", "deep")), true);
     assert.equal(readFileSync(join(root, "existing-content", "deep", "external.md"), "utf8"), "external\n");
+    await baseGate.dispose();
+  });
+});
+
+test("proposal cancellation reports created parents before file publication", async () => {
+  await withFixture(async ({ root, packageRoot }) => {
+    const baseGate = createGitReadGate({ cwd: root, packageRoot });
+    const abort = new AbortController();
+    let created = 0;
+    const gate = {
+      checkPath: (...args) => baseGate.checkPath(...args),
+      bindPath(plan) {
+        const binding = baseGate.bindPath(plan);
+        const mkdir = binding.operations.mkdir;
+        binding.operations.mkdir = async (...args) => {
+          const result = await mkdir(...args);
+          created += 1;
+          abort.abort();
+          return result;
+        };
+        binding.operations.writeFile = () => assert.fail("cancellation must stop before file publication");
+        return binding;
+      },
+    };
+    const batch = await prepareProposalBatch({
+      gate,
+      operations: [{ type: "create", path: "retained/nested/file.md", content: "not written\n" }],
+    });
+
+    const result = await applyProposalBatch(batch, { gate, signal: abort.signal });
+    assert.equal(result.ok, false);
+    assert.equal(result.code, "PICM_PROPOSAL_ABORTED");
+    assert.deepEqual(result.results, [
+      { type: "create", path: "retained/nested/file.md", status: "failed", createdParents: ["retained"] },
+    ]);
+    assert.equal(created, 1);
+    assert.equal(existsSync(join(root, "retained")), true);
+    assert.equal(existsSync(join(root, "retained", "nested")), false);
+    assert.equal(existsSync(join(root, "retained", "nested", "file.md")), false);
+    await baseGate.dispose();
+  });
+});
+
+test("proposal failures preserve completed create, modify, delete, and move effects", async () => {
+  const scenarios = [
+    {
+      name: "create",
+      operation: { type: "create", path: "created.md", content: "created\n" },
+      trigger: "write",
+      path: "created.md",
+      externalState(root) { write(join(root, "created.md"), "external create\n"); },
+      assertState(root) { assert.equal(readFileSync(join(root, "created.md"), "utf8"), "external create\n"); },
+    },
+    {
+      name: "modify",
+      operation: { type: "modify", path: "safe.txt", expectedContent: "safe\n", content: "modified\n" },
+      trigger: "write",
+      path: "safe.txt",
+      externalState(root) { write(join(root, "safe.txt"), "external modify\n"); },
+      assertState(root) { assert.equal(readFileSync(join(root, "safe.txt"), "utf8"), "external modify\n"); },
+    },
+    {
+      name: "delete",
+      operation: { type: "delete", path: "safe.txt", expectedContent: "safe\n" },
+      trigger: "unlink",
+      path: "safe.txt",
+      externalState(root) { write(join(root, "safe.txt"), "external delete\n"); },
+      assertState(root) { assert.equal(readFileSync(join(root, "safe.txt"), "utf8"), "external delete\n"); },
+    },
+    {
+      name: "move",
+      operation: {
+        type: "move",
+        from: "safe.txt",
+        path: "moved.txt",
+        expectedContent: "safe\n",
+        content: "moved\n",
+      },
+      trigger: "unlink",
+      path: "safe.txt",
+      externalState(root) {
+        write(join(root, "safe.txt"), "external move source\n");
+        write(join(root, "moved.txt"), "external move destination\n");
+      },
+      assertState(root) {
+        assert.equal(readFileSync(join(root, "safe.txt"), "utf8"), "external move source\n");
+        assert.equal(readFileSync(join(root, "moved.txt"), "utf8"), "external move destination\n");
+      },
+    },
+  ];
+
+  for (const scenario of scenarios) {
+    await withFixture(async ({ root, packageRoot }) => {
+      const baseGate = createGitReadGate({ cwd: root, packageRoot });
+      let interleaved = false;
+      const gate = {
+        checkPath: (...args) => baseGate.checkPath(...args),
+        bindPath(plan) {
+          const binding = baseGate.bindPath(plan);
+          const trigger = () => {
+            if (interleaved) return;
+            interleaved = true;
+            scenario.externalState(root);
+            write(join(root, "docs", "guide.md"), "external drift\n");
+          };
+          if (scenario.trigger === "write") {
+            const writeFile = binding.operations.writeFile;
+            binding.operations.writeFile = async (path, ...args) => {
+              const result = await writeFile(path, ...args);
+              if (path === join(root, scenario.path)) trigger();
+              return result;
+            };
+          } else {
+            const unlink = binding.operations.unlink;
+            binding.operations.unlink = async (path) => {
+              const result = await unlink(path);
+              if (path === join(root, scenario.path)) trigger();
+              return result;
+            };
+          }
+          return binding;
+        },
+      };
+      const batch = await prepareProposalBatch({
+        gate,
+        operations: [
+          scenario.operation,
+          { type: "modify", path: "docs/guide.md", expectedContent: "guide\n", content: "updated\n" },
+          { type: "create", path: "not-attempted.md", content: "not attempted\n" },
+        ],
+      });
+
+      const result = await applyProposalBatch(batch, { gate });
+      assert.equal(result.ok, false, scenario.name);
+      assert.equal(result.code, "PICM_PROPOSAL_STALE", scenario.name);
+      assert.deepEqual(result.results, [
+        { ...batch.auditOperations[0], status: "completed" },
+        { type: "modify", path: "docs/guide.md", status: "failed" },
+        { type: "create", path: "not-attempted.md", status: "unattempted" },
+      ], scenario.name);
+      assert.equal(interleaved, true, scenario.name);
+      scenario.assertState(root);
+      assert.equal(readFileSync(join(root, "docs", "guide.md"), "utf8"), "external drift\n");
+      assert.equal(existsSync(join(root, "not-attempted.md")), false);
+      await baseGate.dispose();
+    });
+  }
+});
+
+test("proposal results retain a published move destination and uncertain failed writes", async () => {
+  await withFixture(async ({ root, packageRoot }) => {
+    const baseGate = createGitReadGate({ cwd: root, packageRoot });
+    const gate = {
+      checkPath: (...args) => baseGate.checkPath(...args),
+      bindPath(plan) {
+        const binding = baseGate.bindPath(plan);
+        const writeFile = binding.operations.writeFile;
+        binding.operations.writeFile = async (path, ...args) => {
+          const result = await writeFile(path, ...args);
+          if (path === join(root, "moved.txt")) write(join(root, "safe.txt"), "external source\n");
+          return result;
+        };
+        return binding;
+      },
+    };
+    const batch = await prepareProposalBatch({
+      gate,
+      operations: [
+        {
+          type: "move",
+          from: "safe.txt",
+          path: "moved.txt",
+          expectedContent: "safe\n",
+          content: "moved\n",
+        },
+        { type: "create", path: "not-attempted.md", content: "not attempted\n" },
+      ],
+    });
+
+    const result = await applyProposalBatch(batch, { gate });
+    assert.equal(result.ok, false);
+    assert.equal(result.code, "PICM_PROPOSAL_STALE");
+    assert.deepEqual(result.results, [
+      { type: "move", from: "safe.txt", path: "moved.txt", status: "failed", destinationPublished: true },
+      { type: "create", path: "not-attempted.md", status: "unattempted" },
+    ]);
+    assert.equal(readFileSync(join(root, "moved.txt"), "utf8"), "moved\n");
+    assert.equal(readFileSync(join(root, "safe.txt"), "utf8"), "external source\n");
+    assert.equal(existsSync(join(root, "not-attempted.md")), false);
+    await baseGate.dispose();
+  });
+
+  await withFixture(async ({ root, packageRoot }) => {
+    const baseGate = createGitReadGate({ cwd: root, packageRoot });
+    const gate = {
+      checkPath: (...args) => baseGate.checkPath(...args),
+      bindPath(plan) {
+        const binding = baseGate.bindPath(plan);
+        const writeFile = binding.operations.writeFile;
+        binding.operations.writeFile = async (path, ...args) => {
+          if (path !== join(root, "docs", "guide.md")) return writeFile(path, ...args);
+          await writeFile(path, "partial write\n");
+          throw Object.assign(new Error("synthetic write failure"), { code: "EIO" });
+        };
+        return binding;
+      },
+    };
+    const batch = await prepareProposalBatch({
+      gate,
+      operations: [
+        { type: "modify", path: "safe.txt", expectedContent: "safe\n", content: "first completed\n" },
+        { type: "modify", path: "docs/guide.md", expectedContent: "guide\n", content: "second uncertain\n" },
+        { type: "create", path: "not-attempted.md", content: "not attempted\n" },
+      ],
+    });
+
+    const result = await applyProposalBatch(batch, { gate });
+    assert.equal(result.ok, false);
+    assert.equal(result.code, "PICM_PROPOSAL_IO_FAILED");
+    assert.equal(result.message, "A filesystem operation failed; inspect the affected approved paths before proposing a repair.");
+    assert.deepEqual(result.results, [
+      { type: "modify", path: "safe.txt", status: "completed" },
+      { type: "modify", path: "docs/guide.md", status: "uncertain" },
+      { type: "create", path: "not-attempted.md", status: "unattempted" },
+    ]);
+    assert.equal(readFileSync(join(root, "safe.txt"), "utf8"), "first completed\n");
+    assert.equal(readFileSync(join(root, "docs", "guide.md"), "utf8"), "partial write\n");
+    assert.equal(existsSync(join(root, "not-attempted.md")), false);
     await baseGate.dispose();
   });
 });
@@ -1420,25 +1675,29 @@ test("proposal parent creation is denied before mkdir for symlinks and exclusion
       auditOperations: [{ type: "create", path }],
     });
 
-    await assert.rejects(
-      applyProposalBatch(batch("linked-parent/nested/file.md"), { gate }),
-      (error) => error.code === "PICM_PROPOSAL_PATH_BLOCKED",
-    );
+    const symlinkResult = await applyProposalBatch(batch("linked-parent/nested/file.md"), { gate });
+    assert.equal(symlinkResult.ok, false);
+    assert.equal(symlinkResult.code, "PICM_PROPOSAL_PATH_BLOCKED");
+    assert.deepEqual(symlinkResult.results, [
+      { type: "create", path: "linked-parent/nested/file.md", status: "failed" },
+    ]);
     assert.equal(existsSync(join(root, "private-target", "nested")), false);
 
-    await assert.rejects(
-      applyProposalBatch(batch("excluded-parent/nested/file.md"), {
-        gate,
-        excludedPaths: ["excluded-parent"],
-      }),
-      (error) => error.code === "PICM_PROPOSAL_PATH_BLOCKED",
-    );
+    const excludedResult = await applyProposalBatch(batch("excluded-parent/nested/file.md"), {
+      gate,
+      excludedPaths: ["excluded-parent"],
+    });
+    assert.equal(excludedResult.ok, false);
+    assert.equal(excludedResult.code, "PICM_PROPOSAL_PATH_BLOCKED");
+    assert.deepEqual(excludedResult.results, [
+      { type: "create", path: "excluded-parent/nested/file.md", status: "failed" },
+    ]);
     assert.equal(existsSync(join(root, "excluded-parent")), false);
     await gate.dispose();
   });
 });
 
-test("approved adoption and maintenance batches apply mixed operations atomically without Bash", async () => {
+test("approved adoption and maintenance batches apply exact mixed operations without Bash", async () => {
   for (const [command, args] of [["picm-adopt", "coding"], ["picm-maintain", "strict"]]) {
     await withMixedProposalFixture(async ({ root }) => {
       const entries = [];
@@ -1549,22 +1808,37 @@ test("approved adoption and maintenance batches apply mixed operations atomicall
           return abortChecks >= 4;
         },
       };
-      await assert.rejects(
-        apply(aborted.details.proposalId, abortAfterFirstMutation),
-        /PICM_PROPOSAL_ABORTED/,
-      );
+      const abortedResult = await apply(aborted.details.proposalId, abortAfterFirstMutation);
+      assert.equal(abortedResult.details.ok, false);
+      assert.equal(abortedResult.details.code, "PICM_PROPOSAL_ABORTED");
+      assert.deepEqual(abortedResult.details.results, operations().map(({ type, path, from }) => ({
+        type,
+        ...(from ? { from } : {}),
+        path,
+        status: "unattempted",
+      })));
       assert.equal(readFileSync(join(root, "AGENTS.md"), "utf8"), originalAgents);
       assert.equal(existsSync(join(root, "reference/approval-notes.md")), false);
-      assert.equal(entries.some((entry) => entry.customType === "picm-proposal-batch" && entry.data.status === "aborted"), true);
+      const replay = await apply(aborted.details.proposalId);
+      assert.equal(replay.details.ok, false);
+      assert.equal(replay.details.code, "PICM_PROPOSAL_NOT_APPROVED");
+      const abortedAudit = [...entries].reverse().find((entry) => entry.customType === "picm-proposal-batch" && entry.data.status === "aborted");
+      assert.ok(abortedAudit);
+      assert.deepEqual(abortedAudit.data.results, abortedResult.details.results);
 
       const stale = await prepare();
       await present(stale);
       await h.handlers.get("before_agent_start")({ prompt: "accept" }, ctx);
       writeFileSync(join(root, "reference/obsolete.md"), "# Drifted note\n");
-      await assert.rejects(
-        apply(stale.details.proposalId),
-        /PICM_PROPOSAL_STALE/,
-      );
+      const staleResult = await apply(stale.details.proposalId);
+      assert.equal(staleResult.details.ok, false);
+      assert.equal(staleResult.details.code, "PICM_PROPOSAL_STALE");
+      assert.deepEqual(staleResult.details.results, [
+        { type: "modify", path: "AGENTS.md", status: "unattempted" },
+        { type: "create", path: "reference/approval-notes.md", status: "unattempted" },
+        { type: "delete", path: "reference/obsolete.md", status: "failed" },
+        { type: "move", from: "routing/legacy-route.md", path: "routing/current-route.md", status: "unattempted" },
+      ]);
       assert.equal(readFileSync(join(root, "AGENTS.md"), "utf8"), originalAgents);
       assert.equal(existsSync(join(root, "reference/approval-notes.md")), false);
       assert.equal(readFileSync(join(root, "routing/legacy-route.md"), "utf8"), "# Legacy routing\n\nUse the existing specialist folders for task routing.\n");
@@ -1590,7 +1864,10 @@ test("approved adoption and maintenance batches apply mixed operations atomicall
         { type: "delete", path: "reference/obsolete.md" },
         { type: "move", from: "routing/legacy-route.md", path: "routing/current-route.md" },
       ]);
-      assert.equal(entries.some((entry) => entry.customType === "picm-proposal-batch" && entry.data.status === "applied"), true);
+      assert.deepEqual(applied.details.results, applied.details.operations.map((operation) => ({ ...operation, status: "completed" })));
+      const appliedAudit = [...entries].reverse().find((entry) => entry.customType === "picm-proposal-batch" && entry.data.status === "applied");
+      assert.ok(appliedAudit);
+      assert.deepEqual(appliedAudit.data.results, applied.details.results);
 
       assert.equal((await h.handlers.get("tool_call")({ toolName: "read", input: { path: "AGENTS.md" } }, ctx)).block, true);
       assert.equal((await h.handlers.get("tool_call")({ toolName: "picm_proposal_batch", input: { action: "apply" } }, ctx)).block, true);
@@ -1685,14 +1962,11 @@ test("approved batches reauthorize every path before mutation against current ex
       };
 
       const assertBlocked = async (proposalId) => {
-        await assert.rejects(
-          batch.execute("apply", { action: "apply", proposalId }, undefined, undefined, ctx),
-          (error) => {
-            assert.equal(error.code, "PICM_PROPOSAL_PATH_BLOCKED");
-            assert.match(error.message, /PICM_PROPOSAL_PATH_BLOCKED/);
-            return true;
-          },
-        );
+        const result = await batch.execute("apply", { action: "apply", proposalId }, undefined, undefined, ctx);
+        assert.equal(result.details.ok, false);
+        assert.equal(result.details.code, "PICM_PROPOSAL_PATH_BLOCKED");
+        assert.equal(result.details.results.some((operation) => operation.status === "failed"), true);
+        assert.equal(result.details.results.every((operation) => operation.status === "unattempted" || operation.status === "failed"), true);
       };
 
       const rootCreateProposal = await prepareApproved([
@@ -1811,10 +2085,10 @@ test("proposal reauthorization preserves cancellation precedence", async () => {
     auditOperations: [{ type: "create", path: "blocked.md" }],
   };
 
-  await assert.rejects(
-    applyProposalBatch(batch, { gate, signal: abort.signal }),
-    (error) => error.code === "PICM_PROPOSAL_ABORTED",
-  );
+  const result = await applyProposalBatch(batch, { gate, signal: abort.signal });
+  assert.equal(result.ok, false);
+  assert.equal(result.code, "PICM_PROPOSAL_ABORTED");
+  assert.deepEqual(result.results, [{ type: "create", path: "blocked.md", status: "unattempted" }]);
 });
 
 test("extension gate is inactive outside explicit PiCM scan phases", async () => {

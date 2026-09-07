@@ -789,6 +789,7 @@ export function createRuntimeCoordinator({
     }
 
     current.status = "applying";
+    let result;
     try {
       throwIfAborted(execution.signal, "PICM_PROPOSAL_ABORTED");
       const persisted = await runtimeFor(ctx).store.readPrivacyForReview();
@@ -799,22 +800,51 @@ export function createRuntimeCoordinator({
         scan.excludedPaths,
         persisted.privacy?.excludedPaths ?? [],
       );
-      const result = await applyProposalBatch(current.batch, {
+      result = await applyProposalBatch(current.batch, {
         gate: runtimeFor(ctx).gate,
         excludedPaths: applyExcludedPaths,
         signal: execution.signal,
       });
+      if (!result.ok) {
+        current.status = result.code === "PICM_PROPOSAL_ABORTED" ? "aborted" : "failed";
+        return {
+          ...result,
+          action: "apply",
+          audit: proposalAudit(current.batch, current.status, {
+            command: workflow.command,
+            code: result.code,
+            results: result.results,
+          }),
+        };
+      }
       requireCurrentWorkflow(sessionId, workflow);
       current.status = "applied";
       return {
         ...result,
         action: "apply",
-        audit: proposalAudit(current.batch, "applied", { command: workflow.command }),
+        audit: proposalAudit(current.batch, "applied", {
+          command: workflow.command,
+          results: result.results,
+        }),
       };
     } catch (error) {
       const failure = error instanceof Error ? error : new Error(String(error));
       const aborted = failure.code === "PICM_PROPOSAL_ABORTED";
       current.status = aborted ? "aborted" : "failed";
+      if (result?.ok) {
+        return {
+          ...result,
+          ok: false,
+          code: typeof failure.code === "string" ? failure.code : "PICM_PROPOSAL_APPLY_FAILED",
+          message: failure.message,
+          action: "apply",
+          audit: proposalAudit(current.batch, current.status, {
+            command: workflow.command,
+            ...(typeof failure.code === "string" ? { code: failure.code } : {}),
+            results: result.results,
+          }),
+        };
+      }
       failure.picmProposalAudit = proposalAudit(current.batch, current.status, {
         command: workflow.command,
         ...(typeof failure.code === "string" ? { code: failure.code } : {}),

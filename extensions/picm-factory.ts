@@ -91,7 +91,7 @@ const maintenanceOptimizationIntake =
   "At maintenance intake, ask whether to include agent-document optimization in this pass. Default to No. No runs the standard maintenance workflow unchanged. If Yes, load and follow `references/optimization-guide.md` as the single source for the documentation-only optimization scope, preservation ledger, proposal selection, no-worthwhile-change result, privacy boundaries, and shared summary/selective-exact preview; do not duplicate or weaken that flow.";
 
 const proposalBatchGuidance =
-  "For /picm-adopt and /picm-maintain, prepare every exact create, modify, delete, and linked move set with `picm_proposal_batch` while a protected scan phase is active. Call `present` with the returned proposal ID and digest so the runtime generates and delivers the complete exact operation summary, then wait. The runtime accepts only an unambiguous direct approval of the presented current proposal (`accept`, `approve`, `accept and write`, or `proceed`) before `apply`; a vague response, cancellation, or requested revision is no-write. Never use Bash for file operations. Use `cancel` after a cancellation, or `prepare` a replacement batch after a revision. The tool records a session audit for each prepared, presented, approval-observed, cancelled, and applied batch.";
+  "For /picm-adopt and /picm-maintain, prepare every exact create, modify, delete, and linked move set with `picm_proposal_batch` while a protected scan phase is active. Call `present` with the returned proposal ID and digest so the runtime generates and delivers the complete exact operation summary, then wait. The runtime accepts only an unambiguous direct approval of the presented current proposal (`accept`, `approve`, `accept and write`, or `proceed`) before `apply`; a vague response, cancellation, or requested revision is no-write. Before mutation, the tool rechecks all approved paths and expected contents. After it begins, failure or cancellation stops later operations without undoing completed files or created parents; use its per-operation result to report completed, unattempted, failed, or uncertain effects, including a published move destination. Never use Bash for file operations. Use `cancel` after a cancellation, or `prepare` a replacement batch after a revision. The tool records a session audit for each prepared, presented, approval-observed, cancelled, failed, and applied batch; if that record cannot be stored after apply, report its audit warning without hiding file effects.";
 
 function buildMaintenanceContinuationPrompt(depth: "strict" | "balanced") {
   return `Initial maintenance continuation — successful adoption selected an initial maintenance pass. The adoption privacy review and its confirmed exclusions remain active for this conversation. Do not repeat preflight or the privacy question. Begin a new protected scan phase with \`picm_scan_control\` action \`begin\`, then run profile-appropriate maintenance using protected inventory and guarded reads.\n\nMode: maintain\nInitial maintenance run depth: ${depth}. Apply this depth to this run only. Do not mutate \`capabilities.codebaseMap.maintenancePreset\`.\n\n${maintenanceOptimizationIntake}\n\nBefore applying a proposal batch, follow the skill's shipped summary-preview and optional-diff-review protocol. Present the complete current summary, including non-blocking review suggestions for material or uncertain changes, then treat an unambiguous direct approval such as accept, approve, accept and write, or proceed as approval to write only that exact proposal. Do not require a separate summary-acceptance step or review menu. Keep exact review available on demand for view all, review files, and show diff for a path. When the user requests a draft adjustment, revise the current proposal conversationally, preserve applicable unchanged-path review state, and invite direct approval or diff inspection of the revision.\n\n${proposalBatchGuidance}\n\nAfter the final maintenance scan \`end\`, call \`picm_scan_control\` with \`action: "complete"\` before reporting, saving session state, or using any other agent tool.`;
@@ -364,7 +364,7 @@ export default function picmFactoryExtension(
     promptGuidelines: [
       "Use only during an active protected /picm-adopt or /picm-maintain scan. Prepare the exact operations, then call present with its proposalId and digest so the runtime generates and delivers the exact operation summary. Wait for an unambiguous direct approval before apply.",
       "The runtime accepts accept, approve, accept and write, or proceed as direct approval. Vague assent, cancellation, or a requested revision remains no-write. Use cancel for cancellation or prepare a replacement batch after revision.",
-      "The batch rechecks each protected path and expected source content, applies only the reviewed operations, rolls back on a mutation failure, and records session audit entries. Never use Bash for PiCM file operations.",
+      "The batch rechecks every protected path and expected content before mutation, then rechecks each operation immediately before execution. A failure or cancellation stops later operations without undoing completed files or created parents; report its completed, unattempted, failed, or uncertain per-operation results, including any published move destination. It records session audit entries; if a post-apply audit cannot be stored, report its warning without hiding file effects. Never use Bash for PiCM file operations.",
     ],
     parameters: Type.Object({
       action: StringEnum(["prepare", "present", "apply", "cancel"] as const),
@@ -381,7 +381,14 @@ export default function picmFactoryExtension(
     async execute(toolCallId, params, signal, _onUpdate, ctx) {
       try {
         const result = await coordinator.proposalBatch(params, ctx, { toolCallId, signal });
-        if (result.audit) recordProposalAudit(result.audit, ctx);
+        if (result.audit) {
+          try {
+            recordProposalAudit(result.audit, ctx);
+          } catch {
+            if (params.action !== "apply" || !Array.isArray(result.results)) throw new Error("PICM_PROPOSAL_AUDIT_FAILED: the session audit could not be recorded");
+            result.auditWarning = "The session audit could not be recorded; the reported file effects were not undone.";
+          }
+        }
         return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }], details: result };
       } catch (error: any) {
         if (error?.picmProposalAudit) recordProposalAudit(error.picmProposalAudit, ctx);

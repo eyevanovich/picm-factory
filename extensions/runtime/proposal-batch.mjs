@@ -145,60 +145,66 @@ async function requireMissing(binding, path) {
   throw proposalError("PICM_PROPOSAL_STALE", `${path} already exists`);
 }
 
-async function removeIfPresent(binding) {
-  try {
-    await binding.operations.unlink(binding.absolutePath);
-  } catch (error) {
-    if (error?.code !== "ENOENT") throw error;
-  }
-}
-
 function destinationParents(operation) {
   const parents = [];
   let relativeParent = dirname(operation.path);
   let absoluteParent = dirname(operation.destination.absolutePath);
   while (relativeParent !== ".") {
-    parents.push({ absolutePath: absoluteParent });
+    parents.push({ path: relativeParent, absolutePath: absoluteParent });
     relativeParent = dirname(relativeParent);
     absoluteParent = dirname(absoluteParent);
   }
   return parents.reverse();
 }
 
-async function createDestinationParents(operation) {
+async function createDestinationParents(operation, signal) {
   for (const parent of destinationParents(operation)) {
+    throwIfAborted(signal);
     try {
       await operation.destination.operations.mkdir(parent.absolutePath, { recursive: false });
     } catch (error) {
-      if (error?.code !== "EEXIST") throw error;
+      if (error?.code === "EEXIST") continue;
+      operation.result.status = "uncertain";
+      throw error;
     }
+    operation.result.createdParents ??= [];
+    operation.result.createdParents.push(parent.path);
+    operation.result.status = "failed";
+    throwIfAborted(signal);
   }
 }
 
-async function rollback(attempted) {
-  const failures = [];
-  for (const operation of [...attempted].reverse()) {
-    if (!operation.mutationStarted) continue;
-    try {
-      if (operation.type === "create") {
-        await removeIfPresent(operation.destination);
-      } else if (operation.type === "modify") {
-        await operation.source.operations.writeFile(operation.source.absolutePath, operation.originalContent);
-      } else if (operation.type === "delete") {
-        if (operation.sourceRemoved) {
-          await operation.source.operations.writeFile(operation.source.absolutePath, operation.originalContent);
-        }
-      } else {
-        if (operation.destinationWritten) await removeIfPresent(operation.destination);
-        if (operation.sourceRemoved) {
-          await operation.source.operations.writeFile(operation.source.absolutePath, operation.originalContent);
-        }
-      }
-    } catch (error) {
-      failures.push(error instanceof Error ? error.message : String(error));
-    }
+function initialResults(batch) {
+  return batch.auditOperations.map((operation) => ({ ...operation, status: "unattempted" }));
+}
+
+function markFailedWithoutMutation(operation, error) {
+  if (error?.code !== "PICM_PROPOSAL_ABORTED" && operation.result.status === "unattempted") {
+    operation.result.status = "failed";
   }
-  return failures;
+}
+
+function failureDetails(error) {
+  if (typeof error?.code === "string" && error.code.startsWith("PICM_PROPOSAL_")) {
+    return { code: error.code, message: error.message };
+  }
+  return {
+    code: "PICM_PROPOSAL_IO_FAILED",
+    message: "A filesystem operation failed; inspect the affected approved paths before proposing a repair.",
+  };
+}
+
+function failedProposalResult(batch, error, results) {
+  const { code, message } = failureDetails(error);
+  return {
+    ok: false,
+    code,
+    message,
+    proposalId: batch.id,
+    digest: batch.digest,
+    operations: batch.auditOperations,
+    results,
+  };
 }
 
 export async function prepareProposalBatch({ gate, excludedPaths = [], operations }) {
@@ -234,108 +240,118 @@ export async function prepareProposalBatch({ gate, excludedPaths = [], operation
   };
 }
 
-async function rebindProposalOperations(batch, gate, excludedPaths, signal) {
+async function rebindProposalOperations(batch, gate, excludedPaths, signal, results) {
   const reboundOperations = [];
-  for (const operation of batch.operations) {
-    throwIfAborted(signal);
-    if (operation.type === "create") {
-      const destination = await requireAllowedBinding(gate, "write", operation.path, excludedPaths);
+  for (const [index, operation] of batch.operations.entries()) {
+    const rebound = { ...operation, result: results[index] };
+    try {
       throwIfAborted(signal);
-      reboundOperations.push({ ...operation, destination });
-      continue;
-    }
+      if (operation.type === "create") {
+        rebound.destination = await requireAllowedBinding(gate, "write", operation.path, excludedPaths);
+        throwIfAborted(signal);
+        reboundOperations.push(rebound);
+        continue;
+      }
 
-    const sourcePath = operation.type === "move" ? operation.from : operation.path;
-    const source = await requireAllowedBinding(gate, "edit", sourcePath, excludedPaths);
-    throwIfAborted(signal);
-    if (operation.type === "move") {
-      const destination = await requireAllowedBinding(gate, "write", operation.path, excludedPaths);
+      const sourcePath = operation.type === "move" ? operation.from : operation.path;
+      rebound.source = await requireAllowedBinding(gate, "edit", sourcePath, excludedPaths);
       throwIfAborted(signal);
-      reboundOperations.push({ ...operation, source, destination });
-    } else {
-      reboundOperations.push({ ...operation, source });
+      if (operation.type === "move") {
+        rebound.destination = await requireAllowedBinding(gate, "write", operation.path, excludedPaths);
+        throwIfAborted(signal);
+      }
+      reboundOperations.push(rebound);
+    } catch (error) {
+      if (signal?.aborted) error = proposalError("PICM_PROPOSAL_ABORTED", "operation was cancelled before mutation");
+      markFailedWithoutMutation(rebound, error);
+      throw error;
     }
   }
 
   for (const operation of reboundOperations) {
-    throwIfAborted(signal);
-    if (operation.type === "create") {
-      await requireMissing(operation.destination, operation.path);
+    try {
       throwIfAborted(signal);
-      continue;
-    }
+      if (operation.type === "create") {
+        await requireMissing(operation.destination, operation.path);
+        throwIfAborted(signal);
+        continue;
+      }
 
-    const sourcePath = operation.type === "move" ? operation.from : operation.path;
-    operation.originalContent = await requireExpectedContent(operation.source, sourcePath, operation.expectedContent);
-    throwIfAborted(signal);
-    if (operation.type === "move") {
-      await requireMissing(operation.destination, operation.path);
+      const sourcePath = operation.type === "move" ? operation.from : operation.path;
+      await requireExpectedContent(operation.source, sourcePath, operation.expectedContent);
       throwIfAborted(signal);
+      if (operation.type === "move") {
+        await requireMissing(operation.destination, operation.path);
+        throwIfAborted(signal);
+      }
+    } catch (error) {
+      if (signal?.aborted) error = proposalError("PICM_PROPOSAL_ABORTED", "operation was cancelled before mutation");
+      markFailedWithoutMutation(operation, error);
+      throw error;
     }
   }
   return reboundOperations;
 }
 
 export async function applyProposalBatch(batch, { gate, excludedPaths = [], signal } = {}) {
-  let operations;
+  const results = initialResults(batch);
   try {
-    operations = await rebindProposalOperations(batch, gate, excludedPaths, signal);
-  } catch (error) {
-    throwIfAborted(signal);
-    throw error;
-  }
-  const attempted = [];
-  try {
+    const operations = await rebindProposalOperations(batch, gate, excludedPaths, signal, results);
     for (const operation of operations) {
-      throwIfAborted(signal);
-      attempted.push(operation);
-      if (operation.type === "create") {
-        await requireMissing(operation.destination, operation.path);
+      try {
         throwIfAborted(signal);
-        await createDestinationParents(operation);
-        operation.mutationStarted = true;
-        await operation.destination.operations.writeFile(operation.destination.absolutePath, operation.content);
-        continue;
-      }
+        if (operation.type === "create") {
+          await requireMissing(operation.destination, operation.path);
+          throwIfAborted(signal);
+          await createDestinationParents(operation, signal);
+          throwIfAborted(signal);
+          await requireMissing(operation.destination, operation.path);
+          throwIfAborted(signal);
+          operation.result.status = "uncertain";
+          await operation.destination.operations.writeFile(operation.destination.absolutePath, operation.content);
+          operation.result.status = "completed";
+          continue;
+        }
 
-      const sourcePath = operation.type === "move" ? operation.from : operation.path;
-      operation.originalContent = await requireExpectedContent(
-        operation.source,
-        sourcePath,
-        operation.expectedContent,
-      );
-      if (operation.type === "modify") {
-        throwIfAborted(signal);
-        operation.mutationStarted = true;
-        await operation.source.operations.writeFile(operation.source.absolutePath, operation.content);
-      } else if (operation.type === "delete") {
-        throwIfAborted(signal);
-        operation.mutationStarted = true;
-        await operation.source.operations.unlink(operation.source.absolutePath);
-        operation.sourceRemoved = true;
-      } else {
-        await requireMissing(operation.destination, operation.path);
-        throwIfAborted(signal);
-        await createDestinationParents(operation);
-        operation.mutationStarted = true;
-        operation.destinationWritten = true;
-        await operation.destination.operations.writeFile(operation.destination.absolutePath, operation.content);
+        const sourcePath = operation.type === "move" ? operation.from : operation.path;
         await requireExpectedContent(operation.source, sourcePath, operation.expectedContent);
-        throwIfAborted(signal);
-        await operation.source.operations.unlink(operation.source.absolutePath);
-        operation.sourceRemoved = true;
+        if (operation.type === "modify") {
+          throwIfAborted(signal);
+          operation.result.status = "uncertain";
+          await operation.source.operations.writeFile(operation.source.absolutePath, operation.content);
+          operation.result.status = "completed";
+        } else if (operation.type === "delete") {
+          throwIfAborted(signal);
+          operation.result.status = "uncertain";
+          await operation.source.operations.unlink(operation.source.absolutePath);
+          operation.result.status = "completed";
+        } else {
+          await requireMissing(operation.destination, operation.path);
+          throwIfAborted(signal);
+          await createDestinationParents(operation, signal);
+          throwIfAborted(signal);
+          await requireMissing(operation.destination, operation.path);
+          throwIfAborted(signal);
+          operation.result.status = "uncertain";
+          await operation.destination.operations.writeFile(operation.destination.absolutePath, operation.content);
+          operation.result.destinationPublished = true;
+          operation.result.status = "failed";
+          throwIfAborted(signal);
+          await requireExpectedContent(operation.source, sourcePath, operation.expectedContent);
+          throwIfAborted(signal);
+          operation.result.status = "uncertain";
+          await operation.source.operations.unlink(operation.source.absolutePath);
+          delete operation.result.destinationPublished;
+          operation.result.status = "completed";
+        }
+      } catch (error) {
+        markFailedWithoutMutation(operation, error);
+        throw error;
       }
     }
     throwIfAborted(signal);
   } catch (error) {
-    const failures = await rollback(attempted);
-    if (failures.length > 0) {
-      throw proposalError(
-        "PICM_PROPOSAL_ROLLBACK_FAILED",
-        `${error instanceof Error ? error.message : error}; rollback failed: ${failures.join("; ")}`,
-      );
-    }
-    throw error;
+    return failedProposalResult(batch, error, results);
   }
 
   return {
@@ -343,6 +359,7 @@ export async function applyProposalBatch(batch, { gate, excludedPaths = [], sign
     proposalId: batch.id,
     digest: batch.digest,
     operations: batch.auditOperations,
+    results,
   };
 }
 
