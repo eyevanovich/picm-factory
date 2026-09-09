@@ -11,7 +11,6 @@ import {
 } from "./privacy-policy.mjs";
 import {
   createPathExecutionBinding,
-  fileIdentity,
   resolvePathBindingLimits,
 } from "./path-execution-binding.mjs";
 
@@ -538,10 +537,8 @@ export function createGitReadGate({
       absolutePath: resolvedPath.absolutePath,
       canonicalPath: resolvedPath.canonicalPath,
       packageRoot: declaredPackageRoot,
-      targetIdentity: resolvedPath.stat ? fileIdentity(resolvedPath.stat) : undefined,
       existingPath: resolvedPath.existingPath,
       canonicalExistingPath: resolvedPath.canonicalExistingPath,
-      existingIdentity: resolvedPath.existingStat ? fileIdentity(resolvedPath.existingStat) : undefined,
       traversalEntries: resolvedPath.traversalEntries,
     };
     bindingPlans.add(plan);
@@ -652,7 +649,6 @@ export function createGitReadGate({
           canonicalPath,
           displayPath,
           isDirectory: false,
-          identity: fileIdentity(stat),
         });
       } catch (error) {
         if (error?.code !== "ENOENT") throw error;
@@ -679,7 +675,6 @@ export function createGitReadGate({
           canonicalPath,
           displayPath,
           isDirectory: true,
-          identity: fileIdentity(admittedStat),
         });
       }
     }
@@ -716,7 +711,6 @@ export function createGitReadGate({
           canonicalPath,
           displayPath,
           isDirectory: true,
-          identity: fileIdentity(admittedStat),
         });
         if (boundary.recurse) pendingDirectories.push(displayPath);
       }

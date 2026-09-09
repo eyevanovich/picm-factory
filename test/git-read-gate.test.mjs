@@ -462,6 +462,120 @@ test("rechecks hard-link count immediately before guarded reads and mutations", 
   });
 });
 
+test("rechecks regular-file type immediately before guarded content I/O", async () => {
+  await withFixture(async ({ root, packageRoot }) => {
+    const gate = createGitReadGate({ cwd: root, packageRoot });
+    for (const toolName of ["read", "edit", "write", "grep", "rg"]) {
+      const path = `regular-type-${toolName}.txt`;
+      const target = join(root, path);
+      const approvedTarget = join(root, `approved-${path}`);
+      write(target, "approved before\n");
+      git(root, "add", path);
+      const decision = await gate.checkPath(toolName, path);
+      assert.equal(decision.allowed, true);
+      const binding = gate.bindPath(decision.executionBinding);
+      renameSync(target, approvedTarget);
+      mkdirSync(target);
+      const contentOperation = ["edit", "write"].includes(toolName)
+        ? binding.operations.writeFile(target, "must not be written\n")
+        : binding.operations.readFile(target);
+      await assert.rejects(contentOperation, /target is not a regular file/);
+      assert.equal(readFileSync(approvedTarget, "utf8"), "approved before\n");
+      binding.release();
+    }
+    await gate.dispose();
+  });
+});
+
+test("rechecks retained regular-file type immediately before guarded grep reads", async () => {
+  await withFixture(async ({ root, packageRoot }) => {
+    const gate = createGitReadGate({ cwd: root, packageRoot });
+    const target = join(root, "docs", "guide.md");
+    for (const toolName of ["grep", "rg"]) {
+      const approvedTarget = join(root, "docs", `approved-${toolName}.md`);
+      const decision = await gate.checkPath(toolName, "docs");
+      assert.equal(decision.allowed, true);
+      const binding = gate.bindPath(decision.executionBinding);
+      const retainedFile = binding.files.find((file) => file.path === "guide.md");
+      assert.ok(retainedFile);
+      renameSync(target, approvedTarget);
+      mkdirSync(target);
+      await assert.rejects(retainedFile.readFile(), /target is not a regular file/);
+      rmSync(target, { recursive: true });
+      renameSync(approvedTarget, target);
+      binding.release();
+    }
+    await gate.dispose();
+  });
+});
+
+test("guarded content I/O rejects post-bind FIFO replacements in a bounded child process", async (t) => {
+  if (process.platform === "win32") {
+    t.skip("FIFO behavior is POSIX-specific");
+    return;
+  }
+  await withFixture(async ({ root }) => {
+    const target = join(root, "post-bind-fifo.txt");
+    const canonicalTarget = join(realpathSync(root), "post-bind-fifo.txt");
+    const moduleUrl = new URL("../extensions/runtime/path-execution-binding.mjs", import.meta.url).href;
+    write(target, "approved before\n");
+    const childScript = `
+      import { execFileSync } from "node:child_process";
+      import { renameSync } from "node:fs";
+      import { createPathExecutionBinding } from ${JSON.stringify(moduleUrl)};
+
+      const target = ${JSON.stringify(target)};
+      const binding = createPathExecutionBinding({
+        toolName: "read",
+        absolutePath: target,
+        canonicalPath: ${JSON.stringify(canonicalTarget)},
+      });
+      renameSync(target, \`${target}.approved\`);
+      execFileSync("mkfifo", [target]);
+      try {
+        await binding.operations.readFile(target);
+      } catch (error) {
+        if (!/target is not a regular file/.test(error.message)) throw error;
+        process.stdout.write("rejected\\n");
+        process.exit(0);
+      }
+      throw new Error("FIFO content I/O unexpectedly succeeded");
+    `;
+    const output = execFileSync(
+      process.execPath,
+      ["--input-type=module", "--eval", childScript],
+      { cwd: root, encoding: "utf8", timeout: 1000, killSignal: "SIGKILL" },
+    );
+    assert.equal(output, "rejected\n");
+  });
+});
+
+test("allows post-bind atomic regular-file replacement for guarded content I/O", async () => {
+  await withFixture(async ({ root, packageRoot }) => {
+    const gate = createGitReadGate({ cwd: root, packageRoot });
+    for (const toolName of ["read", "edit", "write", "grep", "rg"]) {
+      const path = `atomic-${toolName}.txt`;
+      const target = join(root, path);
+      const replacement = join(root, `replacement-${path}`);
+      write(target, "approved before\n");
+      git(root, "add", path);
+      const decision = await gate.checkPath(toolName, path);
+      assert.equal(decision.allowed, true);
+      const binding = gate.bindPath(decision.executionBinding);
+      write(replacement, "atomic replacement\n");
+      renameSync(replacement, target);
+      if (["edit", "write"].includes(toolName)) {
+        await binding.operations.writeFile(target, "updated after replacement\n");
+        assert.equal(readFileSync(target, "utf8"), "updated after replacement\n");
+      } else {
+        assert.equal((await binding.operations.readFile(target)).toString("utf8"), "atomic replacement\n");
+      }
+      binding.release();
+    }
+    await gate.dispose();
+  });
+});
+
 test("honors repository-local info/exclude for tracked and untracked paths", async (t) => {
   const root = mkdtempSync(join(tmpdir(), "picm-info-exclude-test-"));
   t.after(() => rmSync(root, { recursive: true, force: true }));

@@ -1,4 +1,4 @@
-import { existsSync, lstatSync, realpathSync, statSync } from "node:fs";
+import { existsSync, lstatSync, realpathSync } from "node:fs";
 import { open } from "node:fs/promises";
 import * as fsPromises from "node:fs/promises";
 import { spawn } from "node:child_process";
@@ -38,10 +38,6 @@ function ignoreLateSubprocessError() {}
 
 function retainLateErrorSink(emitter) {
   emitter?.on?.("error", ignoreLateSubprocessError);
-}
-
-export function fileIdentity(stat) {
-  return { dev: stat?.dev, ino: stat?.ino };
 }
 
 function startsWith(buffer, bytes) {
@@ -694,6 +690,10 @@ export function createPathExecutionBinding(plan, limitOverrides) {
     return target;
   }
 
+  function assertRegularFile(st) {
+    if (!st.isFile()) fail("target is not a regular file");
+  }
+
   async function assertRetainedFile(entry) {
     const target = entry.canonicalPath ?? entry.absolutePath;
     const currentCanonical = await canonicalProspectivePath(target);
@@ -702,7 +702,8 @@ export function createPathExecutionBinding(plan, limitOverrides) {
     }
     const st = await fsPromises.lstat(target);
     if (st.isSymbolicLink()) fail("file became a symlink");
-    if (st.isFile() && st.nlink > 1) fail("validated target has multiple hard links");
+    assertRegularFile(st);
+    if (st.nlink > 1) fail("validated target has multiple hard links");
     return { target, st };
   }
 
@@ -710,7 +711,8 @@ export function createPathExecutionBinding(plan, limitOverrides) {
     const target = await assertBoundTarget(filePath);
     const st = await fsPromises.lstat(target);
     if (st.isSymbolicLink()) fail("target became a symlink after validation");
-    if (st.isFile() && st.nlink > 1) fail("validated target has multiple hard links");
+    assertRegularFile(st);
+    if (st.nlink > 1) fail("validated target has multiple hard links");
     return { target, st };
   }
 
@@ -762,7 +764,8 @@ export function createPathExecutionBinding(plan, limitOverrides) {
               try {
                 const st = await fsPromises.lstat(target);
                 if (st.isSymbolicLink()) fail("target became a symlink");
-                if (st.isFile() && st.nlink > 1) fail("validated target has multiple hard links");
+                assertRegularFile(st);
+                if (st.nlink > 1) fail("validated target has multiple hard links");
               } catch (e) {
                 if (e.code !== "ENOENT") throw e;
               }
@@ -803,7 +806,8 @@ export function createPathExecutionBinding(plan, limitOverrides) {
                 try {
                   const st = await fsPromises.lstat(target);
                   if (st.isSymbolicLink()) fail("target became a symlink");
-                  if (st.isFile() && st.nlink > 1) fail("validated target has multiple hard links");
+                  assertRegularFile(st);
+                  if (st.nlink > 1) fail("validated target has multiple hard links");
                 } catch (e) {
                   if (e.code !== "ENOENT") throw e;
                 }
