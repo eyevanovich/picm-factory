@@ -23,14 +23,12 @@ import { packageRootFromImportMeta } from "./runtime/git-read-gate.mjs";
 import { executeBoundGrep } from "./runtime/path-execution-binding.mjs";
 import { canonicalNow } from "./runtime/maintenance-policy.mjs";
 import { createRuntimeCoordinator } from "./runtime/runtime-coordinator.mjs";
-import { createScaffoldApprovalRuntime } from "./runtime/scaffold-approval.mjs";
 import { renderSpecialistFirstRunGuidance } from "./runtime/specialist-first-run-guidance.mjs";
 
 type CommandName = "picm-new" | "picm-adopt" | "picm-maintain" | "picm-optimize" | "picm-help";
 
 const scanWorkflowEntryType = "picm-scan-workflow";
 const proposalBatchEntryType = "picm-proposal-batch";
-const nonMutatingScaffoldTools = new Set(["read", "grep", "rg", "find", "ls", "picm_scan_control"]);
 
 const commandDescriptions: Record<CommandName, string> = {
   "picm-new": "Create a workspace; optionally add a workflow description after the command",
@@ -194,8 +192,6 @@ export default function picmFactoryExtension(
     packageRoot,
     canonicalPackageRoot,
   });
-  const scaffoldApproval = createScaffoldApprovalRuntime();
-  const sessionId = (ctx: ExtensionContext) => ctx.sessionManager.getSessionId();
 
   const registerBoundBuiltin = (
     toolName: "read" | "edit" | "write" | "grep" | "rg" | "find" | "ls",
@@ -291,54 +287,15 @@ export default function picmFactoryExtension(
         !result.completed &&
         !coordinator.isWorkflowCompleted(ctx)
       ) {
-        pi.appendEntry(scanWorkflowEntryType, {
-          status: "authorized",
-          cwd: result.cwd,
-          command: result.command,
-          preflightComplete: result.preflightComplete,
-          privacyReviewed: result.privacyReviewed,
-          privacyFollowupPending: result.privacyFollowupPending,
-          privacyQuestionIsConcise: result.privacyQuestionIsConcise,
-          scanStarted: result.scanStarted,
-          scanSettled: result.scanSettled,
-          maintenanceResetAttempted: result.maintenanceResetAttempted,
-          adoptionBaselineCaptured: result.adoptionBaselineCaptured,
-          adoptionWasAlreadyAdopted: result.adoptionWasAlreadyAdopted,
-          initialMaintenanceOffered: result.initialMaintenanceOffered,
-          initialIntent: result.initialIntent,
-          newWorkflowIntentRequired: result.newWorkflowIntentRequired,
-          newWorkflowIntent: result.newWorkflowIntent,
-          pendingNewWorkflowIntent: result.pendingNewWorkflowIntent,
-          pendingNewWorkflowIntentSource: result.pendingNewWorkflowIntentSource,
-          excludedPaths: result.excludedPaths,
-        });
+        const serialized = coordinator.serializeWorkflow(ctx, "authorized");
+        if (serialized) pi.appendEntry(scanWorkflowEntryType, serialized);
         if (result.maintenanceReset && (!result.maintenanceReset.ok || result.maintenanceReset.conflict) && ctx.hasUI) {
           ctx.ui.notify(`[picm-factory] ${result.warning ?? result.message}`, "warning");
         }
       } else if (params.action === "complete" || result.completed) {
         if (result.completed) {
-          pi.appendEntry(scanWorkflowEntryType, {
-            status: "completed",
-            cwd: result.cwd,
-            command: result.command,
-            preflightComplete: result.preflightComplete,
-            privacyReviewed: result.privacyReviewed,
-            privacyFollowupPending: result.privacyFollowupPending,
-            privacyQuestionIsConcise: result.privacyQuestionIsConcise,
-            scanStarted: result.scanStarted,
-            scanSettled: result.scanSettled,
-            maintenanceResetAttempted: result.maintenanceResetAttempted,
-            adoptionBaselineCaptured: result.adoptionBaselineCaptured,
-            adoptionWasAlreadyAdopted: result.adoptionWasAlreadyAdopted,
-            initialMaintenanceOffered: result.initialMaintenanceOffered,
-            initialIntent: result.initialIntent,
-            newWorkflowIntentRequired: result.newWorkflowIntentRequired,
-            newWorkflowIntent: result.newWorkflowIntent,
-            pendingNewWorkflowIntent: result.pendingNewWorkflowIntent,
-            pendingNewWorkflowIntentSource: result.pendingNewWorkflowIntentSource,
-            completed: true,
-            excludedPaths: result.excludedPaths,
-          });
+          const serialized = coordinator.serializeWorkflow(ctx, "completed");
+          if (serialized) pi.appendEntry(scanWorkflowEntryType, serialized);
           if (ctx.hasUI) {
             ctx.ui.setWidget("picm-maintenance-reminder", undefined);
           }
@@ -417,7 +374,7 @@ export default function picmFactoryExtension(
       if (coordinator.currentWorkflowCommand(ctx) !== "picm-new") {
         throw new Error("SCAFFOLD_PROPOSAL_UNAVAILABLE: invoke /picm-new first");
       }
-      const previewId = scaffoldApproval.register(sessionId(ctx), params.operations);
+      const previewId = coordinator.scaffoldProposal(ctx, params.operations);
       const result = { previewId, operations: params.operations };
       return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }], details: result };
     },
@@ -474,49 +431,25 @@ export default function picmFactoryExtension(
     };
   });
 
-  pi.on("tool_execution_start", (event, ctx) => {
-    coordinator.startToolExecution(event, ctx);
-  });
-
   pi.on("input", (event, ctx) => {
     if (event.source === "extension") return;
-    const observedIntent = coordinator.observeNewWorkflowIntentResponse?.(ctx, event.text);
-    if (observedIntent) pi.appendEntry(scanWorkflowEntryType, { status: "authorized", ...observedIntent });
-    scaffoldApproval.observeInput(sessionId(ctx), event.text);
+    const observedIntent = coordinator.observeInput(ctx, event.text);
+    if (observedIntent) {
+      const serialized = coordinator.serializeWorkflow(ctx, "authorized");
+      if (serialized) pi.appendEntry(scanWorkflowEntryType, serialized);
+    }
   });
 
   pi.on("tool_call", async (event, ctx) => {
-    let admitted = false;
-    let matchedOperation: { consumed: boolean; reservedBy?: string } | undefined;
-    try {
-      const admission = scaffoldApproval.admission(sessionId(ctx), event);
-      if (admission.active) {
-        const maintenancePreview = event.toolName === "picm_maintenance_policy" && event.input?.action === "preview";
-        const allowedControl = nonMutatingScaffoldTools.has(event.toolName) ||
-          event.toolName === "picm_scaffold_proposal" || maintenancePreview;
-        if (!allowedControl && !admission.allowed) {
-          const reason = "[picm-factory] Blocked scaffold mutation: directly approve and apply only the current exact proposal";
-          if (ctx.hasUI) ctx.ui.notify(reason, "warning");
-          return { block: true, reason };
-        }
-        matchedOperation = admission.operation;
-      }
-      const decision = await coordinator.checkToolCall(event, ctx);
-      if (!decision.allowed) {
-        const reason = `[picm-factory] Blocked by PiCM scan gate: ${decision.reason}`;
-        if (ctx.hasUI) ctx.ui.notify(reason, "warning");
-        return { block: true, reason };
-      }
-      if (matchedOperation) scaffoldApproval.reserve(matchedOperation, event.toolCallId);
-      coordinator.admitToolExecution(event, ctx);
-      admitted = true;
-    } finally {
-      if (!admitted) coordinator.rejectToolExecution(event, ctx);
+    const decision = await coordinator.checkToolCall(event, ctx);
+    if (!decision.allowed) {
+      const reason = `[picm-factory] Blocked by PiCM scan gate: ${decision.reason}`;
+      if (ctx.hasUI) ctx.ui.notify(reason, "warning");
+      return { block: true, reason };
     }
   });
 
   pi.on("tool_execution_end", (event, ctx) => {
-    scaffoldApproval.complete(sessionId(ctx), event.toolCallId, !event.isError);
     coordinator.endToolExecution(event, ctx);
   });
 
@@ -539,7 +472,8 @@ export default function picmFactoryExtension(
     if (ctx.mode !== "tui") return finish("finished");
     const claimedWorkflow = await coordinator.claimInitialMaintenanceOffer(ctx);
     if (!claimedWorkflow) return finish("finished");
-    pi.appendEntry(scanWorkflowEntryType, { status: "authorized", ...claimedWorkflow });
+    const serializedClaim = coordinator.serializeWorkflow(ctx, "authorized");
+    if (serializedClaim) pi.appendEntry(scanWorkflowEntryType, serializedClaim);
 
     const choice = await ctx.ui.select(
       "Would you like to run an initial maintenance pass now (recommended)?",
@@ -578,8 +512,9 @@ export default function picmFactoryExtension(
       return;
     }
     const maintenanceDepthContext = `\n\nMaintenance run depth: ${depth}. Apply this depth to this run only. Do not mutate \`capabilities.codebaseMap.maintenancePreset\`.`;
-    const authorization = coordinator.authorizeWorkflow(ctx, "picm-maintain");
-    pi.appendEntry(scanWorkflowEntryType, { status: "authorized", ...authorization });
+    coordinator.authorizeWorkflow(ctx, "picm-maintain");
+    const serializedAuthorization = coordinator.serializeWorkflow(ctx, "authorized");
+    if (serializedAuthorization) pi.appendEntry(scanWorkflowEntryType, serializedAuthorization);
     try {
       pi.sendUserMessage(`${buildPrompt(
         "picm-maintain",
@@ -602,13 +537,11 @@ export default function picmFactoryExtension(
   });
 
   pi.on("session_tree", async (_event, ctx) => {
-    scaffoldApproval.invalidate(sessionId(ctx));
     restoreScanWorkflow(ctx);
   });
 
   pi.on("agent_settled", async (_event, ctx) => {
     const workflowCompleted = coordinator.settle(ctx);
-    scaffoldApproval.settle(sessionId(ctx), workflowCompleted);
     if (workflowCompleted) recordClearedWorkflow(ctx);
   });
 
@@ -657,7 +590,6 @@ export default function picmFactoryExtension(
         },
       } : {}),
       handler: async (args, ctx) => {
-        scaffoldApproval.clear(sessionId(ctx));
         if (command === "picm-maintain") {
           await executeMaintain(ctx, args);
           return;
@@ -665,12 +597,13 @@ export default function picmFactoryExtension(
         await ctx.waitForIdle();
         let promptArgs = args;
         if (command !== "picm-help") {
-          const authorization = coordinator.authorizeWorkflow(
+          coordinator.authorizeWorkflow(
             ctx,
             command,
             command === "picm-new" ? { initialIntent: args } : undefined,
           );
-          pi.appendEntry(scanWorkflowEntryType, { status: "authorized", ...authorization });
+          const serializedAuthorization = coordinator.serializeWorkflow(ctx, "authorized");
+          if (serializedAuthorization) pi.appendEntry(scanWorkflowEntryType, serializedAuthorization);
         } else if (coordinator.clearWorkflow(ctx)) {
           recordClearedWorkflow(ctx);
         }

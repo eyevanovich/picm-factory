@@ -4,6 +4,7 @@ import { mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "n
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import picmFactoryExtension from "../extensions/picm-factory.ts";
+import { createScaffoldApprovalRuntime } from "../extensions/runtime/scaffold-approval.mjs";
 
 const root = process.cwd();
 const read = (path) => readFileSync(join(root, path), "utf8");
@@ -25,31 +26,58 @@ function commandHarness(cwd = root) {
   };
   let command;
   let completed = false;
+  const scaffold = createScaffoldApprovalRuntime();
+  const scope = "preview-contract-workflow";
   picmFactoryExtension(pi, {
     createCoordinator: () => ({
-      admitToolExecution() {},
-      authorizeWorkflow(_ctx, nextCommand) { command = nextCommand; return { command: nextCommand }; },
+      authorizeWorkflow(_ctx, nextCommand) {
+        scaffold.clear(scope);
+        command = nextCommand;
+        completed = false;
+        return { command: nextCommand };
+      },
       beginBoundPathExecution() {},
-      checkToolCall: async () => ({ allowed: true }),
-      clearWorkflow() { command = undefined; return true; },
+      checkToolCall: async (event) => {
+        const admission = scaffold.admission(scope, event);
+        if (!admission.active) return { allowed: true };
+        const allowedControl = new Set(["read", "grep", "rg", "find", "ls", "picm_scan_control", "picm_scaffold_proposal"]);
+        const maintenancePreview = event.toolName === "picm_maintenance_policy" && event.input?.action === "preview";
+        if (!allowedControl.has(event.toolName) && !maintenancePreview && !admission.allowed) {
+          return { allowed: false, reason: "Blocked scaffold mutation: directly approve and apply only the current exact proposal" };
+        }
+        if (admission.operationIdentity) scaffold.reserve(scope, admission, event.toolCallId);
+        return { allowed: true };
+      },
+      claimInitialMaintenanceOffer: async () => undefined,
+      clearWorkflow() { scaffold.clear(scope); command = undefined; return true; },
       continueAdoptionAsMaintenance() {},
       currentWorkflowCommand: () => command,
       workflowCommand: () => command,
-      dispose: async () => {},
-      endToolExecution() {},
-      hasAdoptedStatus: async () => false,
+      dispose: async () => { scaffold.clear(scope); },
+      endToolExecution(event) { scaffold.complete(scope, event.toolCallId, !event.isError); },
       isWorkflowCompleted: () => completed,
       maintenancePolicy() {},
-      rejectToolExecution() {},
+      observeInput(_ctx, text) { scaffold.observeInput(scope, text); },
+      observeProposalResponse() {},
       resetCycle() {},
-      restoreWorkflow() {},
+      restoreWorkflow() {
+        const hadScaffoldProposal = scaffold.has(scope);
+        scaffold.clear(scope);
+        if (hadScaffoldProposal) scaffold.replaceWithInvalidatedSentinel(scope);
+      },
       scanControl() {},
+      scaffoldProposal(_ctx, operations) { return scaffold.register(scope, operations); },
+      serializeWorkflow(_ctx, status) { return command ? { status, cwd, command } : undefined; },
       settle: () => {
-        if (!completed) return false;
+        if (!completed) {
+          scaffold.settle(scope, false);
+          return false;
+        }
+        scaffold.clear(scope);
         command = undefined;
         return true;
       },
-      startToolExecution() {},
+      specialistRouteSemantics() {},
       startup: async () => {},
     }),
   });

@@ -14,17 +14,24 @@ const REVISION_REQUEST = /\b(?:add|change|delete|edit|modify|remove|rename|repla
 export function createScaffoldApprovalRuntime() {
   const proposals = new Map();
 
-  function register(sessionId, operations) {
-    const previewId = `picm-scaffold-preview:${randomUUID()}`;
-    proposals.set(sessionId, {
+  function proposal(operations, { invalidated = false } = {}) {
+    return {
+      identity: `picm-scaffold-proposal:${randomUUID()}`,
       operations: operations.map((operation) => ({
+        identity: `picm-scaffold-operation:${randomUUID()}`,
         tool: operation.tool,
         input: structuredClone(operation.input),
         consumed: false,
       })),
       approved: false,
-      invalidated: false,
-    });
+      approvalIdentity: undefined,
+      invalidated,
+    };
+  }
+
+  function register(sessionId, operations) {
+    const previewId = `picm-scaffold-preview:${randomUUID()}`;
+    proposals.set(sessionId, proposal(operations));
     return previewId;
   }
 
@@ -34,22 +41,34 @@ export function createScaffoldApprovalRuntime() {
     const reply = text.trim().toLowerCase();
     if (DIRECT_APPROVALS.has(reply)) {
       proposal.approved = !proposal.invalidated;
+      proposal.approvalIdentity = proposal.approved
+        ? `picm-scaffold-approval:${randomUUID()}`
+        : undefined;
       return;
     }
     proposal.approved = false;
+    proposal.approvalIdentity = undefined;
     const navigation = NAVIGATION_REPLIES.has(reply) ||
       /^(?:show (?:the )?diff for|inspect (?:the )?file) [\w./-]+$/.test(reply);
     if (REVISION_REQUEST.test(reply) || (!VAGUE_REPLIES.has(reply) && !navigation)) proposal.invalidated = true;
   }
 
   function admission(sessionId, event) {
-    const proposal = proposals.get(sessionId);
-    if (!proposal) return { active: false };
-    const operation = proposal.operations.find((candidate) =>
+    const current = proposals.get(sessionId);
+    if (!current) return { active: false };
+    const operation = current.operations.find((candidate) =>
       !candidate.consumed && !candidate.reservedBy && candidate.tool === event.toolName &&
       isDeepStrictEqual(candidate.input, event.input)
     );
-    return { active: true, allowed: proposal.approved && Boolean(operation), operation };
+    const directApproved = current.approved && !current.invalidated;
+    return {
+      active: true,
+      proposalIdentity: current.identity,
+      directApproved,
+      approvalIdentity: current.approvalIdentity,
+      operationIdentity: operation?.identity,
+      allowed: directApproved && Boolean(operation),
+    };
   }
 
   function complete(sessionId, toolCallId, succeeded) {
@@ -64,22 +83,48 @@ export function createScaffoldApprovalRuntime() {
     const proposal = proposals.get(sessionId);
     if (!proposal) return;
     if (workflowCompleted || proposal.operations.every((operation) => operation.consumed)) proposals.delete(sessionId);
-    else proposal.approved = false;
+    else {
+      proposal.approved = false;
+      proposal.approvalIdentity = undefined;
+    }
   }
 
   return {
     admission,
     clear: (sessionId) => proposals.delete(sessionId),
     complete,
+    has: (sessionId) => proposals.has(sessionId),
+    replaceWithInvalidatedSentinel: (sessionId) => {
+      proposals.set(sessionId, proposal([], { invalidated: true }));
+    },
     invalidate: (sessionId) => {
       const proposal = proposals.get(sessionId);
       if (!proposal) return;
       proposal.approved = false;
+      proposal.approvalIdentity = undefined;
       proposal.invalidated = true;
     },
     observeInput,
     register,
-    reserve: (operation, toolCallId) => { operation.reservedBy = toolCallId; },
+    reserve: (sessionId, admission, toolCallId) => {
+      const current = proposals.get(sessionId);
+      if (
+        typeof toolCallId !== "string" ||
+        !admission?.directApproved ||
+        typeof admission.approvalIdentity !== "string" ||
+        current?.identity !== admission.proposalIdentity ||
+        current.approvalIdentity !== admission.approvalIdentity ||
+        !current.approved ||
+        current.invalidated
+      ) return false;
+      const operation = current.operations.find((candidate) =>
+        candidate.identity === admission.operationIdentity &&
+        !candidate.consumed && !candidate.reservedBy,
+      );
+      if (!operation) return false;
+      operation.reservedBy = toolCallId;
+      return true;
+    },
     settle,
   };
 }

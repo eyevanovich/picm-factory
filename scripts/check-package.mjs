@@ -50,6 +50,7 @@ const required = [
   "extensions/runtime/proposal-batch.mjs",
   "extensions/runtime/runtime-coordinator.mjs",
   "extensions/runtime/scaffold-approval.mjs",
+  "extensions/runtime/workflow-lifecycle.mjs",
   "extensions/runtime/specialist-first-run-guidance.mjs",
   "skills/picm-factory/SKILL.md",
   "skills/picm-factory/references/optimization-guide.md",
@@ -138,6 +139,7 @@ const requiredPackageFiles = [
   "extensions/runtime/proposal-batch.mjs",
   "extensions/runtime/runtime-coordinator.mjs",
   "extensions/runtime/scaffold-approval.mjs",
+  "extensions/runtime/workflow-lifecycle.mjs",
   "extensions/runtime/specialist-first-run-guidance.mjs",
   "skills/picm-factory/SKILL.md",
   "skills/picm-factory/references/adoption-guide.md",
@@ -543,8 +545,7 @@ const runtimeCoordinator = readFileSync(
   "utf8",
 );
 for (const signal of [
-  "scanWorkflows",
-  "isAutomatic",
+  "createWorkflowLifecycle",
   "createGitReadGate",
   "createMaintenanceController",
   "resetCycle",

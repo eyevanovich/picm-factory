@@ -50,6 +50,11 @@ export async function runSpecialistFirstRunCommand({ commands, tools, handlers, 
   if (!premature?.block) {
     throw new Error("SPECIALIST_TEST_PREMATURE_GUIDANCE_ALLOWED: guidance was authorized before scaffold writes");
   }
+  const completeBoundTool = async (toolCallId, toolName, args) => {
+    const admission = await handlers.get("tool_call")({ toolCallId, toolName, input: args }, context);
+    if (admission?.block) throw new Error(`SPECIALIST_TEST_TOOL_BLOCKED: ${admission.reason}`);
+    handlers.get("tool_execution_end")({ toolCallId, toolName, args, isError: false }, context);
+  };
   for (const path of [
     "AGENTS.md",
     "CONTEXT.md",
@@ -58,34 +63,19 @@ export async function runSpecialistFirstRunCommand({ commands, tools, handlers, 
     ...generatedInputs,
     recipePath,
   ]) {
-    handlers.get("tool_execution_end")({
-      toolCallId: `approved-specialist-${path}`,
-      toolName: "write",
-      args: {
-        path,
-        content: path === recipePath && initialRecipeContent !== undefined
-          ? initialRecipeContent
-          : readFileSync(join(context.cwd, path), "utf8"),
-      },
-      isError: false,
-    }, context);
+    await completeBoundTool(`approved-specialist-${path}`, "write", {
+      path,
+      content: path === recipePath && initialRecipeContent !== undefined
+        ? initialRecipeContent
+        : readFileSync(join(context.cwd, path), "utf8"),
+    });
   }
   if (initialRecipeContent !== undefined && !editRecipeAfterConfig) {
-    handlers.get("tool_execution_end")({
-      toolCallId: "approved-specialist-recipe-edit",
-      toolName: "edit",
-      args: { path: recipePath },
-      isError: false,
-    }, context);
+    await completeBoundTool("approved-specialist-recipe-edit", "edit", { path: recipePath });
   }
   for (const [path, content] of Object.entries(persistedEdits)) {
     writeFileSync(join(context.cwd, path), content, "utf8");
-    handlers.get("tool_execution_end")({
-      toolCallId: `approved-specialist-edit-${path}`,
-      toolName: "edit",
-      args: { path },
-      isError: false,
-    }, context);
+    await completeBoundTool(`approved-specialist-edit-${path}`, "edit", { path });
   }
   const configContent = JSON.stringify({
     version: 1,
@@ -100,33 +90,18 @@ export async function runSpecialistFirstRunCommand({ commands, tools, handlers, 
       runtimeInputs,
     },
   });
-  handlers.get("tool_execution_end")({
-    toolCallId: "approved-specialist-config",
-    toolName: "write",
-    args: {
-      path: ".picm/config.json",
-      content: initialConfigContent ?? configContent,
-    },
-    isError: false,
-  }, context);
+  await completeBoundTool("approved-specialist-config", "write", {
+    path: ".picm/config.json",
+    content: initialConfigContent ?? configContent,
+  });
   if (editConfigAfterWrite) {
     const configPath = join(context.cwd, ".picm/config.json");
     mkdirSync(dirname(configPath), { recursive: true });
     writeFileSync(configPath, configContent, "utf8");
-    handlers.get("tool_execution_end")({
-      toolCallId: "approved-specialist-config-edit",
-      toolName: "edit",
-      args: { path: ".picm/config.json" },
-      isError: false,
-    }, context);
+    await completeBoundTool("approved-specialist-config-edit", "edit", { path: ".picm/config.json" });
   }
   if (initialRecipeContent !== undefined && editRecipeAfterConfig) {
-    handlers.get("tool_execution_end")({
-      toolCallId: "approved-specialist-post-config-recipe-edit",
-      toolName: "edit",
-      args: { path: recipePath },
-      isError: false,
-    }, context);
+    await completeBoundTool("approved-specialist-post-config-recipe-edit", "edit", { path: recipePath });
   }
   const event = { toolName, toolCallId: "specialist-final-guidance", input: {} };
   const admission = await handlers.get("tool_call")(event, context);
