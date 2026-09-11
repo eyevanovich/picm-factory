@@ -26,7 +26,7 @@ function deferred() {
 function deferredWriteGateHarness(path) {
   const pathCheckStarted = deferred();
   const releasePathCheck = deferred();
-  let holdNextMatchingWrite = true;
+  let holdNextMatchingWrite = false;
   const h = extensionHarness({
     createCoordinator: (options) => createRuntimeCoordinator({
       ...options,
@@ -46,7 +46,12 @@ function deferredWriteGateHarness(path) {
       },
     }),
   });
-  return { h, pathCheckStarted, releasePathCheck };
+  return {
+    armMatchingWriteGate: () => { holdNextMatchingWrite = true; },
+    h,
+    pathCheckStarted,
+    releasePathCheck,
+  };
 }
 
 async function prepareApprovedScaffold(h, ctx, operation) {
@@ -251,9 +256,10 @@ test("deferred write admission fails closed after revision invalidates approval"
   await withFixture(async ({ root }) => {
     const staleOperation = { tool: "write", input: { path: "stale-after-revision.md", content: "stale\n" } };
     const currentOperation = { tool: "write", input: { path: "current-after-revision.md", content: "current\n" } };
-    const { h, pathCheckStarted, releasePathCheck } = deferredWriteGateHarness(staleOperation.input.path);
+    const { armMatchingWriteGate, h, pathCheckStarted, releasePathCheck } = deferredWriteGateHarness(staleOperation.input.path);
     const ctx = h.context(root, "deferred-revision");
     const { control, scaffold } = await prepareApprovedScaffold(h, ctx, staleOperation);
+    armMatchingWriteGate();
 
     const inFlight = h.handlers.get("tool_call")({
       toolCallId: "stale-revision-write",
@@ -291,9 +297,10 @@ test("deferred write admission fails closed after revision invalidates approval"
 test("deferred write admission rejects a replaced preview with identical operations", async () => {
   await withFixture(async ({ root }) => {
     const operation = { tool: "write", input: { path: "replacement-current.md", content: "current\n" } };
-    const { h, pathCheckStarted, releasePathCheck } = deferredWriteGateHarness(operation.input.path);
+    const { armMatchingWriteGate, h, pathCheckStarted, releasePathCheck } = deferredWriteGateHarness(operation.input.path);
     const ctx = h.context(root, "deferred-replacement");
     const { control, scaffold } = await prepareApprovedScaffold(h, ctx, operation);
+    armMatchingWriteGate();
 
     const inFlight = h.handlers.get("tool_call")({
       toolCallId: "replaced-preview-write",
@@ -360,6 +367,26 @@ test("issued scaffold writes fail closed after every lifecycle authority revocat
       },
     },
     {
+      name: "scan phase end",
+      revoke: async ({ control, ctx }) => control.execute("end", { action: "end" }, undefined, undefined, ctx),
+    },
+    {
+      name: "scaffold adjustment",
+      revoke: async ({ h, ctx }) => h.handlers.get("input")({ text: "adjust the scaffold", source: "interactive" }, ctx),
+    },
+    {
+      name: "scaffold rewrite",
+      revoke: async ({ h, ctx }) => h.handlers.get("input")({ text: "rewrite the scaffold", source: "interactive" }, ctx),
+    },
+    {
+      name: "scaffold replacement",
+      revoke: async ({ h, ctx }) => h.handlers.get("input")({ text: "do this instead", source: "interactive" }, ctx),
+    },
+    {
+      name: "scaffold cancellation",
+      revoke: async ({ h, ctx }) => h.handlers.get("input")({ text: "cancel the scaffold", source: "interactive" }, ctx),
+    },
+    {
       name: "agent settlement",
       revoke: async ({ h, ctx }) => h.handlers.get("agent_settled")({}, ctx),
     },
@@ -397,6 +424,230 @@ test("issued scaffold writes fail closed after every lifecycle authority revocat
   }
 });
 
+test("phase end releases a new-only scaffold reservation for fresh admission", async () => {
+  await withFixture(async ({ root }) => {
+    const operation = { tool: "write", input: { path: "reissued-after-phase-end.md", content: "fresh\n" } };
+    const h = extensionHarness();
+    const ctx = h.context(root, "reissued-after-phase-end");
+    const { control } = await prepareApprovedScaffold(h, ctx, operation);
+
+    assert.equal(await h.handlers.get("tool_call")({
+      toolCallId: "stale-phase-end-write",
+      toolName: "write",
+      input: operation.input,
+    }, ctx), undefined);
+    await control.execute("end", { action: "end" }, undefined, undefined, ctx);
+    await assert.rejects(
+      h.tools.get("write").execute("stale-phase-end-write", operation.input, undefined, undefined, ctx),
+      /PICM_PATH_BINDING_STALE/,
+    );
+
+    await control.execute("begin", { action: "begin" }, undefined, undefined, ctx);
+    assert.equal(await h.handlers.get("tool_call")({
+      toolCallId: "fresh-phase-end-write",
+      toolName: "write",
+      input: operation.input,
+    }, ctx), undefined);
+    await h.tools.get("write").execute("fresh-phase-end-write", operation.input, undefined, undefined, ctx);
+    await h.handlers.get("tool_execution_end")({
+      toolCallId: "fresh-phase-end-write",
+      toolName: "write",
+      args: operation.input,
+      isError: false,
+    }, ctx);
+    assert.equal(readFileSync(join(root, operation.input.path), "utf8"), operation.input.content);
+  });
+});
+
+test("issued scaffold edits fail closed after cancellation or revision", async () => {
+  const replies = ["adjust the scaffold", "rewrite the scaffold", "do this instead", "cancel the scaffold"];
+
+  for (const [index, reply] of replies.entries()) {
+    await withFixture(async ({ root }) => {
+      const operation = {
+        tool: "edit",
+        input: { path: "existing-edit.md", oldText: "before\n", newText: "after\n" },
+      };
+      write(join(root, operation.input.path), operation.input.oldText);
+      const h = extensionHarness();
+      const ctx = h.context(root, `stale-edit-${index}`);
+      const control = h.tools.get("picm_scan_control");
+      const scaffold = h.tools.get("picm_scaffold_proposal");
+
+      await h.commands.get("picm-new").handler("existing edit", ctx);
+      await control.execute("preflight", { action: "preflight" }, undefined, undefined, ctx);
+      await control.execute("privacy", { action: "privacy", excludedPaths: [] }, undefined, undefined, ctx);
+      await scaffold.execute("preview", { action: "preview", operations: [operation] }, undefined, undefined, ctx);
+      await h.handlers.get("input")({
+        text: "I understand the risk and want to proceed without a Git checkpoint.",
+        source: "interactive",
+      }, ctx);
+      await h.handlers.get("input")({ text: "approve this exact scaffold", source: "interactive" }, ctx);
+      await control.execute("begin", { action: "begin" }, undefined, undefined, ctx);
+
+      const toolCallId = `stale-edit-${index}`;
+      assert.equal(await h.handlers.get("tool_call")({
+        toolCallId,
+        toolName: "edit",
+        input: operation.input,
+      }, ctx), undefined, reply);
+      await h.handlers.get("input")({ text: reply, source: "interactive" }, ctx);
+      await assert.rejects(
+        h.tools.get("edit").execute(toolCallId, operation.input, undefined, undefined, ctx),
+        /PICM_PATH_BINDING_STALE/,
+        reply,
+      );
+      assert.equal(readFileSync(join(root, operation.input.path), "utf8"), operation.input.oldText);
+    });
+  }
+});
+
+test("late existing-content risk revokes prior scaffold admissions until renewed", async () => {
+  await withFixture(async ({ root }) => {
+    const first = { tool: "write", input: { path: "first-new.md", content: "first\n" } };
+    const second = { tool: "write", input: { path: "becomes-existing.md", content: "second\n" } };
+    const h = extensionHarness();
+    const ctx = h.context(root, "late-existing-content-risk");
+    const control = h.tools.get("picm_scan_control");
+    const scaffold = h.tools.get("picm_scaffold_proposal");
+
+    await h.commands.get("picm-new").handler("late risk", ctx);
+    await control.execute("preflight", { action: "preflight" }, undefined, undefined, ctx);
+    await control.execute("privacy", { action: "privacy", excludedPaths: [] }, undefined, undefined, ctx);
+    await scaffold.execute("preview", { action: "preview", operations: [first, second] }, undefined, undefined, ctx);
+    await h.handlers.get("input")({ text: "approve this exact scaffold", source: "interactive" }, ctx);
+    await control.execute("begin", { action: "begin" }, undefined, undefined, ctx);
+
+    assert.equal(await h.handlers.get("tool_call")({
+      toolCallId: "first-before-risk",
+      toolName: "write",
+      input: first.input,
+    }, ctx), undefined);
+    write(join(root, second.input.path), "external\n");
+    const risky = await h.handlers.get("tool_call")({
+      toolCallId: "second-after-risk",
+      toolName: "write",
+      input: second.input,
+    }, ctx);
+    assert.equal(risky?.block, true);
+    await assert.rejects(
+      h.tools.get("write").execute("first-before-risk", first.input, undefined, undefined, ctx),
+      /PICM_PATH_BINDING_STALE/,
+    );
+
+    await h.handlers.get("input")({
+      text: "I understand the risk and want to proceed without a Git checkpoint.",
+      source: "interactive",
+    }, ctx);
+    await h.handlers.get("input")({ text: "approve this exact scaffold", source: "interactive" }, ctx);
+    assert.equal(await h.handlers.get("tool_call")({
+      toolCallId: "first-after-risk",
+      toolName: "write",
+      input: first.input,
+    }, ctx), undefined);
+    await h.tools.get("write").execute("first-after-risk", first.input, undefined, undefined, ctx);
+    await h.handlers.get("tool_execution_end")({
+      toolCallId: "first-after-risk",
+      toolName: "write",
+      args: first.input,
+      isError: false,
+    }, ctx);
+    assert.equal(readFileSync(join(root, first.input.path), "utf8"), first.input.content);
+  });
+});
+
+test("scaffold invalidation preserves ordinary guarded read bindings", async () => {
+  await withFixture(async ({ root }) => {
+    const operation = { tool: "write", input: { path: "stale-scaffold.md", content: "stale\n" } };
+    write(join(root, "ordinary-read.md"), "ordinary\n");
+    const h = extensionHarness();
+    const ctx = h.context(root, "preserved-read-binding");
+    await prepareApprovedScaffold(h, ctx, operation);
+
+    assert.equal(await h.handlers.get("tool_call")({
+      toolCallId: "stale-scaffold-write",
+      toolName: "write",
+      input: operation.input,
+    }, ctx), undefined);
+    assert.equal(await h.handlers.get("tool_call")({
+      toolCallId: "ordinary-read",
+      toolName: "read",
+      input: { path: "ordinary-read.md" },
+    }, ctx), undefined);
+    await h.handlers.get("input")({ text: "adjust the scaffold", source: "interactive" }, ctx);
+
+    await assert.rejects(
+      h.tools.get("write").execute("stale-scaffold-write", operation.input, undefined, undefined, ctx),
+      /PICM_PATH_BINDING_STALE/,
+    );
+    const read = await h.tools.get("read").execute(
+      "ordinary-read",
+      { path: "ordinary-read.md" },
+      undefined,
+      undefined,
+      ctx,
+    );
+    assert.match(read.content[0].text, /ordinary/);
+    await h.handlers.get("tool_execution_end")({
+      toolCallId: "ordinary-read",
+      toolName: "read",
+      args: { path: "ordinary-read.md" },
+      isError: false,
+    }, ctx);
+  });
+});
+
+test("started scaffold I/O completes without contaminating a replacement workflow", async () => {
+  await withFixture(async ({ root }) => {
+    mkdirSync(join(root, ".picm"));
+    const operation = {
+      tool: "write",
+      input: {
+        path: ".picm/config.json",
+        content: JSON.stringify({
+          generatedBy: "picm-factory",
+          profile: "specialist-folder",
+          paths: { rootInstructions: "AGENTS.md", rootContext: "CONTEXT.md", firstRecipe: "workflows/first.md" },
+        }),
+      },
+    };
+    const h = extensionHarness();
+    const ctx = h.context(root, "started-stale-specialist");
+    const { control } = await prepareApprovedScaffold(h, ctx, operation);
+    const oldToolCallId = "started-old-config";
+
+    assert.equal(await h.handlers.get("tool_call")({
+      toolCallId: oldToolCallId,
+      toolName: "write",
+      input: operation.input,
+    }, ctx), undefined);
+    await h.tools.get("write").execute(oldToolCallId, operation.input, undefined, undefined, ctx);
+    assert.equal(existsSync(join(root, operation.input.path)), true);
+
+    await h.commands.get("picm-new").handler("replacement", ctx);
+    await h.handlers.get("tool_execution_end")({
+      toolCallId: oldToolCallId,
+      toolName: "write",
+      args: operation.input,
+      isError: false,
+    }, ctx);
+    await control.execute("replacement-preflight", { action: "preflight" }, undefined, undefined, ctx);
+    await control.execute("replacement-privacy", { action: "privacy", excludedPaths: [] }, undefined, undefined, ctx);
+    await control.execute("replacement-begin", { action: "begin" }, undefined, undefined, ctx);
+    await assert.rejects(
+      h.tools.get("write").execute(oldToolCallId, operation.input, undefined, undefined, ctx),
+      /PICM_PATH_BINDING_STALE/,
+    );
+    const blocked = await h.handlers.get("tool_call")({
+      toolCallId: "replacement-guidance",
+      toolName: "picm_specialist_first_run_guidance",
+      input: {},
+    }, ctx);
+    assert.equal(blocked?.block, true);
+    assert.match(blocked.reason, /SPECIALIST_GUIDANCE_NOT_APPROVED/);
+  });
+});
+
 test("late stale config completion cannot contaminate replacement Specialist evidence", async () => {
   await withFixture(async ({ root }) => {
     const h = extensionHarness();
@@ -429,6 +680,11 @@ test("late stale config completion cannot contaminate replacement Specialist evi
     git(root, "add", ...currentOperations.map((operation) => operation.input.path));
 
     const { control } = await prepareApprovedScaffold(h, ctx, oldOperation);
+    await h.handlers.get("input")({
+      text: "I understand the risk and want to proceed without a Git checkpoint.",
+      source: "interactive",
+    }, ctx);
+    await h.handlers.get("input")({ text: "approve this exact scaffold", source: "interactive" }, ctx);
     const oldToolCallId = "old-specialist-config";
     assert.equal(await h.handlers.get("tool_call")({
       toolCallId: oldToolCallId,
@@ -446,6 +702,10 @@ test("late stale config completion cannot contaminate replacement Specialist evi
       undefined,
       ctx,
     );
+    await h.handlers.get("input")({
+      text: "I understand the risk and want to proceed without a Git checkpoint.",
+      source: "interactive",
+    }, ctx);
     await h.handlers.get("input")({ text: "approve this exact scaffold", source: "interactive" }, ctx);
     await control.execute("begin-current", { action: "begin" }, undefined, undefined, ctx);
 

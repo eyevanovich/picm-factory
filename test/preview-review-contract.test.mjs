@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import picmFactoryExtension from "../extensions/picm-factory.ts";
 import { createScaffoldApprovalRuntime } from "../extensions/runtime/scaffold-approval.mjs";
+import { extensionHarness } from "./helpers/picm-extension-harness.mjs";
 
 const root = process.cwd();
 const read = (path) => readFileSync(join(root, path), "utf8");
@@ -167,6 +168,19 @@ test("shipped protocol defines complete summary, direct approval, and revision i
     "preserves applicable selection and review state for unchanged paths",
     "Review suggestions never block approval",
     "Approve this proposal to write it, or ask to inspect a diff",
+    "Git checkpoint recommendation",
+    "not as a separate wizard, approval gate, or repository-wide clean-state requirement",
+    "current contents of affected existing files",
+    "do not inspect Git status, history, or file contents to verify coverage",
+    "uncommitted or untracked work, which may be unrecoverable through Git",
+    "broad Git restore can erase newer edits",
+    "Non-Git and new/empty workspaces remain supported",
+    "I understand the risk and want to proceed without a Git checkpoint.",
+    "A clear user report that they created a Git checkpoint is the same unverified, non-approving acknowledgment",
+    "new-only proposals remain directly approvable",
+    "Retain a user-reported checkpoint or risk opt-out only while the exact proposal's paths, actions, contents, and digest remain unchanged",
+    "Cancellation, a terminal result, workflow/session/phase replacement, or teardown clears it",
+    "normal refreshed summary and require normal direct approval",
   ]) assert.ok(protocol.includes(signal), `missing protocol signal: ${signal}`);
   assert.equal(protocol.includes("Mandatory exact review"), false);
   assert.equal(protocol.includes("Approval is unavailable while any mandatory item is pending"), false);
@@ -184,19 +198,274 @@ test("Scenario 6 new scaffold keeps preview-only and vague replies as strict no-
   }
 });
 
-test("picm-new writes only the directly approved current exact proposal", async (t) => {
-  for (const existingArchitecture of [false, true]) {
-    const { workspace, proposal } = scaffoldFixture(t, existingArchitecture);
-    const h = commandHarness(workspace);
-    await h.commands.get("picm-new").handler("stage pipeline", h.ctx);
-    assert.equal(h.sent.length, 1);
-    const result = await runScaffoldReply(h, proposal, "approve this exact scaffold");
-    assert.deepEqual(result.written, proposal.map(({ path }) => path));
-    assert.deepEqual(
-      workspaceSnapshot(workspace),
-      Object.fromEntries(proposal.map(({ path, content }) => [path, content])),
+test("new-only picm-new scaffolds write only the directly approved current exact proposal", async (t) => {
+  const { workspace, proposal } = scaffoldFixture(t);
+  const h = commandHarness(workspace);
+  await h.commands.get("picm-new").handler("stage pipeline", h.ctx);
+  assert.equal(h.sent.length, 1);
+  const result = await runScaffoldReply(h, proposal, "approve this exact scaffold");
+  assert.deepEqual(result.written, proposal.map(({ path }) => path));
+  assert.deepEqual(
+    workspaceSnapshot(workspace),
+    Object.fromEntries(proposal.map(({ path, content }) => [path, content])),
+  );
+});
+
+test("existing scaffold writes require a proposal-scoped checkpoint acknowledgement", async (t) => {
+  const activate = async (h, ctx, operations) => {
+    const control = h.tools.get("picm_scan_control");
+    await h.commands.get("picm-new").handler("existing scaffold", ctx);
+    await control.execute("preflight", { action: "preflight" }, undefined, undefined, ctx);
+    await control.execute("privacy", { action: "privacy", excludedPaths: [] }, undefined, undefined, ctx);
+    await h.tools.get("picm_scaffold_proposal").execute(
+      "preview",
+      { action: "preview", operations },
+      undefined,
+      undefined,
+      ctx,
     );
+    return control;
+  };
+  const operation = { tool: "write", input: { path: "AGENTS.md", content: "reviewed replacement\n" } };
+
+  {
+    const { workspace } = scaffoldFixture(t, true);
+    const h = extensionHarness();
+    const ctx = h.context(workspace, "scaffold-unacknowledged");
+    const control = await activate(h, ctx, [operation]);
+    await h.handlers.get("input")({ text: "approve this exact scaffold", source: "interactive" }, ctx);
+    await control.execute("begin", { action: "begin" }, undefined, undefined, ctx);
+
+    const blocked = await h.handlers.get("tool_call")({
+      toolCallId: "unacknowledged-existing-write",
+      toolName: "write",
+      input: operation.input,
+    }, ctx);
+    assert.equal(blocked?.block, true);
+    assert.equal(readFileSync(join(workspace, "AGENTS.md"), "utf8"), "existing architecture\n");
   }
+
+  for (const acknowledgement of [
+    "I created a Git checkpoint.",
+    "Git checkpoint created.",
+    "I committed the affected files in Git.",
+    "I understand the risk and want to proceed without a Git checkpoint.",
+  ]) {
+    const { workspace } = scaffoldFixture(t, true);
+    const h = extensionHarness();
+    const ctx = h.context(workspace, `scaffold-${acknowledgement.slice(0, 8)}`);
+    const control = await activate(h, ctx, [operation]);
+    const before = workspaceSnapshot(workspace);
+
+    await h.handlers.get("input")({ text: acknowledgement, source: "interactive" }, ctx);
+    const pending = await h.handlers.get("tool_call")({
+      toolCallId: "acknowledgement-only",
+      toolName: "write",
+      input: operation.input,
+    }, ctx);
+    assert.equal(pending?.block, true);
+    assert.deepEqual(workspaceSnapshot(workspace), before);
+
+    await h.handlers.get("input")({ text: "approve this exact scaffold", source: "interactive" }, ctx);
+    await control.execute("begin", { action: "begin" }, undefined, undefined, ctx);
+    assert.equal(await h.handlers.get("tool_call")({
+      toolCallId: "acknowledged-existing-write",
+      toolName: "write",
+      input: operation.input,
+    }, ctx), undefined);
+    await h.tools.get("write").execute(
+      "acknowledged-existing-write",
+      operation.input,
+      undefined,
+      undefined,
+      ctx,
+    );
+    await h.handlers.get("tool_execution_end")({
+      toolCallId: "acknowledged-existing-write",
+      toolName: "write",
+      args: operation.input,
+      isError: false,
+    }, ctx);
+    assert.equal(readFileSync(join(workspace, "AGENTS.md"), "utf8"), operation.input.content);
+  }
+
+  {
+    const { workspace } = scaffoldFixture(t, true);
+    const h = extensionHarness();
+    const ctx = h.context(workspace, "scaffold-unrecognized-checkpoint");
+    const control = await activate(h, ctx, [operation]);
+    const before = workspaceSnapshot(workspace);
+
+    await h.handlers.get("input")({ text: "I saved the current files in Git.", source: "interactive" }, ctx);
+    const pending = await h.handlers.get("tool_call")({
+      toolCallId: "unrecognized-checkpoint-only",
+      toolName: "write",
+      input: operation.input,
+    }, ctx);
+    assert.equal(pending?.block, true);
+    assert.deepEqual(workspaceSnapshot(workspace), before);
+
+    await h.handlers.get("input")({ text: "I understand the risk and want to proceed without a Git checkpoint.", source: "interactive" }, ctx);
+    await h.handlers.get("input")({ text: "approve this exact scaffold", source: "interactive" }, ctx);
+    await control.execute("begin", { action: "begin" }, undefined, undefined, ctx);
+    assert.equal(await h.handlers.get("tool_call")({
+      toolCallId: "unrecognized-then-approved-existing-write",
+      toolName: "write",
+      input: operation.input,
+    }, ctx), undefined);
+  }
+
+  {
+    const { workspace } = scaffoldFixture(t, true);
+    const h = extensionHarness();
+    const ctx = h.context(workspace, "scaffold-phase-checkpoint");
+    const control = await activate(h, ctx, [operation]);
+    await h.handlers.get("input")({ text: "I created a Git checkpoint.", source: "interactive" }, ctx);
+    await h.handlers.get("input")({ text: "approve this exact scaffold", source: "interactive" }, ctx);
+    await control.execute("begin", { action: "begin" }, undefined, undefined, ctx);
+    await control.execute("end", { action: "end" }, undefined, undefined, ctx);
+    await control.execute("begin", { action: "begin" }, undefined, undefined, ctx);
+    const phaseReplaced = await h.handlers.get("tool_call")({
+      toolCallId: "phase-replaced-scaffold-write",
+      toolName: "write",
+      input: operation.input,
+    }, ctx);
+    assert.equal(phaseReplaced?.block, true);
+    assert.equal(readFileSync(join(workspace, "AGENTS.md"), "utf8"), "existing architecture\n");
+  }
+
+  {
+    const { workspace } = scaffoldFixture(t);
+    const h = extensionHarness();
+    const ctx = h.context(workspace, "new-only-scaffold-checkpoint");
+    const newOperation = { tool: "write", input: { path: "NEW.md", content: "new\n" } };
+    const control = await activate(h, ctx, [newOperation]);
+    await h.handlers.get("input")({ text: "approve this exact scaffold", source: "interactive" }, ctx);
+    await control.execute("begin", { action: "begin" }, undefined, undefined, ctx);
+    assert.equal(await h.handlers.get("tool_call")({
+      toolCallId: "new-only-scaffold-write",
+      toolName: "write",
+      input: newOperation.input,
+    }, ctx), undefined);
+    await h.tools.get("write").execute("new-only-scaffold-write", newOperation.input, undefined, undefined, ctx);
+    await h.handlers.get("tool_execution_end")({
+      toolCallId: "new-only-scaffold-write",
+      toolName: "write",
+      args: newOperation.input,
+      isError: false,
+    }, ctx);
+    assert.equal(readFileSync(join(workspace, "NEW.md"), "utf8"), "new\n");
+  }
+});
+
+test("scaffold terminal clauses outrank combined checkpoint acknowledgements", async (t) => {
+  const operation = { tool: "write", input: { path: "AGENTS.md", content: "reviewed replacement\n" } };
+  const replies = [
+    "I created a Git checkpoint for this proposal; cancel it.",
+    "I created a Git checkpoint for this proposal; revise it.",
+    "I created a Git checkpoint for this proposal; adjust it.",
+    "I understand the risk and want to proceed without a Git checkpoint; cancel it.",
+    "I understand the risk and want to proceed without a Git checkpoint; revise it.",
+  ];
+
+  for (const [index, reply] of replies.entries()) {
+    const { workspace } = scaffoldFixture(t, true);
+    const before = workspaceSnapshot(workspace);
+    const h = extensionHarness();
+    const ctx = h.context(workspace, `scaffold-terminal-checkpoint-${index}`);
+    const control = h.tools.get("picm_scan_control");
+    const scaffold = h.tools.get("picm_scaffold_proposal");
+
+    await h.commands.get("picm-new").handler("existing scaffold", ctx);
+    await control.execute("preflight", { action: "preflight" }, undefined, undefined, ctx);
+    await control.execute("privacy", { action: "privacy", excludedPaths: [] }, undefined, undefined, ctx);
+    await scaffold.execute(
+      "preview",
+      { action: "preview", operations: [operation] },
+      undefined,
+      undefined,
+      ctx,
+    );
+    await h.handlers.get("input")({ text: reply, source: "interactive" }, ctx);
+    await h.handlers.get("input")({ text: "approve this exact scaffold", source: "interactive" }, ctx);
+    await control.execute("begin", { action: "begin" }, undefined, undefined, ctx);
+
+    const blocked = await h.handlers.get("tool_call")({
+      toolCallId: `terminal-checkpoint-write-${index}`,
+      toolName: "write",
+      input: operation.input,
+    }, ctx);
+    assert.equal(blocked?.block, true);
+    assert.deepEqual(workspaceSnapshot(workspace), before);
+  }
+});
+
+test("scaffold approval before registration remains no-write", async (t) => {
+  const { workspace } = scaffoldFixture(t);
+  const h = extensionHarness();
+  const ctx = h.context(workspace, "scaffold-approval-before-preview");
+  const control = h.tools.get("picm_scan_control");
+  const scaffold = h.tools.get("picm_scaffold_proposal");
+  const operation = { tool: "write", input: { path: "NEW.md", content: "new\n" } };
+
+  await h.commands.get("picm-new").handler("new scaffold", ctx);
+  await control.execute("preflight", { action: "preflight" }, undefined, undefined, ctx);
+  await control.execute("privacy", { action: "privacy", excludedPaths: [] }, undefined, undefined, ctx);
+  await h.handlers.get("input")({ text: "approve this exact scaffold", source: "interactive" }, ctx);
+  await scaffold.execute("preview", { action: "preview", operations: [operation] }, undefined, undefined, ctx);
+  await control.execute("begin", { action: "begin" }, undefined, undefined, ctx);
+
+  const blocked = await h.handlers.get("tool_call")({
+    toolCallId: "approval-before-preview-write",
+    toolName: "write",
+    input: operation.input,
+  }, ctx);
+  assert.equal(blocked?.block, true);
+  assert.equal(workspaceSnapshot(workspace)["NEW.md"], undefined);
+});
+
+test("revised scaffold proposals do not inherit checkpoint acknowledgements", async (t) => {
+  const { workspace } = scaffoldFixture(t, true);
+  const h = extensionHarness();
+  const ctx = h.context(workspace, "revised-scaffold-checkpoint");
+  const control = h.tools.get("picm_scan_control");
+  const scaffold = h.tools.get("picm_scaffold_proposal");
+  const original = { tool: "write", input: { path: "AGENTS.md", content: "original draft\n" } };
+  const revised = { tool: "write", input: { path: "AGENTS.md", content: "revised draft\n" } };
+
+  await h.commands.get("picm-new").handler("existing scaffold", ctx);
+  await control.execute("preflight", { action: "preflight" }, undefined, undefined, ctx);
+  await control.execute("privacy", { action: "privacy", excludedPaths: [] }, undefined, undefined, ctx);
+  await scaffold.execute("original-preview", { action: "preview", operations: [original] }, undefined, undefined, ctx);
+  await h.handlers.get("input")({ text: "I created a Git checkpoint.", source: "interactive" }, ctx);
+  await h.handlers.get("input")({ text: "change the scaffold", source: "interactive" }, ctx);
+  await scaffold.execute("revised-preview", { action: "preview", operations: [revised] }, undefined, undefined, ctx);
+  await h.handlers.get("input")({ text: "approve this exact scaffold", source: "interactive" }, ctx);
+  await control.execute("begin", { action: "begin" }, undefined, undefined, ctx);
+
+  const missingRenewal = await h.handlers.get("tool_call")({
+    toolCallId: "revised-without-acknowledgement",
+    toolName: "write",
+    input: revised.input,
+  }, ctx);
+  assert.equal(missingRenewal?.block, true);
+  assert.equal(readFileSync(join(workspace, "AGENTS.md"), "utf8"), "existing architecture\n");
+
+  await h.handlers.get("input")({ text: "I understand the risk and want to proceed without a Git checkpoint.", source: "interactive" }, ctx);
+  await h.handlers.get("input")({ text: "approve this exact scaffold", source: "interactive" }, ctx);
+  assert.equal(await h.handlers.get("tool_call")({
+    toolCallId: "revised-with-acknowledgement",
+    toolName: "write",
+    input: revised.input,
+  }, ctx), undefined);
+  await h.tools.get("write").execute("revised-with-acknowledgement", revised.input, undefined, undefined, ctx);
+  await h.handlers.get("tool_execution_end")({
+    toolCallId: "revised-with-acknowledgement",
+    toolName: "write",
+    args: revised.input,
+    isError: false,
+  }, ctx);
+  assert.equal(readFileSync(join(workspace, "AGENTS.md"), "utf8"), revised.input.content);
 });
 
 test("picm-new rejects unregistered mutations and alternate write-capable tools", async (t) => {
@@ -445,6 +714,39 @@ test("adopt dispatch routes proposal behavior to the adoption guide", async () =
   const prompt = h.sent[0];
   assert.match(prompt, /load the `picm-factory` skill and its `SKILL\.md`/);
   assert.match(prompt, /Load and follow `references\/adoption-guide\.md` before creating an adoption proposal/);
+});
+
+test("write-workflow dispatch preserves checkpoint guidance without making its opt-out approval", async () => {
+  const h = commandHarness();
+  for (const [command, args] of [
+    ["picm-new", "stage pipeline"],
+    ["picm-adopt", "coding"],
+    ["picm-maintain", "routing"],
+    ["picm-optimize", ""],
+  ]) {
+    await h.commands.get(command).handler(args, h.ctx);
+  }
+
+  for (const prompt of h.sent) {
+    assert.match(prompt, /Git checkpoint recommendation/);
+    assert.match(prompt, /affected existing content/);
+    assert.match(prompt, /never inspect Git status, history, or contents/);
+    assert.match(prompt, /I understand the risk and want to proceed without a Git checkpoint/);
+    assert.match(prompt, /unverified acknowledgement, not approval: direct approval must follow/);
+    assert.match(prompt, /unchanged presented proposal/);
+    assert.match(prompt, /references\/preview-review-protocol\.md/);
+  }
+});
+
+test("new-workspace guidance replaces Git-status inspection with checkpoint guidance", () => {
+  const skill = read("skills/picm-factory/SKILL.md");
+  const interview = read("skills/picm-factory/references/interview-guide.md");
+  for (const text of [skill, interview]) {
+    assert.match(text, /strongly recommend(?: that)? (?:the user create|a user-created) (?:a )?Git commit/i);
+    assert.match(text, /do not inspect Git status, history, or file contents/i);
+    assert.match(text, /Non-Git and new\/empty workspaces remain supported|non-Git and new\/empty workspaces remain supported/i);
+    assert.doesNotMatch(text, /git status --short/);
+  }
 });
 
 test("skill, adopt, coding, maintenance, optimization, help, and public guidance point to the protocol", () => {

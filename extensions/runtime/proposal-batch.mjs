@@ -3,6 +3,21 @@ import { dirname, isAbsolute, normalize, sep } from "node:path";
 
 const OPERATION_TYPES = new Set(["create", "modify", "delete", "move"]);
 
+function gitCheckpointRecommendation(batch) {
+  const acknowledgement = proposalHasExistingContentRisk(batch)
+    ? "If coverage is absent or uncertain and you want to proceed, explicitly say: `I understand the risk and want to proceed without a Git checkpoint.` That risk opt-out does not approve this proposal; afterward, use the normal direct approval prompt below."
+    : "This proposal creates new files only, so it needs no checkpoint acknowledgement; normal direct approval remains required.";
+  return [
+    "Git checkpoint recommendation:",
+    "Before approving this exact proposal, strongly recommend that you create a Git commit covering the current contents of affected existing files.",
+    "PiCM does not inspect Git status, history, or file contents to verify checkpoint coverage. No repository-wide clean state is required, and do not add sensitive or ignored material to make a checkpoint.",
+    "PiCM will not initialize, stage, commit, reset, clean, or restore Git for you. A repository or old commit does not protect current uncommitted work; a checkpoint does not protect uncommitted or untracked work, which may be unrecoverable through Git. Broad Git restore actions can erase newer edits.",
+    "Non-Git and new or empty workspaces remain supported. A first post-scaffold commit protects future contents only.",
+    acknowledgement,
+    "A user-reported checkpoint or risk opt-out applies only while this exact proposal and digest remain unchanged. A revised proposal needs the normal refreshed summary and direct approval.",
+  ].join("\n");
+}
+
 function proposalError(code, message) {
   return Object.assign(new Error(`${code}: ${message}`), { code });
 }
@@ -100,6 +115,10 @@ function auditOperations(operations) {
   return operations.map(({ type, path, from }) => ({ type, path, ...(from ? { from } : {}) }));
 }
 
+export function proposalHasExistingContentRisk(batch) {
+  return batch.operations.some((operation) => typeof operation.expectedContent === "string");
+}
+
 export function proposalSummary(batch) {
   const operations = batch.operations.map(({ type, path, from, expectedContent, content }) => ({
     type,
@@ -113,6 +132,7 @@ export function proposalSummary(batch) {
     `Digest: ${batch.digest}`,
     `Operations (${operations.length}):`,
     JSON.stringify(operations, null, 2),
+    gitCheckpointRecommendation(batch),
   ].join("\n");
 }
 

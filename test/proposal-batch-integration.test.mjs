@@ -35,6 +35,211 @@ async function withMixedProposalFixture(run) {
   }
 }
 
+test("checkpoint reports and risk opt-outs remain pending until later direct approval", async () => {
+  for (const acknowledgement of [
+    "I created a Git checkpoint.",
+    "I understand the risk and want to proceed without a Git checkpoint.",
+  ]) {
+    await withFixture(async ({ root }) => {
+      const h = extensionHarness();
+      const ctx = h.context(root, `checkpoint-${acknowledgement.slice(0, 8)}`);
+      const control = h.tools.get("picm_scan_control");
+      const batch = h.tools.get("picm_proposal_batch");
+
+      await h.commands.get("picm-adopt").handler("coding", ctx);
+      await control.execute("preflight", { action: "preflight" }, undefined, undefined, ctx);
+      await control.execute("privacy", { action: "privacy", excludedPaths: [] }, undefined, undefined, ctx);
+      await control.execute("begin", { action: "begin" }, undefined, undefined, ctx);
+      const prepared = await batch.execute("prepare", {
+        action: "prepare",
+        operations: [{ type: "modify", path: "safe.txt", expectedContent: "safe\n", content: "written\n" }],
+      }, undefined, undefined, ctx);
+      const presented = await batch.execute("present", {
+        action: "present",
+        proposalId: prepared.details.proposalId,
+        digest: prepared.details.digest,
+      }, undefined, undefined, ctx);
+      assert.match(presented.details.summary, /I understand the risk and want to proceed without a Git checkpoint/);
+
+      await h.handlers.get("before_agent_start")({ prompt: "approve" }, ctx);
+      const unacknowledged = await batch.execute(
+        "apply",
+        { action: "apply", proposalId: prepared.details.proposalId },
+        undefined,
+        undefined,
+        ctx,
+      );
+      assert.equal(unacknowledged.details.ok, false);
+      assert.equal(unacknowledged.details.code, "PICM_PROPOSAL_CHECKPOINT_ACKNOWLEDGEMENT_REQUIRED");
+      assert.equal(readFileSync(join(root, "safe.txt"), "utf8"), "safe\n");
+
+      await h.handlers.get("before_agent_start")({ prompt: acknowledgement }, ctx);
+      const acknowledgementOnly = await batch.execute(
+        "apply",
+        { action: "apply", proposalId: prepared.details.proposalId },
+        undefined,
+        undefined,
+        ctx,
+      );
+      assert.equal(acknowledgementOnly.details.ok, false);
+      assert.equal(acknowledgementOnly.details.code, "PICM_PROPOSAL_NOT_APPROVED");
+      assert.equal(readFileSync(join(root, "safe.txt"), "utf8"), "safe\n");
+
+      await h.handlers.get("before_agent_start")({ prompt: "approve" }, ctx);
+      const approved = await batch.execute(
+        "apply",
+        { action: "apply", proposalId: prepared.details.proposalId },
+        undefined,
+        undefined,
+        ctx,
+      );
+      assert.equal(approved.details.ok, true);
+      assert.equal(readFileSync(join(root, "safe.txt"), "utf8"), "written\n");
+    });
+  }
+});
+
+test("proposal terminal clauses outrank combined checkpoint acknowledgements", async () => {
+  const replies = [
+    "I created a Git checkpoint for this proposal; cancel it.",
+    "I created a Git checkpoint for this proposal; revise it.",
+    "I understand the risk and want to proceed without a Git checkpoint; cancel it.",
+    "I understand the risk and want to proceed without a Git checkpoint; revise it.",
+  ];
+
+  for (const [index, reply] of replies.entries()) {
+    await withFixture(async ({ root }) => {
+      const h = extensionHarness();
+      const ctx = h.context(root, `terminal-checkpoint-${index}`);
+      const control = h.tools.get("picm_scan_control");
+      const batch = h.tools.get("picm_proposal_batch");
+
+      await h.commands.get("picm-adopt").handler("coding", ctx);
+      await control.execute("preflight", { action: "preflight" }, undefined, undefined, ctx);
+      await control.execute("privacy", { action: "privacy", excludedPaths: [] }, undefined, undefined, ctx);
+      await control.execute("begin", { action: "begin" }, undefined, undefined, ctx);
+      const prepared = await batch.execute("prepare", {
+        action: "prepare",
+        operations: [{ type: "modify", path: "safe.txt", expectedContent: "safe\n", content: "written\n" }],
+      }, undefined, undefined, ctx);
+      await batch.execute("present", {
+        action: "present",
+        proposalId: prepared.details.proposalId,
+        digest: prepared.details.digest,
+      }, undefined, undefined, ctx);
+
+      await h.handlers.get("before_agent_start")({ prompt: reply }, ctx);
+      const replacementRequired = await batch.execute("present", {
+        action: "present",
+        proposalId: prepared.details.proposalId,
+        digest: prepared.details.digest,
+      }, undefined, undefined, ctx);
+      assert.equal(replacementRequired.details.ok, false);
+      assert.equal(replacementRequired.details.code, "PICM_PROPOSAL_REPLACEMENT_REQUIRED");
+
+      await h.handlers.get("before_agent_start")({ prompt: "approve" }, ctx);
+      const noWrite = await batch.execute(
+        "apply",
+        { action: "apply", proposalId: prepared.details.proposalId },
+        undefined,
+        undefined,
+        ctx,
+      );
+      assert.equal(noWrite.details.ok, false);
+      assert.equal(noWrite.details.code, "PICM_PROPOSAL_NOT_APPROVED");
+      assert.equal(readFileSync(join(root, "safe.txt"), "utf8"), "safe\n");
+    });
+  }
+});
+
+test("revised proposal batches do not inherit checkpoint acknowledgements", async () => {
+  await withFixture(async ({ root }) => {
+    const h = extensionHarness();
+    const ctx = h.context(root, "revised-checkpoint");
+    const control = h.tools.get("picm_scan_control");
+    const batch = h.tools.get("picm_proposal_batch");
+    const prepare = (content) => batch.execute("prepare", {
+      action: "prepare",
+      operations: [{ type: "modify", path: "safe.txt", expectedContent: "safe\n", content }],
+    }, undefined, undefined, ctx);
+    const present = (prepared) => batch.execute("present", {
+      action: "present",
+      proposalId: prepared.details.proposalId,
+      digest: prepared.details.digest,
+    }, undefined, undefined, ctx);
+
+    await h.commands.get("picm-adopt").handler("coding", ctx);
+    await control.execute("preflight", { action: "preflight" }, undefined, undefined, ctx);
+    await control.execute("privacy", { action: "privacy", excludedPaths: [] }, undefined, undefined, ctx);
+    await control.execute("begin", { action: "begin" }, undefined, undefined, ctx);
+
+    const original = await prepare("original draft\n");
+    await present(original);
+    await h.handlers.get("before_agent_start")({ prompt: "I created a Git checkpoint." }, ctx);
+    await h.handlers.get("before_agent_start")({ prompt: "please revise this proposal" }, ctx);
+    const revised = await prepare("revised draft\n");
+    await present(revised);
+    await h.handlers.get("before_agent_start")({ prompt: "approve" }, ctx);
+
+    const missingRenewal = await batch.execute(
+      "apply",
+      { action: "apply", proposalId: revised.details.proposalId },
+      undefined,
+      undefined,
+      ctx,
+    );
+    assert.equal(missingRenewal.details.code, "PICM_PROPOSAL_CHECKPOINT_ACKNOWLEDGEMENT_REQUIRED");
+    assert.equal(readFileSync(join(root, "safe.txt"), "utf8"), "safe\n");
+
+    await h.handlers.get("before_agent_start")({ prompt: "I understand the risk and want to proceed without a Git checkpoint." }, ctx);
+    await h.handlers.get("before_agent_start")({ prompt: "approve" }, ctx);
+    const applied = await batch.execute(
+      "apply",
+      { action: "apply", proposalId: revised.details.proposalId },
+      undefined,
+      undefined,
+      ctx,
+    );
+    assert.equal(applied.details.ok, true);
+    assert.equal(readFileSync(join(root, "safe.txt"), "utf8"), "revised draft\n");
+  });
+});
+
+test("new-only proposal batches remain directly approvable", async () => {
+  await withFixture(async ({ root }) => {
+    const h = extensionHarness();
+    const ctx = h.context(root, "new-only-checkpoint");
+    const control = h.tools.get("picm_scan_control");
+    const batch = h.tools.get("picm_proposal_batch");
+
+    await h.commands.get("picm-adopt").handler("coding", ctx);
+    await control.execute("preflight", { action: "preflight" }, undefined, undefined, ctx);
+    await control.execute("privacy", { action: "privacy", excludedPaths: [] }, undefined, undefined, ctx);
+    await control.execute("begin", { action: "begin" }, undefined, undefined, ctx);
+    const prepared = await batch.execute("prepare", {
+      action: "prepare",
+      operations: [{ type: "create", path: "checkpoint-result.md", content: "written\n" }],
+    }, undefined, undefined, ctx);
+    const presented = await batch.execute("present", {
+      action: "present",
+      proposalId: prepared.details.proposalId,
+      digest: prepared.details.digest,
+    }, undefined, undefined, ctx);
+    assert.match(presented.details.summary, /creates new files only/);
+    await h.handlers.get("before_agent_start")({ prompt: "approve" }, ctx);
+
+    const applied = await batch.execute(
+      "apply",
+      { action: "apply", proposalId: prepared.details.proposalId },
+      undefined,
+      undefined,
+      ctx,
+    );
+    assert.equal(applied.details.ok, true);
+    assert.equal(readFileSync(join(root, "checkpoint-result.md"), "utf8"), "written\n");
+  });
+});
+
 test("approved proposal batches create guarded parent directories", async () => {
   await withFixture(async ({ root }) => {
     const h = extensionHarness();
@@ -70,6 +275,7 @@ test("approved proposal batches create guarded parent directories", async () => 
       digest: prepared.details.digest,
     }, undefined, undefined, ctx);
     assert.equal(presented.details.ok, true);
+    await h.handlers.get("before_agent_start")({ prompt: "I understand the risk and want to proceed without a Git checkpoint." }, ctx);
     await h.handlers.get("before_agent_start")({ prompt: "approve" }, ctx);
     const applied = await batch.execute(
       "apply",
@@ -595,7 +801,16 @@ test("approved adoption and maintenance batches apply exact mixed operations wit
         `Digest: ${aborted.details.digest}`,
         "Operations (4):",
         JSON.stringify(operations(), null, 2),
+        "Git checkpoint recommendation:",
+        "Before approving this exact proposal, strongly recommend that you create a Git commit covering the current contents of affected existing files.",
+        "PiCM does not inspect Git status, history, or file contents to verify checkpoint coverage. No repository-wide clean state is required, and do not add sensitive or ignored material to make a checkpoint.",
+        "PiCM will not initialize, stage, commit, reset, clean, or restore Git for you. A repository or old commit does not protect current uncommitted work; a checkpoint does not protect uncommitted or untracked work, which may be unrecoverable through Git. Broad Git restore actions can erase newer edits.",
+        "Non-Git and new or empty workspaces remain supported. A first post-scaffold commit protects future contents only.",
+        "If coverage is absent or uncertain and you want to proceed, explicitly say: `I understand the risk and want to proceed without a Git checkpoint.` That risk opt-out does not approve this proposal; afterward, use the normal direct approval prompt below.",
+        "A user-reported checkpoint or risk opt-out applies only while this exact proposal and digest remain unchanged. A revised proposal needs the normal refreshed summary and direct approval.",
       ].join("\n"));
+      assert.match(presentedAbort.details.approvalPrompt, /Git checkpoint or risk opt-out is not approval/);
+      await h.handlers.get("before_agent_start")({ prompt: "I understand the risk and want to proceed without a Git checkpoint." }, ctx);
       await h.handlers.get("before_agent_start")({ prompt: "approve" }, ctx);
       const abortAfterFirstMutation = {
         get aborted() {
@@ -634,6 +849,7 @@ test("approved adoption and maintenance batches apply exact mixed operations wit
 
       const stale = await prepare();
       await present(stale);
+      await h.handlers.get("before_agent_start")({ prompt: "I understand the risk and want to proceed without a Git checkpoint." }, ctx);
       await h.handlers.get("before_agent_start")({ prompt: "accept" }, ctx);
       writeFileSync(join(root, "reference/obsolete.md"), "# Drifted note\n");
       const staleResult = await apply(stale.details.proposalId);
@@ -663,6 +879,7 @@ test("approved adoption and maintenance batches apply exact mixed operations wit
       const approved = await prepare("# Drifted note\n");
       const presented = await present(approved);
       assert.match(presented.details.approvalPrompt, /accept and write/);
+      await h.handlers.get("before_agent_start")({ prompt: "I understand the risk and want to proceed without a Git checkpoint." }, ctx);
       await h.handlers.get("before_agent_start")({ prompt: "accept and write" }, ctx);
       const applying = apply(approved.details.proposalId);
       const ending = control.execute("end", { action: "end" }, undefined, undefined, ctx);
@@ -773,6 +990,7 @@ test("approved batches reauthorize every path before mutation against current ex
           ctx,
         );
         assert.equal(presented.details.ok, true);
+        await h.handlers.get("before_agent_start")({ prompt: "I understand the risk and want to proceed without a Git checkpoint." }, ctx);
         await h.handlers.get("before_agent_start")({ prompt: "approve" }, ctx);
         return prepared.details.proposalId;
       };
@@ -857,6 +1075,16 @@ test("approved batches reauthorize every path before mutation against current ex
         ctx,
       );
       await control.execute("begin", { action: "begin" }, undefined, undefined, ctx);
+      const phaseReplaced = await batch.execute(
+        "apply",
+        { action: "apply", proposalId: sessionMoveDestinationProposal },
+        undefined,
+        undefined,
+        ctx,
+      );
+      assert.equal(phaseReplaced.details.code, "PICM_PROPOSAL_CHECKPOINT_ACKNOWLEDGEMENT_REQUIRED");
+      await h.handlers.get("before_agent_start")({ prompt: "I understand the risk and want to proceed without a Git checkpoint." }, ctx);
+      await h.handlers.get("before_agent_start")({ prompt: "approve" }, ctx);
       await assertBlocked(sessionMoveDestinationProposal);
       assert.equal(readFileSync(join(root, "session-sentinel.md"), "utf8"), sentinelContent);
       assert.equal(readFileSync(join(root, "session-move-source.md"), "utf8"), sourceContents.sessionMove);

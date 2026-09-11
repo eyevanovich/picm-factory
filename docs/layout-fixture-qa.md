@@ -430,7 +430,7 @@ Scenario:
 Expected behavior:
 
 - Classifies `.git/` + `.pi/` as empty enough.
-- Checks git state and requires explicit approval before writing when `.pi/` is untracked.
+- Includes the Git checkpoint recommendation in the current exact preview without inspecting Git status, history, or contents; an explicit risk opt-out remains separate from direct write approval.
 - Records public-only / no-sensitive-data boundary.
 - Recommends Stage Pipeline with root numbered folders.
 - Generated stage contracts distinguish stable reference material from working artifacts.

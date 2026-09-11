@@ -5,13 +5,17 @@ import { createGitReadGate } from "./git-read-gate.mjs";
 import { createMaintenanceConfigStore } from "./maintenance-config-store.mjs";
 import { createMaintenanceController } from "./maintenance-controller.mjs";
 import { mergePrivacyExcludedPaths } from "./privacy-policy.mjs";
-import { createScaffoldApprovalRuntime } from "./scaffold-approval.mjs";
+import {
+  createScaffoldApprovalRuntime,
+  isUnverifiedCheckpointAcknowledgement,
+} from "./scaffold-approval.mjs";
 import { createWorkflowLifecycle } from "./workflow-lifecycle.mjs";
 import { identifyLayoutProfile } from "./layout-profile.mjs";
 import {
   applyProposalBatch,
   prepareProposalBatch,
   proposalAudit,
+  proposalHasExistingContentRisk,
   proposalSummary,
 } from "./proposal-batch.mjs";
 import {
@@ -114,8 +118,8 @@ export function createRuntimeCoordinator({
     return issuedPathBindings.get(sessionId)?.get(toolCallId);
   }
 
-  function revokeIssuedBinding(issued) {
-    if (!issued || issued.state === "revoked") return;
+  function revokeIssuedBinding(issued, { afterExecution = false } = {}) {
+    if (!issued || issued.state === "revoked" || (issued.state === "executing" && !afterExecution)) return;
     issued.state = "revoked";
     try { issued.binding.release(); } catch {}
     issued.binding = undefined;
@@ -139,6 +143,16 @@ export function createRuntimeCoordinator({
     if (!bindings) return;
     for (const issued of bindings.values()) {
       if (issued.scope === scope) revokeIssuedBinding(issued);
+    }
+  }
+
+  function revokeScaffoldMutationBindings(scope) {
+    const bindings = issuedPathBindings.get(scope.sessionId);
+    if (!bindings) return;
+    for (const issued of bindings.values()) {
+      if (issued.scope !== scope || !issued.scaffoldMutation || issued.state !== "active") continue;
+      revokeIssuedBinding(issued);
+      scaffoldApproval.complete(scope, issued.toolCallId, false);
     }
   }
 
@@ -332,6 +346,7 @@ export function createRuntimeCoordinator({
         captureAdoptionBaseline: workflow.command === "picm-adopt" && !workflow.adoption.baselineCaptured,
         wasAlreadyAdopted: current.config?.adoption?.status === "adopted",
       });
+      clearCheckpointAcknowledgements(workflow.scope);
       return {
         ok: true,
         action,
@@ -375,6 +390,7 @@ export function createRuntimeCoordinator({
         intent: params.intent,
         wasAlreadyAdopted: adoptionWasAlreadyAdopted,
       });
+      clearCheckpointAcknowledgements(workflow.scope);
 
       return {
         ok: true,
@@ -460,6 +476,7 @@ export function createRuntimeCoordinator({
         throw new Error("PICM_SCAN_NOT_ACTIVE: begin an explicitly authorized scan before ending it");
       }
       lifecycle.transition(workflow, "end-scan");
+      clearCheckpointAcknowledgements(workflow.scope);
     } else if (action === "complete") {
       if (!workflow) {
         throw new Error("PICM_SCAN_NOT_AUTHORIZED: invoke and finish a privacy-reviewed PiCM workflow before completion");
@@ -567,16 +584,55 @@ export function createRuntimeCoordinator({
     return "pending";
   }
 
+  function hasProposalAcknowledgement(current) {
+    return current.acknowledgement?.proposalId === current.batch.id &&
+      current.acknowledgement.digest === current.batch.digest;
+  }
+
+  function clearProposalAcknowledgement(scope) {
+    const current = proposalBatches.get(scope);
+    if (current) current.acknowledgement = undefined;
+  }
+
+  function clearCheckpointAcknowledgements(scope) {
+    scaffoldApproval.clearAcknowledgement(scope);
+    revokeScaffoldMutationBindings(scope);
+    clearProposalAcknowledgement(scope);
+  }
+
+  function finaliseProposal(current, status) {
+    current.status = status;
+    current.acknowledgement = undefined;
+  }
+
+  function hasCurrentPresentation(current) {
+    return current.presentation?.proposalId === current.batch.id &&
+      current.presentation.digest === current.batch.digest;
+  }
+
   function observeProposalResponse(ctx, prompt) {
     const workflow = workflowFor(ctx);
     const current = workflow ? proposalBatches.get(workflow.scope) : undefined;
     if (!current || TERMINAL_PROPOSAL_STATUSES.has(current.status)) return undefined;
     const status = proposalResponseStatus(prompt);
-    if (!current.presentation && status === "approved") {
+    if (status === "cancelled" || status === "revision-required") {
+      finaliseProposal(current, status);
+      return proposalAudit(current.batch, "approval-observed", { approval: current.status });
+    }
+    if (isUnverifiedCheckpointAcknowledgement(prompt)) {
+      if (hasCurrentPresentation(current)) {
+        current.status = "pending";
+        current.acknowledgement = {
+          proposalId: current.batch.id,
+          digest: current.batch.digest,
+        };
+      }
+      return proposalAudit(current.batch, "approval-observed", { approval: current.status });
+    }
+    if (!hasCurrentPresentation(current) && status === "approved") {
       return proposalAudit(current.batch, "approval-observed", { approval: "pending" });
     }
     if (status === "approved" && current.status === "pending") current.status = "approved";
-    else if (status !== "pending") current.status = status;
     else if (current.status !== "revision-required" && current.status !== "cancelled") current.status = "pending";
     return proposalAudit(current.batch, "approval-observed", { approval: current.status });
   }
@@ -612,6 +668,7 @@ export function createRuntimeCoordinator({
       });
       requireCurrentWorkflow(sessionId, workflow);
       proposalBatches.set(workflow.scope, {
+        acknowledgement: undefined,
         command: workflow.command,
         batch,
         status: "pending",
@@ -658,7 +715,9 @@ export function createRuntimeCoordinator({
         };
       }
       const summary = proposalSummary(current.batch);
-      const approvalPrompt = "Reply accept, approve, accept and write, or proceed to apply this exact proposal; otherwise request changes or cancel.";
+      const approvalPrompt = proposalHasExistingContentRisk(current.batch)
+        ? "A user-reported Git checkpoint or risk opt-out is not approval. For existing content, record one before direct approval. Reply accept, approve, accept and write, or proceed to apply this exact proposal; otherwise request changes or cancel."
+        : "Reply accept, approve, accept and write, or proceed to apply this exact proposal; otherwise request changes or cancel.";
       current.presentation = {
         proposalId: current.batch.id,
         digest: current.batch.digest,
@@ -691,7 +750,7 @@ export function createRuntimeCoordinator({
           message: "Prepare a replacement batch after the current proposal was resolved",
         };
       }
-      current.status = "cancelled";
+      finaliseProposal(current, "cancelled");
       return {
         ok: true,
         action: "cancel",
@@ -707,6 +766,13 @@ export function createRuntimeCoordinator({
         ok: false,
         code: "PICM_PROPOSAL_NOT_APPROVED",
         message: "An unambiguous direct approval of the current exact proposal is required before applying it",
+      };
+    }
+    if (proposalHasExistingContentRisk(current.batch) && !hasProposalAcknowledgement(current)) {
+      return {
+        ok: false,
+        code: "PICM_PROPOSAL_CHECKPOINT_ACKNOWLEDGEMENT_REQUIRED",
+        message: "A user-reported Git checkpoint or the documented risk opt-out is required before applying this exact proposal to existing content",
       };
     }
 
@@ -743,7 +809,7 @@ export function createRuntimeCoordinator({
             }),
           };
         }
-        current.status = status;
+        finaliseProposal(current, status);
         return {
           ...result,
           action: "apply",
@@ -768,7 +834,7 @@ export function createRuntimeCoordinator({
           }),
         };
       }
-      current.status = "applied";
+      finaliseProposal(current, "applied");
       return {
         ...result,
         action: "apply",
@@ -787,7 +853,7 @@ export function createRuntimeCoordinator({
         });
         throw failure;
       }
-      current.status = aborted ? "aborted" : "failed";
+      finaliseProposal(current, aborted ? "aborted" : "failed");
       if (result?.ok) {
         return {
           ...result,
@@ -898,6 +964,7 @@ export function createRuntimeCoordinator({
     }
     requireCurrentWorkflow(sessionIdFor(ctx), workflow);
     lifecycle.transition(workflow, "continue-as-maintenance");
+    clearCheckpointAcknowledgements(workflow.scope);
     return workflowState(workflow);
   }
 
@@ -934,18 +1001,41 @@ export function createRuntimeCoordinator({
 
   const currentWorkflowCommand = workflowCommand;
 
-  function scaffoldProposal(ctx, operations) {
+  async function scaffoldProposal(ctx, operations) {
     const workflow = workflowFor(ctx);
     if (!workflow || workflow.command !== "picm-new") {
       throw new Error("SCAFFOLD_PROPOSAL_UNAVAILABLE: invoke /picm-new first");
     }
-    return scaffoldApproval.register(workflow.scope, operations);
+    const sessionId = sessionIdFor(ctx);
+    const gate = runtimeFor(ctx).gate;
+    let existingContentAtRisk = false;
+    for (const operation of operations) {
+      if (typeof operation?.input?.path !== "string") continue;
+      const decision = await gate.checkPath(
+        operation.tool,
+        operation.input.path,
+        workflow.privacy.excludedPaths,
+      );
+      requireCurrentWorkflow(sessionId, workflow);
+      if (!decision.allowed || !decision.executionBinding) continue;
+      const binding = gate.bindPath(decision.executionBinding);
+      try {
+        if (decision.executionBinding.existingPath === decision.executionBinding.absolutePath) {
+          existingContentAtRisk = true;
+        }
+      } finally {
+        binding.release();
+      }
+    }
+    return scaffoldApproval.register(workflow.scope, operations, { existingContentAtRisk });
   }
 
   function observeInput(ctx, text) {
     const observedIntent = observeNewWorkflowIntentResponse(ctx, text);
     const workflow = workflowFor(ctx);
-    if (workflow) scaffoldApproval.observeInput(workflow.scope, text);
+    if (workflow && scaffoldApproval.observeInput(workflow.scope, text)) {
+      revokeScaffoldMutationBindings(workflow.scope);
+    }
     return observedIntent;
   }
 
@@ -1063,7 +1153,7 @@ export function createRuntimeCoordinator({
 
     const workflow = issued.workflow;
     const current =
-      issued.state === "active" &&
+      (issued.state === "active" || issued.state === "executing") &&
       lifecycle.isCurrent(workflow) &&
       lifecycle.current(workflowScopeFor(ctx)) === workflow;
     try {
@@ -1115,7 +1205,7 @@ export function createRuntimeCoordinator({
         }
       }
     } finally {
-      revokeIssuedBinding(issued);
+      revokeIssuedBinding(issued, { afterExecution: true });
       clearIssuedBinding(issued);
     }
   }
@@ -1139,8 +1229,16 @@ export function createRuntimeCoordinator({
       scope: workflow.scope,
       workflow,
       binding,
+      scaffoldMutation: false,
       state: "active",
     });
+    return true;
+  }
+
+  function markScaffoldMutationBinding(scope, toolCallId) {
+    const issued = issuedBindingFor(scope.sessionId, toolCallId);
+    if (!issued || issued.scope !== scope || issued.state !== "active") return false;
+    issued.scaffoldMutation = true;
     return true;
   }
 
@@ -1156,6 +1254,7 @@ export function createRuntimeCoordinator({
       if (issued.binding.toolName !== toolName) {
         throw new Error("PICM_PATH_BINDING_MISMATCH: guarded path execution changed tool identity");
       }
+      issued.state = "executing";
       return issued.binding;
     }
     if (!workflow?.completed && (workflow?.phase.active || workflow?.privacy.excludedPaths.length)) {
@@ -1317,18 +1416,29 @@ export function createRuntimeCoordinator({
 
     const currentWorkflow = workflowFor(ctx);
     const currentAdmission = currentWorkflow
-      ? scaffoldApproval.admission(currentWorkflow.scope, event)
+      ? scaffoldApproval.admission(currentWorkflow.scope, event, {
+        existingContentAtRisk:
+          decision.executionBinding?.existingPath === decision.executionBinding?.absolutePath,
+      })
       : { active: false };
+    if (currentAdmission.riskEscalated) revokeScaffoldMutationBindings(workflow.scope);
     const currentApproval =
       currentWorkflow === workflow &&
       lifecycle.isCurrent(workflow) &&
       currentAdmission.active &&
       currentAdmission.proposalIdentity === admission.proposalIdentity &&
+      currentAdmission.proposalDigest === admission.proposalDigest &&
       currentAdmission.directApproved === admission.directApproved &&
       currentAdmission.approvalIdentity === admission.approvalIdentity &&
+      currentAdmission.acknowledgementIdentity === admission.acknowledgementIdentity &&
+      currentAdmission.acknowledged === admission.acknowledged &&
       currentAdmission.operationIdentity === admission.operationIdentity &&
       currentAdmission.allowed;
-    if (!currentApproval || !scaffoldApproval.reserve(workflow.scope, currentAdmission, event.toolCallId)) {
+    if (
+      !currentApproval ||
+      !scaffoldApproval.reserve(workflow.scope, currentAdmission, event.toolCallId) ||
+      !markScaffoldMutationBinding(workflow.scope, event.toolCallId)
+    ) {
       releaseBinding(workflow.scope, event.toolCallId);
       return blockedScaffoldMutation();
     }
