@@ -501,6 +501,162 @@ test("treats present submodules as separate guarded worktrees", async (t) => {
   assert.match((await gate.checkPath("read", "vendor/lib/.git")).reason, /\.git internals/);
 });
 
+test("uses operation-local Git routing while reducing repeated inventory commands", async (t) => {
+  const root = mkdtempSync(join(tmpdir(), "picm-gate-command-routing-"));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  git(root, "init", "-q");
+  write(join(root, "safe.txt"), "safe\n");
+  git(root, "add", "safe.txt");
+
+  const nestedRoot = join(root, "vendor", "lib");
+  mkdirSync(nestedRoot, { recursive: true });
+  git(nestedRoot, "init", "-q");
+  write(join(nestedRoot, "safe.txt"), "nested safe\n");
+  git(nestedRoot, "add", "safe.txt");
+  git(nestedRoot, "-c", "user.name=T", "-c", "user.email=t@e.invalid", "commit", "-qm", "sub");
+  git(root, "add", "vendor/lib");
+  git(root, "-c", "user.name=T", "-c", "user.email=t@e.invalid", "commit", "-qm", "parent");
+
+  const canonicalRoot = await realpathFile(root);
+  const canonicalNestedRoot = await realpathFile(nestedRoot);
+  const calls = [];
+  const gate = createGitReadGate({
+    cwd: root,
+    packageRoot: root,
+    runGit: async (commandCwd, args) => {
+      calls.push({ cwd: commandCwd, args: [...args] });
+      return defaultRunGit(commandCwd, args);
+    },
+  });
+  t.after(() => gate.dispose());
+
+  const baselineCounts = {
+    ordinaryDirectRead: 7,
+    registeredNestedDirectRead: 9,
+    nestedInventory: 11,
+  };
+  const commandGroups = {};
+
+  assert.equal((await gate.checkPath("read", "safe.txt")).allowed, true);
+  commandGroups.ordinaryDirectRead = calls.splice(0);
+
+  assert.equal((await gate.checkPath("read", "vendor/lib/safe.txt")).allowed, true);
+  commandGroups.registeredNestedDirectRead = calls.splice(0);
+
+  const inventory = await gate.refreshInventory("vendor/lib");
+  assert.equal(inventory.worktree, canonicalNestedRoot);
+  commandGroups.nestedInventory = calls.splice(0);
+
+  const inventoryCommands = [
+    ["ls-files", "-z", "--cached", "--others", "--exclude-standard"],
+    [
+      "ls-files",
+      "-z",
+      "--others",
+      "--ignored",
+      "--exclude-standard",
+      "--directory",
+      "--no-empty-directory",
+    ],
+    ["ls-files", "-z", "--cached", "--ignored", "--exclude-standard"],
+  ];
+  assert.deepEqual(commandGroups.ordinaryDirectRead, [
+    { cwd: root, args: ["rev-parse", "--show-toplevel"] },
+    { cwd: canonicalRoot, args: ["rev-parse", "--show-toplevel"] },
+    ...inventoryCommands.map((args) => ({ cwd: canonicalRoot, args })),
+    { cwd: canonicalRoot, args: ["check-ignore", "--no-index", "-q", "--", "safe.txt"] },
+  ]);
+  assert.deepEqual(commandGroups.registeredNestedDirectRead, [
+    { cwd: root, args: ["rev-parse", "--show-toplevel"] },
+    { cwd: canonicalRoot, args: ["ls-files", "--stage", "-z", "--", "vendor/lib"] },
+    { cwd: canonicalNestedRoot, args: ["rev-parse", "--show-toplevel"] },
+    { cwd: canonicalRoot, args: ["check-ignore", "--no-index", "-q", "--", "vendor/lib"] },
+    ...inventoryCommands.map((args) => ({ cwd: canonicalNestedRoot, args })),
+    { cwd: canonicalNestedRoot, args: ["check-ignore", "--no-index", "-q", "--", "safe.txt"] },
+  ]);
+  assert.deepEqual(commandGroups.nestedInventory, [
+    { cwd: root, args: ["rev-parse", "--show-toplevel"] },
+    { cwd: canonicalRoot, args: ["ls-files", "--stage", "-z", "--", "vendor/lib"] },
+    { cwd: canonicalNestedRoot, args: ["rev-parse", "--show-toplevel"] },
+    { cwd: canonicalRoot, args: ["check-ignore", "--no-index", "-q", "--", "vendor/lib"] },
+    ...inventoryCommands.map((args) => ({ cwd: canonicalNestedRoot, args })),
+  ]);
+
+  const afterCounts = Object.fromEntries(
+    Object.entries(commandGroups).map(([operation, commands]) => [operation, commands.length]),
+  );
+  assert.deepEqual(afterCounts, {
+    ordinaryDirectRead: 6,
+    registeredNestedDirectRead: 8,
+    nestedInventory: 7,
+  });
+  for (const operation of Object.keys(afterCounts)) {
+    assert.ok(afterCounts[operation] < baselineCounts[operation]);
+  }
+});
+
+test("keeps delayed operations on their own discovered Git context", async (t) => {
+  const aBoundaryStarted = deferred();
+  const resumeABoundary = deferred();
+  const fileStat = {
+    isSymbolicLink: () => false,
+    isFile: () => true,
+    isDirectory: () => false,
+    nlink: 1,
+  };
+  const calls = [];
+  let rootDiscoveries = 0;
+  const gate = createGitReadGate({
+    cwd: "/",
+    packageRoot: "/package",
+    fs: {
+      lstat: async (path) => {
+        if (path === "/a/file" || path === "/b/file") return fileStat;
+        throw Object.assign(new Error("missing"), { code: "ENOENT" });
+      },
+      realpath: async (path) => path,
+      realpathSync: (path) => path,
+    },
+    runGit: async (commandCwd, args) => {
+      calls.push({ cwd: commandCwd, args: [...args] });
+      if (args[0] === "rev-parse") {
+        if (commandCwd === "/") {
+          rootDiscoveries += 1;
+          return {
+            code: 0,
+            stdout: `${rootDiscoveries === 1 ? "/a" : "/b"}\n`,
+            stderr: "",
+          };
+        }
+        if (commandCwd === "/a") {
+          aBoundaryStarted.resolve();
+          await resumeABoundary.promise;
+          return { code: 0, stdout: "/a\n", stderr: "" };
+        }
+        return { code: 0, stdout: "/b\n", stderr: "" };
+      }
+      if (args[0] === "ls-files") {
+        return { code: 0, stdout: args.includes("--others") && !args.includes("--ignored") ? "file\0" : "", stderr: "" };
+      }
+      if (args[0] === "check-ignore") return { code: 1, stdout: "", stderr: "" };
+      throw new Error(`unexpected Git command: ${args.join(" ")}`);
+    },
+  });
+  t.after(() => gate.dispose());
+
+  const operationA = gate.checkPath("read", "a/file");
+  await aBoundaryStarted.promise;
+  const operationB = await gate.checkPath("read", "b/file");
+  resumeABoundary.resolve();
+  const operationAResult = await operationA;
+
+  assert.equal(operationAResult.allowed, true);
+  assert.equal(operationB.allowed, true);
+  assert.equal(rootDiscoveries, 2);
+  assert.equal(calls.filter((call) => call.args[0] === "ls-files" && call.cwd === "/a").length, 3);
+  assert.equal(calls.filter((call) => call.args[0] === "ls-files" && call.cwd === "/b").length, 3);
+});
+
 test("isolated Git metadata is removed by gate disposal", async () => {
   const root = mkdtempSync(join(tmpdir(), "picm-non-git-disposal-"));
   write(join(root, ".gitignore"), "ignored.txt\n");
