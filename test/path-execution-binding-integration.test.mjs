@@ -319,6 +319,62 @@ test("guarded grep and rg enforce per-file and aggregate snapshot ceilings", asy
   });
 });
 
+test("guarded grep and rg render and glob-match retained paths relative to their directory root", async () => {
+  await withFixture(async ({ root, packageRoot }) => {
+    assert.notEqual(root, process.cwd());
+    const directory = join(root, "search-root");
+    const target = join(directory, "nested", "match.txt");
+    write(target, "matched\n");
+    git(root, "add", "search-root/nested/match.txt");
+
+    const gate = createGitReadGate({ cwd: root, packageRoot });
+    const matcherOptions = {
+      resolveMatcher: async () => "rg",
+      spawnMatcher: fakeRipgrepSpawn({
+        stdout: [JSON.stringify({ type: "match", data: { line_number: 1 } }) + "\n"],
+      }),
+    };
+    for (const toolName of ["grep", "rg"]) {
+      const directoryDecision = await gate.checkPath(toolName, "search-root");
+      assert.equal(directoryDecision.allowed, true);
+      const directoryBinding = gate.bindPath(directoryDecision.executionBinding);
+      assert.deepEqual(directoryBinding.files.map((file) => file.path), ["nested/match.txt"]);
+
+      for (const glob of [undefined, "*.txt", "nested/*.txt"]) {
+        const result = await executeBoundGrep(
+          directoryBinding,
+          { pattern: "matched", glob },
+          undefined,
+          matcherOptions,
+        );
+        assert.equal(result.content[0].text, "nested/match.txt:1: matched");
+      }
+      const nonmatching = await executeBoundGrep(
+        directoryBinding,
+        { pattern: "matched", glob: "other/*.txt" },
+        undefined,
+        matcherOptions,
+      );
+      assert.equal(nonmatching.content[0].text, "No matches found");
+      directoryBinding.release();
+
+      const fileDecision = await gate.checkPath(toolName, "search-root/nested/match.txt");
+      assert.equal(fileDecision.allowed, true);
+      const fileBinding = gate.bindPath(fileDecision.executionBinding);
+      assert.equal(fileBinding.files, undefined);
+      const singleFile = await executeBoundGrep(
+        fileBinding,
+        { pattern: "matched" },
+        undefined,
+        matcherOptions,
+      );
+      assert.equal(singleFile.content[0].text, "match.txt:1: matched");
+      fileBinding.release();
+    }
+    await gate.dispose();
+  });
+});
+
 test("guarded directory bindings reject retained child symlink replacement", async (t) => {
   if (process.platform === "win32") {
     t.skip("symlink behavior is platform-specific");

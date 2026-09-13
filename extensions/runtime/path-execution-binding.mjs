@@ -463,8 +463,10 @@ export async function executeBoundGrep(binding, params, signal, matcherOptions) 
   if (signal?.aborted) throw new Error("Operation aborted");
   for (const file of files) {
     if (signal?.aborted) throw new Error("Operation aborted");
-    const fileName = relative(binding.absolutePath, file.path) || basename(file.path);
-    if (glob && !globMatches(fileName, glob) && !globMatches(basename(file.path), glob)) continue;
+    const fileName = binding.files
+      ? file.path.split(sep).join("/")
+      : relative(binding.absolutePath, file.path) || basename(file.path);
+    if (glob && !globMatches(fileName, glob) && !globMatches(basename(fileName), glob)) continue;
     const fileBuffer = await file.readFile();
     const byteLength = Buffer.isBuffer(fileBuffer) ? fileBuffer.length : Buffer.byteLength(String(fileBuffer), "utf8");
     if (byteLength > resourceLimits.maxRetainedFileBytes) {
