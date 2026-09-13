@@ -9,7 +9,7 @@ For every scenario, `/picm-new` should:
 - load the `picm-factory` skill and relevant references
 - run metadata-only preflight and ask the baseline security/privacy question before inventory or inspection
 - record exact persisted/session exclusions, call `begin`, then inspect the current folder lightly before writing
-- check git state before writes
+- pair every current exact write preview with the Git checkpoint recommendation
 - recommend one primary layout profile and explain alternatives
 - preview exact file/folder actions before writing
 - avoid unresolved bracket placeholders in generated files
@@ -106,9 +106,9 @@ touch changed.md
 
 Expected behavior:
 
-- with no git repo: recommends `git init` and requires explicit confirmation to proceed without git
-- with dirty git state: shows `git status --short` and requires explicit confirmation before writes
-- never runs `git init` or commits automatically
+- strongly recommends a user-created Git commit covering current contents of affected existing files, but does not inspect Git status, history, or file contents to verify coverage
+- keeps non-Git and new/empty workspaces supported; a first post-scaffold commit protects future contents only
+- for a proposal affecting current existing content when coverage is absent or uncertain, requests an explicit risk opt-out or clear checkpoint report that is separate from normal direct approval; new-only scaffolds remain directly approvable and PiCM never initializes, stages, commits, resets, cleans, or restores Git automatically
 
 ## Scenario 5: seeded command arguments
 
@@ -122,7 +122,7 @@ Expected behavior:
 
 - uses the argument text as seed context
 - asks only missing critical questions instead of restarting the whole interview
-- still performs folder safety, git safety, security/privacy, layout confirmation, and scaffold preview
+- still performs folder safety, Git checkpoint guidance, security/privacy, layout confirmation, and scaffold preview
 
 ## Scenario 6: stage pipeline layout choice
 

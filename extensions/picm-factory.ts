@@ -23,14 +23,12 @@ import { packageRootFromImportMeta } from "./runtime/git-read-gate.mjs";
 import { executeBoundGrep } from "./runtime/path-execution-binding.mjs";
 import { canonicalNow } from "./runtime/maintenance-policy.mjs";
 import { createRuntimeCoordinator } from "./runtime/runtime-coordinator.mjs";
-import { createScaffoldApprovalRuntime } from "./runtime/scaffold-approval.mjs";
 import { renderSpecialistFirstRunGuidance } from "./runtime/specialist-first-run-guidance.mjs";
 
 type CommandName = "picm-new" | "picm-adopt" | "picm-maintain" | "picm-optimize" | "picm-help";
 
 const scanWorkflowEntryType = "picm-scan-workflow";
 const proposalBatchEntryType = "picm-proposal-batch";
-const nonMutatingScaffoldTools = new Set(["read", "grep", "rg", "find", "ls", "picm_scan_control"]);
 
 const commandDescriptions: Record<CommandName, string> = {
   "picm-new": "Create a workspace; optionally add a workflow description after the command",
@@ -91,10 +89,13 @@ const maintenanceOptimizationIntake =
   "At maintenance intake, ask whether to include agent-document optimization in this pass. Default to No. No runs the standard maintenance workflow unchanged. If Yes, load and follow `references/optimization-guide.md` as the single source for the documentation-only optimization scope, preservation ledger, proposal selection, no-worthwhile-change result, privacy boundaries, and shared summary/selective-exact preview; do not duplicate or weaken that flow.";
 
 const proposalBatchGuidance =
-  "For /picm-adopt and /picm-maintain, prepare every exact create, modify, delete, and linked move set with `picm_proposal_batch` while a protected scan phase is active. Call `present` with the returned proposal ID and digest so the runtime generates and delivers the complete exact operation summary, then wait. The runtime accepts only an unambiguous direct approval of the presented current proposal (`accept`, `approve`, `accept and write`, or `proceed`) before `apply`; a vague response, cancellation, or requested revision is no-write. Never use Bash for file operations. Use `cancel` after a cancellation, or `prepare` a replacement batch after a revision. The tool records a session audit for each prepared, presented, approval-observed, cancelled, and applied batch.";
+  "For /picm-adopt and /picm-maintain, prepare every exact create, modify, delete, and linked move set with `picm_proposal_batch` while a protected scan phase is active. Call `present` with the returned proposal ID and digest so the runtime generates and delivers the complete exact operation summary, including the Git checkpoint recommendation, then wait. The runtime accepts only an unambiguous direct approval of the presented current proposal (`accept`, `approve`, `accept and write`, or `proceed`) before `apply`; a vague response, cancellation, or requested revision is no-write. Before mutation, the tool rechecks all approved paths and expected contents. After it begins, failure or cancellation stops later operations without undoing completed files or created parents; use its per-operation result to report completed, unattempted, failed, or uncertain effects, including a published move destination. Never use Bash for file operations. Use `cancel` after a cancellation, or `prepare` a replacement batch after a revision. The tool records a session audit for each prepared, presented, approval-observed, cancelled, failed, and applied batch; if that record cannot be stored after apply, report its audit warning without hiding file effects.";
+
+const gitCheckpointGuidance =
+  "Git checkpoint recommendation — include it in the normal current exact preview. For affected existing content, recommend a user-created commit; never inspect Git status, history, or contents, require a clean tree, or perform Git actions. Non-Git and new/empty workspaces remain supported. If coverage is absent or uncertain, the exact risk opt-out (`I understand the risk and want to proceed without a Git checkpoint.`) or a clear checkpoint report is an unverified acknowledgement, not approval: direct approval must follow. Retain it only for the unchanged presented proposal. Follow `references/preview-review-protocol.md` for the canonical method and risk explanation.";
 
 function buildMaintenanceContinuationPrompt(depth: "strict" | "balanced") {
-  return `Initial maintenance continuation — successful adoption selected an initial maintenance pass. The adoption privacy review and its confirmed exclusions remain active for this conversation. Do not repeat preflight or the privacy question. Begin a new protected scan phase with \`picm_scan_control\` action \`begin\`, then run profile-appropriate maintenance using protected inventory and guarded reads.\n\nMode: maintain\nInitial maintenance run depth: ${depth}. Apply this depth to this run only. Do not mutate \`capabilities.codebaseMap.maintenancePreset\`.\n\n${maintenanceOptimizationIntake}\n\nBefore applying a proposal batch, follow the skill's shipped summary-preview and optional-diff-review protocol. Present the complete current summary, including non-blocking review suggestions for material or uncertain changes, then treat an unambiguous direct approval such as accept, approve, accept and write, or proceed as approval to write only that exact proposal. Do not require a separate summary-acceptance step or review menu. Keep exact review available on demand for view all, review files, and show diff for a path. When the user requests a draft adjustment, revise the current proposal conversationally, preserve applicable unchanged-path review state, and invite direct approval or diff inspection of the revision.\n\n${proposalBatchGuidance}\n\nAfter the final maintenance scan \`end\`, call \`picm_scan_control\` with \`action: "complete"\` before reporting, saving session state, or using any other agent tool.`;
+  return `Initial maintenance continuation — successful adoption selected an initial maintenance pass. The adoption privacy review and its confirmed exclusions remain active for this conversation. Do not repeat preflight or the privacy question. Begin a new protected scan phase with \`picm_scan_control\` action \`begin\`, then run profile-appropriate maintenance using protected inventory and guarded reads.\n\nMode: maintain\nInitial maintenance run depth: ${depth}. Apply this depth to this run only. Do not mutate \`capabilities.codebaseMap.maintenancePreset\`.\n\n${maintenanceOptimizationIntake}\n\nBefore applying a proposal batch, follow the skill's shipped summary-preview and optional-diff-review protocol. Present the complete current summary, including non-blocking review suggestions for material or uncertain changes, then treat an unambiguous direct approval such as accept, approve, accept and write, or proceed as approval to write only that exact proposal. Do not require a separate summary-acceptance step or review menu. Keep exact review available on demand for view all, review files, and show diff for a path. When the user requests a draft adjustment, revise the current proposal conversationally, preserve applicable unchanged-path review state, and invite direct approval or diff inspection of the revision.\n\n${gitCheckpointGuidance}\n\n${proposalBatchGuidance}\n\nAfter the final maintenance scan \`end\`, call \`picm_scan_control\` with \`action: "complete"\` before reporting, saving session state, or using any other agent tool.`;
 }
 
 function buildStagePlacementContext(command: CommandName): string {
@@ -129,6 +130,7 @@ function buildPrompt(
   const previewGuidance = command === "picm-adopt" || command === "picm-maintain" || command === "picm-optimize"
     ? "\n\nBefore applying a proposal batch, follow the skill's shipped summary-preview and optional-diff-review protocol. Present the complete current summary, including non-blocking review suggestions for material or uncertain changes, then treat an unambiguous direct approval such as accept, approve, accept and write, or proceed as approval to write only that exact proposal. Do not require a separate summary-acceptance step or review menu. Keep exact review available on demand for view all, review files, and show diff for a path. When the user requests a draft adjustment, revise the current proposal conversationally, preserve applicable unchanged-path review state, and invite direct approval or diff inspection of the revision."
     : "";
+  const checkpointGuidance = command === "picm-help" ? "" : `\n\n${gitCheckpointGuidance}`;
   const optimizationIntake = command === "picm-maintain" ? `\n\n${maintenanceOptimizationIntake}` : "";
   const sensitiveNonGitSafeguards = command === "picm-adopt" ? `\n\n${sensitiveNonGitAdoptionSafeguards}` : "";
   const stagePlacementContext = buildStagePlacementContext(command);
@@ -138,12 +140,12 @@ function buildPrompt(
   const specialistFirstRunContext = buildSpecialistFirstRunContext(command);
   if (command === "picm-maintain" || command === "picm-optimize") {
     const workflow = command === "picm-maintain" ? "maintenance" : "optimization";
-    return `Privacy-first startup — follow this order exactly:\n1. Call \`picm_scan_control\` with \`action: "preflight"\`. Do not load the skill or use any other tool yet.\n2. After preflight, if it reports \`privacyQuestionIsConcise: true\`, ask exactly:\n\n${concisePrivacyQuestion}\n\nThen call \`picm_scan_control\` with \`action: "privacy"\` and every additional exact path (an empty list for \`none\`).\n3. Otherwise, ask the user:\n\n${adoptionPrivacyQuestion}\n\nThen call \`picm_scan_control\` with \`action: "privacy"\` and every additional exact path (an empty list for \`none\`). Use \`persist: true\` only if the user requests durable exclusions and follow its summary and exact TUI confirmation requirements.\n4. After the privacy call completes, load the \`picm-factory\` skill and continue the ${workflow} workflow.\n\n${commandContext}${previewGuidance}${batchGuidance}${optimizationIntake}`;
+    return `Privacy-first startup — follow this order exactly:\n1. Call \`picm_scan_control\` with \`action: "preflight"\`. Do not load the skill or use any other tool yet.\n2. After preflight, if it reports \`privacyQuestionIsConcise: true\`, ask exactly:\n\n${concisePrivacyQuestion}\n\nThen call \`picm_scan_control\` with \`action: "privacy"\` and every additional exact path (an empty list for \`none\`).\n3. Otherwise, ask the user:\n\n${adoptionPrivacyQuestion}\n\nThen call \`picm_scan_control\` with \`action: "privacy"\` and every additional exact path (an empty list for \`none\`). Use \`persist: true\` only if the user requests durable exclusions and follow its summary and exact TUI confirmation requirements.\n4. After the privacy call completes, load the \`picm-factory\` skill and continue the ${workflow} workflow.\n\n${commandContext}${previewGuidance}${checkpointGuidance}${batchGuidance}${optimizationIntake}`;
   }
   if (privacyBootstrap) {
-    return `Privacy-first startup — follow this order exactly:\n1. Call \`picm_scan_control\` with \`action: "preflight"\`. Do not load the skill or use any other tool yet.\n2. After preflight, ask the user:\n\n${adoptionPrivacyQuestion}\n\n3. Prepare the privacy call with every additional exact path from the reply (an empty list for \`none\`). Use \`persist: true\` only if the user requests durable exclusions. Before a call with \`persist: true\`, present the complete concise \`.picm/config.json\` summary categories: affected files and operations, behavior or configuration changes, linked cross-file moves, preserved behavior, known uncertainty, and review suggestions. Use \`None\` for empty categories, explain the privacy configuration impact, and obtain the user's summary acceptance. Then call \`picm_scan_control\` with \`action: "privacy"\`; its exact TUI patch confirmation is the separate runtime write confirmation.\n4. Only after privacy review completes, load the \`picm-factory\` skill and its \`SKILL.md\`, then continue the ${mode} workflow.\n\n${commandContext}${sensitiveNonGitSafeguards}${adoptionReferenceRouting}${codingAdoptionLifecycle}${stagePlacementContext}${specialistFirstRunContext}${previewGuidance}${batchGuidance}`;
+    return `Privacy-first startup — follow this order exactly:\n1. Call \`picm_scan_control\` with \`action: "preflight"\`. Do not load the skill or use any other tool yet.\n2. After preflight, ask the user:\n\n${adoptionPrivacyQuestion}\n\n3. Prepare the privacy call with every additional exact path from the reply (an empty list for \`none\`). Use \`persist: true\` only if the user requests durable exclusions. Before a call with \`persist: true\`, present the complete concise \`.picm/config.json\` summary categories: affected files and operations, behavior or configuration changes, linked cross-file moves, preserved behavior, known uncertainty, and review suggestions. Use \`None\` for empty categories, explain the privacy configuration impact, and obtain the user's summary acceptance. Then call \`picm_scan_control\` with \`action: "privacy"\`; its exact TUI patch confirmation is the separate runtime write confirmation.\n4. Only after privacy review completes, load the \`picm-factory\` skill and its \`SKILL.md\`, then continue the ${mode} workflow.\n\n${commandContext}${sensitiveNonGitSafeguards}${adoptionReferenceRouting}${codingAdoptionLifecycle}${stagePlacementContext}${specialistFirstRunContext}${previewGuidance}${checkpointGuidance}${batchGuidance}`;
   }
-  return `Use the picm-factory skill. Load its SKILL.md before proceeding.\n\n${commandContext}${stagePlacementContext}${specialistFirstRunContext}${previewGuidance}${batchGuidance}`;
+  return `Use the picm-factory skill. Load its SKILL.md before proceeding.\n\n${commandContext}${stagePlacementContext}${specialistFirstRunContext}${previewGuidance}${checkpointGuidance}${batchGuidance}`;
 }
 
 type PicmFactoryExtensionOptions = {
@@ -194,8 +196,6 @@ export default function picmFactoryExtension(
     packageRoot,
     canonicalPackageRoot,
   });
-  const scaffoldApproval = createScaffoldApprovalRuntime();
-  const sessionId = (ctx: ExtensionContext) => ctx.sessionManager.getSessionId();
 
   const registerBoundBuiltin = (
     toolName: "read" | "edit" | "write" | "grep" | "rg" | "find" | "ls",
@@ -291,54 +291,15 @@ export default function picmFactoryExtension(
         !result.completed &&
         !coordinator.isWorkflowCompleted(ctx)
       ) {
-        pi.appendEntry(scanWorkflowEntryType, {
-          status: "authorized",
-          cwd: result.cwd,
-          command: result.command,
-          preflightComplete: result.preflightComplete,
-          privacyReviewed: result.privacyReviewed,
-          privacyFollowupPending: result.privacyFollowupPending,
-          privacyQuestionIsConcise: result.privacyQuestionIsConcise,
-          scanStarted: result.scanStarted,
-          scanSettled: result.scanSettled,
-          maintenanceResetAttempted: result.maintenanceResetAttempted,
-          adoptionBaselineCaptured: result.adoptionBaselineCaptured,
-          adoptionWasAlreadyAdopted: result.adoptionWasAlreadyAdopted,
-          initialMaintenanceOffered: result.initialMaintenanceOffered,
-          initialIntent: result.initialIntent,
-          newWorkflowIntentRequired: result.newWorkflowIntentRequired,
-          newWorkflowIntent: result.newWorkflowIntent,
-          pendingNewWorkflowIntent: result.pendingNewWorkflowIntent,
-          pendingNewWorkflowIntentSource: result.pendingNewWorkflowIntentSource,
-          excludedPaths: result.excludedPaths,
-        });
+        const serialized = coordinator.serializeWorkflow(ctx, "authorized");
+        if (serialized) pi.appendEntry(scanWorkflowEntryType, serialized);
         if (result.maintenanceReset && (!result.maintenanceReset.ok || result.maintenanceReset.conflict) && ctx.hasUI) {
           ctx.ui.notify(`[picm-factory] ${result.warning ?? result.message}`, "warning");
         }
       } else if (params.action === "complete" || result.completed) {
         if (result.completed) {
-          pi.appendEntry(scanWorkflowEntryType, {
-            status: "completed",
-            cwd: result.cwd,
-            command: result.command,
-            preflightComplete: result.preflightComplete,
-            privacyReviewed: result.privacyReviewed,
-            privacyFollowupPending: result.privacyFollowupPending,
-            privacyQuestionIsConcise: result.privacyQuestionIsConcise,
-            scanStarted: result.scanStarted,
-            scanSettled: result.scanSettled,
-            maintenanceResetAttempted: result.maintenanceResetAttempted,
-            adoptionBaselineCaptured: result.adoptionBaselineCaptured,
-            adoptionWasAlreadyAdopted: result.adoptionWasAlreadyAdopted,
-            initialMaintenanceOffered: result.initialMaintenanceOffered,
-            initialIntent: result.initialIntent,
-            newWorkflowIntentRequired: result.newWorkflowIntentRequired,
-            newWorkflowIntent: result.newWorkflowIntent,
-            pendingNewWorkflowIntent: result.pendingNewWorkflowIntent,
-            pendingNewWorkflowIntentSource: result.pendingNewWorkflowIntentSource,
-            completed: true,
-            excludedPaths: result.excludedPaths,
-          });
+          const serialized = coordinator.serializeWorkflow(ctx, "completed");
+          if (serialized) pi.appendEntry(scanWorkflowEntryType, serialized);
           if (ctx.hasUI) {
             ctx.ui.setWidget("picm-maintenance-reminder", undefined);
           }
@@ -362,9 +323,10 @@ export default function picmFactoryExtension(
     description: "Prepare, present, cancel, or apply an exact approved PiCM create, modify, delete, and linked-move batch",
     promptSnippet: "Prepare and apply an explicitly approved PiCM proposal batch",
     promptGuidelines: [
-      "Use only during an active protected /picm-adopt or /picm-maintain scan. Prepare the exact operations, then call present with its proposalId and digest so the runtime generates and delivers the exact operation summary. Wait for an unambiguous direct approval before apply.",
+      "Use only during an active protected /picm-adopt or /picm-maintain scan. Prepare the exact operations, then call present with its proposalId and digest so the runtime generates and delivers the exact operation summary and Git checkpoint recommendation. Wait for an unambiguous direct approval before apply.",
+      "For current existing content, keep a user-reported checkpoint or explicit risk opt-out only while the presented exact proposal remains unchanged. It is unverified and never approves a proposal; a revision needs a renewed acknowledgement, refreshed summary, and direct approval. New-only batches need no acknowledgement.",
       "The runtime accepts accept, approve, accept and write, or proceed as direct approval. Vague assent, cancellation, or a requested revision remains no-write. Use cancel for cancellation or prepare a replacement batch after revision.",
-      "The batch rechecks each protected path and expected source content, applies only the reviewed operations, rolls back on a mutation failure, and records session audit entries. Never use Bash for PiCM file operations.",
+      "The batch rechecks every protected path and expected content before mutation, then rechecks each operation immediately before execution. A failure or cancellation stops later operations without undoing completed files or created parents; report its completed, unattempted, failed, or uncertain per-operation results, including any published move destination. It records session audit entries; if a post-apply audit cannot be stored, report its warning without hiding file effects. Never use Bash for PiCM file operations.",
     ],
     parameters: Type.Object({
       action: StringEnum(["prepare", "present", "apply", "cancel"] as const),
@@ -381,7 +343,14 @@ export default function picmFactoryExtension(
     async execute(toolCallId, params, signal, _onUpdate, ctx) {
       try {
         const result = await coordinator.proposalBatch(params, ctx, { toolCallId, signal });
-        if (result.audit) recordProposalAudit(result.audit, ctx);
+        if (result.audit) {
+          try {
+            recordProposalAudit(result.audit, ctx);
+          } catch {
+            if (params.action !== "apply" || !Array.isArray(result.results)) throw new Error("PICM_PROPOSAL_AUDIT_FAILED: the session audit could not be recorded");
+            result.auditWarning = "The session audit could not be recorded; the reported file effects were not undone.";
+          }
+        }
         return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }], details: result };
       } catch (error: any) {
         if (error?.picmProposalAudit) recordProposalAudit(error.picmProposalAudit, ctx);
@@ -397,6 +366,7 @@ export default function picmFactoryExtension(
     promptSnippet: "Bind scaffold approval to an exact reviewed operation set",
     promptGuidelines: [
       "After scanning and before presenting a /picm-new scaffold preview, register every exact write/edit tool input in one preview call.",
+      "Pair the complete current preview with the Git checkpoint recommendation. For current existing content, a user-reported checkpoint or explicit risk opt-out is an unverified acknowledgement, not scaffold approval, and remains relevant only while that exact proposal is unchanged; new-only scaffolds need no acknowledgement.",
       "Present the returned previewId and complete operation set. Only the documented direct approval phrases approve that current preview; revisions require a new preview.",
     ],
     parameters: Type.Object({
@@ -410,7 +380,7 @@ export default function picmFactoryExtension(
       if (coordinator.currentWorkflowCommand(ctx) !== "picm-new") {
         throw new Error("SCAFFOLD_PROPOSAL_UNAVAILABLE: invoke /picm-new first");
       }
-      const previewId = scaffoldApproval.register(sessionId(ctx), params.operations);
+      const previewId = await coordinator.scaffoldProposal(ctx, params.operations);
       const result = { previewId, operations: params.operations };
       return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }], details: result };
     },
@@ -467,49 +437,25 @@ export default function picmFactoryExtension(
     };
   });
 
-  pi.on("tool_execution_start", (event, ctx) => {
-    coordinator.startToolExecution(event, ctx);
-  });
-
   pi.on("input", (event, ctx) => {
     if (event.source === "extension") return;
-    const observedIntent = coordinator.observeNewWorkflowIntentResponse?.(ctx, event.text);
-    if (observedIntent) pi.appendEntry(scanWorkflowEntryType, { status: "authorized", ...observedIntent });
-    scaffoldApproval.observeInput(sessionId(ctx), event.text);
+    const observedIntent = coordinator.observeInput(ctx, event.text);
+    if (observedIntent) {
+      const serialized = coordinator.serializeWorkflow(ctx, "authorized");
+      if (serialized) pi.appendEntry(scanWorkflowEntryType, serialized);
+    }
   });
 
   pi.on("tool_call", async (event, ctx) => {
-    let admitted = false;
-    let matchedOperation: { consumed: boolean; reservedBy?: string } | undefined;
-    try {
-      const admission = scaffoldApproval.admission(sessionId(ctx), event);
-      if (admission.active) {
-        const maintenancePreview = event.toolName === "picm_maintenance_policy" && event.input?.action === "preview";
-        const allowedControl = nonMutatingScaffoldTools.has(event.toolName) ||
-          event.toolName === "picm_scaffold_proposal" || maintenancePreview;
-        if (!allowedControl && !admission.allowed) {
-          const reason = "[picm-factory] Blocked scaffold mutation: directly approve and apply only the current exact proposal";
-          if (ctx.hasUI) ctx.ui.notify(reason, "warning");
-          return { block: true, reason };
-        }
-        matchedOperation = admission.operation;
-      }
-      const decision = await coordinator.checkToolCall(event, ctx);
-      if (!decision.allowed) {
-        const reason = `[picm-factory] Blocked by PiCM scan gate: ${decision.reason}`;
-        if (ctx.hasUI) ctx.ui.notify(reason, "warning");
-        return { block: true, reason };
-      }
-      if (matchedOperation) scaffoldApproval.reserve(matchedOperation, event.toolCallId);
-      coordinator.admitToolExecution(event, ctx);
-      admitted = true;
-    } finally {
-      if (!admitted) coordinator.rejectToolExecution(event, ctx);
+    const decision = await coordinator.checkToolCall(event, ctx);
+    if (!decision.allowed) {
+      const reason = `[picm-factory] Blocked by PiCM scan gate: ${decision.reason}`;
+      if (ctx.hasUI) ctx.ui.notify(reason, "warning");
+      return { block: true, reason };
     }
   });
 
   pi.on("tool_execution_end", (event, ctx) => {
-    scaffoldApproval.complete(sessionId(ctx), event.toolCallId, !event.isError);
     coordinator.endToolExecution(event, ctx);
   });
 
@@ -532,7 +478,8 @@ export default function picmFactoryExtension(
     if (ctx.mode !== "tui") return finish("finished");
     const claimedWorkflow = await coordinator.claimInitialMaintenanceOffer(ctx);
     if (!claimedWorkflow) return finish("finished");
-    pi.appendEntry(scanWorkflowEntryType, { status: "authorized", ...claimedWorkflow });
+    const serializedClaim = coordinator.serializeWorkflow(ctx, "authorized");
+    if (serializedClaim) pi.appendEntry(scanWorkflowEntryType, serializedClaim);
 
     const choice = await ctx.ui.select(
       "Would you like to run an initial maintenance pass now (recommended)?",
@@ -571,8 +518,9 @@ export default function picmFactoryExtension(
       return;
     }
     const maintenanceDepthContext = `\n\nMaintenance run depth: ${depth}. Apply this depth to this run only. Do not mutate \`capabilities.codebaseMap.maintenancePreset\`.`;
-    const authorization = coordinator.authorizeWorkflow(ctx, "picm-maintain");
-    pi.appendEntry(scanWorkflowEntryType, { status: "authorized", ...authorization });
+    coordinator.authorizeWorkflow(ctx, "picm-maintain");
+    const serializedAuthorization = coordinator.serializeWorkflow(ctx, "authorized");
+    if (serializedAuthorization) pi.appendEntry(scanWorkflowEntryType, serializedAuthorization);
     try {
       pi.sendUserMessage(`${buildPrompt(
         "picm-maintain",
@@ -595,13 +543,11 @@ export default function picmFactoryExtension(
   });
 
   pi.on("session_tree", async (_event, ctx) => {
-    scaffoldApproval.invalidate(sessionId(ctx));
     restoreScanWorkflow(ctx);
   });
 
   pi.on("agent_settled", async (_event, ctx) => {
     const workflowCompleted = coordinator.settle(ctx);
-    scaffoldApproval.settle(sessionId(ctx), workflowCompleted);
     if (workflowCompleted) recordClearedWorkflow(ctx);
   });
 
@@ -650,7 +596,6 @@ export default function picmFactoryExtension(
         },
       } : {}),
       handler: async (args, ctx) => {
-        scaffoldApproval.clear(sessionId(ctx));
         if (command === "picm-maintain") {
           await executeMaintain(ctx, args);
           return;
@@ -658,12 +603,13 @@ export default function picmFactoryExtension(
         await ctx.waitForIdle();
         let promptArgs = args;
         if (command !== "picm-help") {
-          const authorization = coordinator.authorizeWorkflow(
+          coordinator.authorizeWorkflow(
             ctx,
             command,
             command === "picm-new" ? { initialIntent: args } : undefined,
           );
-          pi.appendEntry(scanWorkflowEntryType, { status: "authorized", ...authorization });
+          const serializedAuthorization = coordinator.serializeWorkflow(ctx, "authorized");
+          if (serializedAuthorization) pi.appendEntry(scanWorkflowEntryType, serializedAuthorization);
         } else if (coordinator.clearWorkflow(ctx)) {
           recordClearedWorkflow(ctx);
         }

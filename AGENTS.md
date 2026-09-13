@@ -8,6 +8,7 @@ You are working on PiCM Factory, a project-local Pi package for creating, adopti
 - Keep the extension thin. Runtime methodology belongs in the skill, references, and templates; backing prompts remain repository-only.
 - Do not build a custom TUI or workflow executor without clear evidence it is necessary.
 - Be non-destructive by default. Preview file changes before writing.
+- Before changing or reviewing write safety, cancellation, or approval continuation, read [ADR-0001](docs/adr/0001-practical-write-safety.md). It records the accepted target, not current runtime behavior; migrate enforcement, guidance, and tests together.
 - Security first: never copy secrets, credentials, tokens, private keys, regulated data, or sensitive client material into context files or examples.
 - Before scanning an explicitly invoked `/picm-new`, `/picm-adopt`, `/picm-maintain`, or `/picm-optimize` workflow, finish privacy preflight and review. Never bypass protected inventory or immediate checks: root/nested Git ignores, repository-local excludes, global excludes, `.picm/config.json` privacy exclusions, and session exclusions make matching paths unreadable. Ordinary Pi work and user-typed `!bash` remain outside the workflow guard.
 - `.pi/` is for Pi config. `.picm/` is for minimal PiCM metadata/reports, including optional persisted scan exclusions.
