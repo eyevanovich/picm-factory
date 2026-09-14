@@ -169,8 +169,11 @@ export function createScaffoldApprovalRuntime() {
   function settle(sessionId, workflowCompleted) {
     const current = proposals.get(sessionId);
     if (!current) return;
-    if (workflowCompleted || current.operations.every((operation) => operation.consumed)) proposals.delete(sessionId);
-    else clearApproval(current);
+    if (workflowCompleted || (!current.invalidated && current.operations.every((operation) => operation.consumed))) {
+      proposals.delete(sessionId);
+    } else {
+      clearApproval(current);
+    }
   }
 
   return {

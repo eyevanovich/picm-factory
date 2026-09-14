@@ -211,12 +211,8 @@ export function createRuntimeCoordinator({
 
   function restoreWorkflow(ctx, state) {
     const scope = workflowScopeFor(ctx);
-    const current = lifecycle.current(scope);
-    const retainScaffoldSentinel =
-      current?.command === "picm-new" &&
-      state?.status === "authorized" &&
-      state?.command === "picm-new" &&
-      scaffoldApproval.has(current.scope);
+    const restoreScaffoldSentinel =
+      state?.status === "authorized" && state?.command === "picm-new";
     clearWorkflow(ctx);
     const completed = state?.status === "completed";
     let excludedPaths;
@@ -227,7 +223,7 @@ export function createRuntimeCoordinator({
       excludedPaths = [];
     }
     const workflow = lifecycle.restore(scope, { ...state, normalizedExcludedPaths: excludedPaths });
-    if (workflow && retainScaffoldSentinel && workflow.command === "picm-new") {
+    if (workflow && restoreScaffoldSentinel && workflow.command === "picm-new") {
       scaffoldApproval.replaceWithInvalidatedSentinel(workflow.scope);
     }
     return Boolean(workflow);

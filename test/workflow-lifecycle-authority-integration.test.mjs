@@ -252,6 +252,114 @@ test("session-tree restoration keeps scaffold mutations blocked until a new prop
   });
 });
 
+test("fresh session-start restoration invalidates persisted scaffold approval until a new proposal is approved", async () => {
+  await withFixture(async ({ root }) => {
+    const entries = [];
+    const original = extensionHarness({ entries });
+    const originalCtx = original.context(root, "fresh-scaffold-session");
+    const oldWrite = { tool: "write", input: { path: "old-restored-write.md", content: "old write\n" } };
+    const oldEdit = {
+      tool: "edit",
+      input: { path: "old-restored-edit.md", edits: [{ oldText: "old before\n", newText: "old after\n" }] },
+    };
+    const arbitraryWrite = { path: "arbitrary-restored-write.md", content: "arbitrary write\n" };
+    const arbitraryEdit = {
+      path: "arbitrary-restored-edit.md",
+      edits: [{ oldText: "arbitrary before\n", newText: "arbitrary after\n" }],
+    };
+    const newWrite = { tool: "write", input: { path: "new-restored-write.md", content: "new write\n" } };
+    const newEdit = {
+      tool: "edit",
+      input: { path: "new-restored-edit.md", edits: [{ oldText: "new before\n", newText: "new after\n" }] },
+    };
+    write(join(root, oldEdit.input.path), oldEdit.input.edits[0].oldText);
+    write(join(root, arbitraryEdit.path), arbitraryEdit.edits[0].oldText);
+    write(join(root, newEdit.input.path), newEdit.input.edits[0].oldText);
+
+    const originalControl = original.tools.get("picm_scan_control");
+    const originalScaffold = original.tools.get("picm_scaffold_proposal");
+    await original.commands.get("picm-new").handler("restore scaffold", originalCtx);
+    await originalControl.execute("preflight", { action: "preflight" }, undefined, undefined, originalCtx);
+    await originalControl.execute("privacy", { action: "privacy", excludedPaths: [] }, undefined, undefined, originalCtx);
+    await originalScaffold.execute(
+      "old-preview",
+      { action: "preview", operations: [oldWrite, oldEdit] },
+      undefined,
+      undefined,
+      originalCtx,
+    );
+    await original.handlers.get("input")({
+      text: "I understand the risk and want to proceed without a Git checkpoint.",
+      source: "interactive",
+    }, originalCtx);
+    await original.handlers.get("input")({ text: "approve this exact scaffold", source: "interactive" }, originalCtx);
+    await originalControl.execute("begin", { action: "begin" }, undefined, undefined, originalCtx);
+
+    const restored = extensionHarness({ entries });
+    const ctx = restored.context(root, "fresh-scaffold-session");
+    const control = restored.tools.get("picm_scan_control");
+    const scaffold = restored.tools.get("picm_scaffold_proposal");
+    await restored.handlers.get("session_start")({ reason: "resume" }, ctx);
+    await restored.handlers.get("agent_settled")({}, ctx);
+    await control.execute("begin-restored", { action: "begin" }, undefined, undefined, ctx);
+
+    for (const [toolCallId, toolName, input] of [
+      ["restored-old-write", oldWrite.tool, oldWrite.input],
+      ["restored-old-edit", oldEdit.tool, oldEdit.input],
+      ["restored-arbitrary-write", "write", arbitraryWrite],
+      ["restored-arbitrary-edit", "edit", arbitraryEdit],
+    ]) {
+      const blocked = await restored.handlers.get("tool_call")({ toolCallId, toolName, input }, ctx);
+      assert.equal(blocked?.block, true);
+      assert.match(blocked.reason, /Blocked scaffold mutation/);
+    }
+    assert.equal(existsSync(join(root, oldWrite.input.path)), false);
+    assert.equal(existsSync(join(root, arbitraryWrite.path)), false);
+    assert.equal(readFileSync(join(root, oldEdit.input.path), "utf8"), oldEdit.input.edits[0].oldText);
+    assert.equal(readFileSync(join(root, arbitraryEdit.path), "utf8"), arbitraryEdit.edits[0].oldText);
+
+    await control.execute("end-restored", { action: "end" }, undefined, undefined, ctx);
+    await scaffold.execute(
+      "new-preview",
+      { action: "preview", operations: [newWrite, newEdit] },
+      undefined,
+      undefined,
+      ctx,
+    );
+    await restored.handlers.get("input")({
+      text: "I understand the risk and want to proceed without a Git checkpoint.",
+      source: "interactive",
+    }, ctx);
+    await restored.handlers.get("input")({ text: "approve this exact scaffold", source: "interactive" }, ctx);
+    await control.execute("begin-new", { action: "begin" }, undefined, undefined, ctx);
+
+    for (const [toolCallId, operation] of [
+      ["new-restored-write", newWrite],
+      ["new-restored-edit", newEdit],
+    ]) {
+      assert.equal(await restored.handlers.get("tool_call")({
+        toolCallId,
+        toolName: operation.tool,
+        input: operation.input,
+      }, ctx), undefined);
+      await restored.tools.get(operation.tool).execute(toolCallId, operation.input, undefined, undefined, ctx);
+      await restored.handlers.get("tool_execution_end")({
+        toolCallId,
+        toolName: operation.tool,
+        args: operation.input,
+        isError: false,
+      }, ctx);
+    }
+
+    assert.equal(existsSync(join(root, oldWrite.input.path)), false);
+    assert.equal(existsSync(join(root, arbitraryWrite.path)), false);
+    assert.equal(readFileSync(join(root, oldEdit.input.path), "utf8"), oldEdit.input.edits[0].oldText);
+    assert.equal(readFileSync(join(root, arbitraryEdit.path), "utf8"), arbitraryEdit.edits[0].oldText);
+    assert.equal(readFileSync(join(root, newWrite.input.path), "utf8"), newWrite.input.content);
+    assert.equal(readFileSync(join(root, newEdit.input.path), "utf8"), newEdit.input.edits[0].newText);
+  });
+});
+
 test("deferred write admission fails closed after revision invalidates approval", async () => {
   await withFixture(async ({ root }) => {
     const staleOperation = { tool: "write", input: { path: "stale-after-revision.md", content: "stale\n" } };
