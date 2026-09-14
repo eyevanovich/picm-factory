@@ -54,9 +54,6 @@ test("allows file candidates and rejects non-traversal directories", async () =>
       assert.equal(scanDecision.allowed, true);
       assert.equal(scanDecision.protected, true);
 
-      const privacyDecision = await gate.checkPrivacyPath(toolName, "docs", ["private"]);
-      assert.equal(privacyDecision.allowed, true);
-      assert.equal(privacyDecision.protected, true);
     }
     for (const toolName of ["read", "edit", "write"]) {
       assert.match((await gate.checkPath(toolName, "docs")).reason, /candidate inventory/);
@@ -91,10 +88,6 @@ test("rejects multiply-linked regular files for direct operations and traversal 
     for (const toolName of ["read", "edit", "write", "grep", "rg"]) {
       assert.match(
         (await gate.checkPath(toolName, linked, exclusions)).reason,
-        /multiple hard links/,
-      );
-      assert.match(
-        (await gate.checkPrivacyPath(toolName, linked, exclusions)).reason,
         /multiple hard links/,
       );
       const decision = await gate.checkPath(toolName, eligible, exclusions);
@@ -171,11 +164,6 @@ test("filters and immediately blocks persisted or session privacy exclusions", a
       /PiCM privacy policy/,
     );
     assert.equal((await gate.checkPath("read", "private-note.txt", exclusions)).allowed, true);
-    assert.match(
-      (await gate.checkPrivacyPath("read", "private/nested/secret.txt", exclusions)).reason,
-      /PiCM privacy policy/,
-    );
-    assert.equal((await gate.checkPrivacyPath("read", "private-note.txt", exclusions)).allowed, true);
     await gate.dispose();
   });
 });

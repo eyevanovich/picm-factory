@@ -818,52 +818,6 @@ export function createGitReadGate({
     return { inventory, gitPath };
   }
 
-  async function checkPrivacyPath(toolName, inputPath, privacyExcludedPaths = []) {
-    if (!PATH_TOOLS.has(toolName) || privacyExcludedPaths.length === 0) {
-      return { allowed: true, protected: false };
-    }
-    const exclusions = normalizePrivacyExcludedPaths(cwd, privacyExcludedPaths);
-    if (typeof inputPath !== "string" || inputPath.trim() === "") {
-      return { allowed: false, protected: true, reason: `${toolName} requires a path` };
-    }
-    try {
-      const resolvedPath = toolName === "write"
-        ? await resolveProspectivePath(inputPath, true)
-        : await resolveExistingPath(inputPath, true);
-      if (resolvedPath.blocked) {
-        return { allowed: false, protected: true, reason: resolvedPath.reason };
-      }
-      const decision = await privacyDecision(resolvedPath.canonicalPath, exclusions) ?? {
-        allowed: true,
-        protected: true,
-        reason: "path is outside configured PiCM privacy exclusions",
-      };
-      if (decision.allowed && resolvedPath.stat?.isDirectory()) {
-        if (!TRAVERSAL_TOOLS.has(toolName)) {
-          return {
-            allowed: false,
-            protected: true,
-            reason: "path is not in the Git-derived candidate inventory",
-          };
-        }
-        const context = await discoverWorktreeContext();
-        const boundary = await guardedInventoryForPath(resolvedPath, exclusions, context);
-        if (boundary.decision) return boundary.decision;
-        const { inventory } = boundary;
-        await addTraversalEntries(resolvedPath, inventory, exclusions, context);
-      }
-      return decision.allowed
-        ? allowedPathDecision(decision, toolName, resolvedPath)
-        : decision;
-    } catch (error) {
-      return {
-        allowed: false,
-        protected: true,
-        reason: `privacy path resolution failed: ${error instanceof Error ? error.message : error}`,
-      };
-    }
-  }
-
   async function checkPathUnchecked(
     toolName,
     inputPath,
@@ -1065,7 +1019,6 @@ export function createGitReadGate({
     checkBash,
     checkPath,
     checkTrustedPackageRead,
-    checkPrivacyPath,
     dispose,
     preflight,
     refreshInventory,
