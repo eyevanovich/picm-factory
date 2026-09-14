@@ -10,6 +10,14 @@ import {
   isUnverifiedCheckpointAcknowledgement,
 } from "./scaffold-approval.mjs";
 import { createWorkflowLifecycle } from "./workflow-lifecycle.mjs";
+import {
+  activateContinuation,
+  clearContinuation,
+  hasActiveContinuation,
+  hasEligibleContinuationResults,
+  retainEligibleContinuation,
+  unattemptedOperationIndexes,
+} from "./approval-runtime.mjs";
 import { identifyLayoutProfile } from "./layout-profile.mjs";
 import {
   applyProposalBatch,
@@ -152,7 +160,7 @@ export function createRuntimeCoordinator({
     for (const issued of bindings.values()) {
       if (issued.scope !== scope || !issued.scaffoldMutation || issued.state !== "active") continue;
       revokeIssuedBinding(issued);
-      scaffoldApproval.complete(scope, issued.toolCallId, false);
+      scaffoldApproval.release(scope, issued.toolCallId);
     }
   }
 
@@ -342,7 +350,7 @@ export function createRuntimeCoordinator({
         captureAdoptionBaseline: workflow.command === "picm-adopt" && !workflow.adoption.baselineCaptured,
         wasAlreadyAdopted: current.config?.adoption?.status === "adopted",
       });
-      clearCheckpointAcknowledgements(workflow.scope);
+      invalidatePhaseAuthority(workflow.scope);
       return {
         ok: true,
         action,
@@ -386,7 +394,7 @@ export function createRuntimeCoordinator({
         intent: params.intent,
         wasAlreadyAdopted: adoptionWasAlreadyAdopted,
       });
-      clearCheckpointAcknowledgements(workflow.scope);
+      invalidatePhaseAuthority(workflow.scope);
 
       return {
         ok: true,
@@ -472,7 +480,7 @@ export function createRuntimeCoordinator({
         throw new Error("PICM_SCAN_NOT_ACTIVE: begin an explicitly authorized scan before ending it");
       }
       lifecycle.transition(workflow, "end-scan");
-      clearCheckpointAcknowledgements(workflow.scope);
+      invalidatePhaseAuthority(workflow.scope);
     } else if (action === "complete") {
       if (!workflow) {
         throw new Error("PICM_SCAN_NOT_AUTHORIZED: invoke and finish a privacy-reviewed PiCM workflow before completion");
@@ -596,9 +604,41 @@ export function createRuntimeCoordinator({
     clearProposalAcknowledgement(scope);
   }
 
+  function invalidatePhaseAuthority(scope) {
+    clearCheckpointAcknowledgements(scope);
+    scaffoldApproval.invalidate(scope);
+    invalidatePhaseProposal(scope);
+  }
+
   function finaliseProposal(current, status) {
     current.status = status;
     current.acknowledgement = undefined;
+    clearContinuation(current);
+  }
+
+  function proposalContinuationOptions(scope, current) {
+    return {
+      proposalIdentity: current.batch.id,
+      proposalDigest: current.batch.digest,
+      scopeIdentity: scope.identity,
+    };
+  }
+
+  function retainProposalContinuation(scope, current, results) {
+    current.results = structuredClone(results);
+    if (hasEligibleContinuationResults(results)) {
+      current.status = "aborted";
+      retainEligibleContinuation(current, results, proposalContinuationOptions(scope, current));
+      return current.continuation?.state === "eligible";
+    }
+    return false;
+  }
+
+  function invalidatePhaseProposal(scope) {
+    const current = proposalBatches.get(scope);
+    if (!current) return;
+    finaliseProposal(current, "revision-required");
+    current.presentation = undefined;
   }
 
   function hasCurrentPresentation(current) {
@@ -606,15 +646,47 @@ export function createRuntimeCoordinator({
       current.presentation.digest === current.batch.digest;
   }
 
+  function isContinuationRequest(prompt) {
+    return typeof prompt === "string" && prompt.trim().toLowerCase() === "continue";
+  }
+
   function observeProposalResponse(ctx, prompt) {
     const workflow = workflowFor(ctx);
     const current = workflow ? proposalBatches.get(workflow.scope) : undefined;
-    if (!current || TERMINAL_PROPOSAL_STATUSES.has(current.status)) return undefined;
+    if (!current) return undefined;
     const status = proposalResponseStatus(prompt);
     if (status === "cancelled" || status === "revision-required") {
-      finaliseProposal(current, status);
-      return proposalAudit(current.batch, "approval-observed", { approval: current.status });
+      if (
+        current.continuation?.state === "eligible" ||
+        current.status === "continuation-active" ||
+        !TERMINAL_PROPOSAL_STATUSES.has(current.status)
+      ) {
+        finaliseProposal(current, status);
+        return proposalAudit(current.batch, "approval-observed", { approval: current.status });
+      }
+      return undefined;
     }
+    if (isContinuationRequest(prompt)) {
+      const continuation = activateContinuation(
+        current,
+        current.results,
+        proposalContinuationOptions(workflow.scope, current),
+      );
+      if (continuation) {
+        current.status = "continuation-active";
+        return proposalAudit(current.batch, "approval-observed", { approval: "continuation-active" });
+      }
+      if (current.continuation?.state === "active") {
+        finaliseProposal(current, "revision-required");
+        return proposalAudit(current.batch, "approval-observed", { approval: current.status });
+      }
+      return undefined;
+    }
+    if (
+      TERMINAL_PROPOSAL_STATUSES.has(current.status) ||
+      current.status === "continuation-active" ||
+      current.status === "applying"
+    ) return undefined;
     if (isUnverifiedCheckpointAcknowledgement(prompt)) {
       if (hasCurrentPresentation(current)) {
         current.status = "pending";
@@ -665,10 +737,12 @@ export function createRuntimeCoordinator({
       requireCurrentWorkflow(sessionId, workflow);
       proposalBatches.set(workflow.scope, {
         acknowledgement: undefined,
-        command: workflow.command,
         batch,
-        status: "pending",
+        command: workflow.command,
+        continuation: undefined,
         presentation: undefined,
+        results: undefined,
+        status: "pending",
       });
       return {
         ok: true,
@@ -739,6 +813,15 @@ export function createRuntimeCoordinator({
           audit: proposalAudit(current.batch, "cancelled", { command: workflow.command }),
         };
       }
+      if (current.continuation?.state === "eligible") {
+        finaliseProposal(current, "cancelled");
+        return {
+          ok: true,
+          action: "cancel",
+          proposalId: current.batch.id,
+          audit: proposalAudit(current.batch, "cancelled", { command: workflow.command }),
+        };
+      }
       if (TERMINAL_PROPOSAL_STATUSES.has(current.status)) {
         return {
           ok: false,
@@ -757,11 +840,15 @@ export function createRuntimeCoordinator({
     if (params.action !== "apply") {
       throw new Error("PICM_PROPOSAL_INVALID: action must be prepare, present, apply, or cancel");
     }
-    if (current.status !== "approved") {
+    const continuing = current.status === "continuation-active" && hasActiveContinuation(
+      current,
+      proposalContinuationOptions(workflow.scope, current),
+    );
+    if (current.status !== "approved" && !continuing) {
       return {
         ok: false,
         code: "PICM_PROPOSAL_NOT_APPROVED",
-        message: "An unambiguous direct approval of the current exact proposal is required before applying it",
+        message: "An unambiguous direct approval of the current exact proposal or an eligible same-session continuation is required before applying it",
       };
     }
     if (proposalHasExistingContentRisk(current.batch) && !hasProposalAcknowledgement(current)) {
@@ -772,53 +859,105 @@ export function createRuntimeCoordinator({
       };
     }
 
+    const operationIndexes = continuing
+      ? unattemptedOperationIndexes(current.results)
+      : current.batch.operations.map((_operation, index) => index);
+    if (continuing && operationIndexes.length === 0) {
+      finaliseProposal(current, "revision-required");
+      return {
+        ok: false,
+        code: "PICM_PROPOSAL_REPLACEMENT_REQUIRED",
+        message: "The retained proposal has no exact unattempted operations to continue",
+      };
+    }
+    const batchToApply = continuing
+      ? {
+        ...current.batch,
+        operations: operationIndexes.map((index) => current.batch.operations[index]),
+        auditOperations: operationIndexes.map((index) => current.batch.auditOperations[index]),
+      }
+      : current.batch;
+    const mergeResults = (nextResults) => {
+      if (!continuing) return nextResults;
+      const merged = structuredClone(current.results);
+      for (const [index, result] of nextResults.entries()) merged[operationIndexes[index]] = result;
+      return merged;
+    };
+
     current.status = "applying";
+    const continuationIdentity = continuing ? current.continuation.identity : undefined;
     let result;
     try {
       throwIfAborted(execution.signal, "PICM_PROPOSAL_ABORTED");
       const persisted = await runtimeFor(ctx).store.readPrivacyForReview();
       requireCurrentWorkflow(sessionId, workflow);
       throwIfAborted(execution.signal, "PICM_PROPOSAL_ABORTED");
+      if (current.status !== "applying" || (continuing && current.continuation?.identity !== continuationIdentity)) {
+        return {
+          ok: false,
+          code: "PICM_PROPOSAL_REPLACEMENT_REQUIRED",
+          message: "The proposal changed or was cancelled before continuation mutation began",
+          action: "apply",
+          audit: proposalAudit(current.batch, current.status, { command: workflow.command }),
+        };
+      }
       if (!persisted.ok) throw new Error(`${persisted.code}: ${persisted.message}`);
       const applyExcludedPaths = mergePrivacyExcludedPaths(
         ctx.cwd,
         workflow.privacy.excludedPaths,
         persisted.privacy?.excludedPaths ?? [],
       );
-      result = await applyProposalBatch(current.batch, {
+      result = await applyProposalBatch(batchToApply, {
         gate: runtimeFor(ctx).gate,
         excludedPaths: applyExcludedPaths,
         signal: execution.signal,
       });
+      const results = mergeResults(result.results);
+      const response = continuing
+        ? { ...result, operations: current.batch.auditOperations, results }
+        : { ...result, results };
       if (!result.ok) {
-        const status = result.code === "PICM_PROPOSAL_ABORTED" ? "aborted" : "failed";
+        const aborted = result.code === "PICM_PROPOSAL_ABORTED";
+        const status = aborted ? "aborted" : "failed";
         if (!lifecycle.isCurrent(workflow)) {
           return {
-            ...result,
+            ...response,
             action: "apply",
             code: "PICM_SCAN_STALE",
             message: "PICM_SCAN_STALE: workflow changed or completed while the scan action was running",
             audit: proposalAudit(current.batch, status, {
               command: workflow.command,
               code: "PICM_SCAN_STALE",
-              results: result.results,
+              results,
+            }),
+          };
+        }
+        if (aborted && !continuing && retainProposalContinuation(workflow.scope, current, results)) {
+          return {
+            ...response,
+            action: "apply",
+            audit: proposalAudit(current.batch, "aborted", {
+              command: workflow.command,
+              code: result.code,
+              results,
             }),
           };
         }
         finaliseProposal(current, status);
+        current.results = structuredClone(results);
         return {
-          ...result,
+          ...response,
           action: "apply",
           audit: proposalAudit(current.batch, current.status, {
             command: workflow.command,
             code: result.code,
-            results: result.results,
+            results,
           }),
         };
       }
       if (!lifecycle.isCurrent(workflow)) {
         return {
-          ...result,
+          ...response,
           ok: false,
           code: "PICM_SCAN_STALE",
           message: "PICM_SCAN_STALE: workflow changed or completed while the scan action was running",
@@ -826,17 +965,18 @@ export function createRuntimeCoordinator({
           audit: proposalAudit(current.batch, "failed", {
             command: workflow.command,
             code: "PICM_SCAN_STALE",
-            results: result.results,
+            results,
           }),
         };
       }
       finaliseProposal(current, "applied");
+      current.results = structuredClone(results);
       return {
-        ...result,
+        ...response,
         action: "apply",
         audit: proposalAudit(current.batch, "applied", {
           command: workflow.command,
-          results: result.results,
+          results,
         }),
       };
     } catch (error) {
@@ -960,7 +1100,7 @@ export function createRuntimeCoordinator({
     }
     requireCurrentWorkflow(sessionIdFor(ctx), workflow);
     lifecycle.transition(workflow, "continue-as-maintenance");
-    clearCheckpointAcknowledgements(workflow.scope);
+    invalidatePhaseAuthority(workflow.scope);
     return workflowState(workflow);
   }
 
@@ -1100,6 +1240,7 @@ export function createRuntimeCoordinator({
     }
     if (workflow) {
       lifecycle.transition(workflow, "deactivate-scan");
+      revokeScaffoldMutationBindings(workflow.scope);
       scaffoldApproval.settle(workflow.scope, false);
       releaseBindings(workflow.scope);
     }

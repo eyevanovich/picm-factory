@@ -1,5 +1,13 @@
 import { createHash, randomUUID } from "node:crypto";
 import { isDeepStrictEqual } from "node:util";
+import {
+  COMPLETED,
+  UNATTEMPTED,
+  activateContinuation,
+  clearContinuation,
+  hasActiveContinuation,
+  retainEligibleContinuation,
+} from "./approval-runtime.mjs";
 
 const DIRECT_APPROVALS = new Set([
   "approve this exact scaffold",
@@ -39,6 +47,18 @@ function isPlausibleCheckpointReport(reply) {
 export function createScaffoldApprovalRuntime() {
   const proposals = new Map();
 
+  function scopeIdentity(scope) {
+    return scope?.identity;
+  }
+
+  function continuationOptions(scope, current) {
+    return {
+      proposalIdentity: current.identity,
+      proposalDigest: current.digest,
+      scopeIdentity: scopeIdentity(scope),
+    };
+  }
+
   function clearApproval(current) {
     current.approved = false;
     current.approvalIdentity = undefined;
@@ -51,6 +71,7 @@ export function createScaffoldApprovalRuntime() {
   function invalidate(current) {
     clearApproval(current);
     clearAcknowledgement(current);
+    clearContinuation(current);
     current.invalidated = true;
   }
 
@@ -70,45 +91,64 @@ export function createScaffoldApprovalRuntime() {
       operations: proposalOperations.map((operation) => ({
         identity: `picm-scaffold-operation:${randomUUID()}`,
         ...operation,
-        consumed: false,
+        status: UNATTEMPTED,
       })),
       acknowledgement: undefined,
       approved: false,
       approvalIdentity: undefined,
+      continuation: undefined,
       existingContentAtRisk: false,
       invalidated,
     };
   }
 
-  function register(sessionId, operations, { existingContentAtRisk = false } = {}) {
+  function currentResults(current) {
+    return current.operations.map((operation) => ({ status: operation.status }));
+  }
+
+  function register(scope, operations, { existingContentAtRisk = false } = {}) {
     const previewId = `picm-scaffold-preview:${randomUUID()}`;
     const current = proposal(operations);
     current.existingContentAtRisk = existingContentAtRisk;
-    proposals.set(sessionId, current);
+    proposals.set(scope, current);
     return previewId;
   }
 
-  function observeInput(sessionId, text) {
-    const current = proposals.get(sessionId);
+  function observeInput(scope, text) {
+    const current = proposals.get(scope);
     if (!current) return false;
     const authorityBefore = {
       acknowledgementIdentity: current.acknowledgement?.identity,
       approvalIdentity: current.approvalIdentity,
       approved: current.approved,
+      continuationIdentity: current.continuation?.identity,
+      continuationState: current.continuation?.state,
       invalidated: current.invalidated,
     };
     const authorityChanged = () => !isDeepStrictEqual(authorityBefore, {
       acknowledgementIdentity: current.acknowledgement?.identity,
       approvalIdentity: current.approvalIdentity,
       approved: current.approved,
+      continuationIdentity: current.continuation?.identity,
+      continuationState: current.continuation?.state,
       invalidated: current.invalidated,
     });
     const reply = text.trim().toLowerCase();
+    if (reply === "continue") {
+      clearApproval(current);
+      const continuation = activateContinuation(
+        current,
+        currentResults(current),
+        continuationOptions(scope, current),
+      );
+      if (!continuation && current.continuation?.state === "active") invalidate(current);
+      return authorityChanged();
+    }
     if (DIRECT_APPROVALS.has(reply)) {
-      current.approved = !current.invalidated;
-      current.approvalIdentity = current.approved
-        ? `picm-scaffold-approval:${randomUUID()}`
-        : undefined;
+      if (!current.invalidated && current.continuation?.state === undefined) {
+        current.approved = true;
+        current.approvalIdentity = `picm-scaffold-approval:${randomUUID()}`;
+      }
       return authorityChanged();
     }
     clearApproval(current);
@@ -133,16 +173,20 @@ export function createScaffoldApprovalRuntime() {
     return authorityChanged();
   }
 
-  function admission(sessionId, event, { existingContentAtRisk = false } = {}) {
-    const current = proposals.get(sessionId);
+  function admission(scope, event, { existingContentAtRisk = false } = {}) {
+    const current = proposals.get(scope);
     if (!current) return { active: false };
     const operation = current.operations.find((candidate) =>
-      !candidate.consumed && !candidate.reservedBy && candidate.tool === event.toolName &&
+      candidate.status === UNATTEMPTED && candidate.tool === event.toolName &&
       isDeepStrictEqual(candidate.input, event.input)
     );
     const riskEscalated = Boolean(operation && existingContentAtRisk && !current.existingContentAtRisk);
     if (riskEscalated) current.existingContentAtRisk = true;
     const directApproved = current.approved && !current.invalidated;
+    const continuing = !current.invalidated && hasActiveContinuation(
+      current,
+      continuationOptions(scope, current),
+    );
     const acknowledged = !current.existingContentAtRisk || hasAcknowledgement(current);
     return {
       active: true,
@@ -150,59 +194,86 @@ export function createScaffoldApprovalRuntime() {
       proposalDigest: current.digest,
       riskEscalated,
       directApproved,
+      continuationIdentity: continuing ? current.continuation.identity : undefined,
       approvalIdentity: current.approvalIdentity,
       acknowledgementIdentity: current.acknowledgement?.identity,
       acknowledged,
       operationIdentity: operation?.identity,
-      allowed: directApproved && acknowledged && Boolean(operation),
+      allowed: (directApproved || continuing) && acknowledged && Boolean(operation),
     };
   }
 
-  function complete(sessionId, toolCallId, succeeded) {
-    const current = proposals.get(sessionId);
+  function complete(scope, toolCallId, succeeded) {
+    const current = proposals.get(scope);
     const operation = current?.operations.find((candidate) => candidate.reservedBy === toolCallId);
     if (!operation) return;
     operation.reservedBy = undefined;
-    if (succeeded) operation.consumed = true;
+    if (succeeded) {
+      operation.status = COMPLETED;
+      return;
+    }
+    operation.status = "failed";
+    invalidate(current);
   }
 
-  function settle(sessionId, workflowCompleted) {
-    const current = proposals.get(sessionId);
+  function release(scope, toolCallId) {
+    const current = proposals.get(scope);
+    const operation = current?.operations.find((candidate) => candidate.reservedBy === toolCallId);
+    if (!operation) return;
+    operation.reservedBy = undefined;
+    operation.status = UNATTEMPTED;
+  }
+
+  function settle(scope, workflowCompleted) {
+    const current = proposals.get(scope);
     if (!current) return;
-    if (workflowCompleted || (!current.invalidated && current.operations.every((operation) => operation.consumed))) {
-      proposals.delete(sessionId);
-    } else {
-      clearApproval(current);
+    if (workflowCompleted || (!current.invalidated && current.operations.every((operation) => operation.status === COMPLETED))) {
+      proposals.delete(scope);
+      return;
+    }
+    clearApproval(current);
+    if (current.invalidated) return;
+    if (current.continuation?.state === "active") {
+      invalidate(current);
+      return;
+    }
+    if (!current.invalidated) {
+      retainEligibleContinuation(current, currentResults(current), continuationOptions(scope, current));
     }
   }
 
   return {
     admission,
-    clear: (sessionId) => proposals.delete(sessionId),
-    clearAcknowledgement: (sessionId) => {
-      const current = proposals.get(sessionId);
+    clear: (scope) => proposals.delete(scope),
+    clearAcknowledgement: (scope) => {
+      const current = proposals.get(scope);
       if (current) clearAcknowledgement(current);
     },
     complete,
-    has: (sessionId) => proposals.has(sessionId),
-    replaceWithInvalidatedSentinel: (sessionId) => {
-      proposals.set(sessionId, proposal([], { invalidated: true }));
+    has: (scope) => proposals.has(scope),
+    replaceWithInvalidatedSentinel: (scope) => {
+      proposals.set(scope, proposal([], { invalidated: true }));
     },
-    invalidate: (sessionId) => {
-      const current = proposals.get(sessionId);
+    invalidate: (scope) => {
+      const current = proposals.get(scope);
       if (current) invalidate(current);
     },
     observeInput,
     register,
-    reserve: (sessionId, admission, toolCallId) => {
-      const current = proposals.get(sessionId);
+    release,
+    reserve: (scope, admission, toolCallId) => {
+      const current = proposals.get(scope);
+      const continuing = hasActiveContinuation(current ?? {}, continuationOptions(scope, current ?? {}));
+      const matchingContinuation = continuing &&
+        admission?.continuationIdentity === current.continuation.identity;
+      const matchingApproval = admission?.directApproved &&
+        typeof admission.approvalIdentity === "string" &&
+        current?.approvalIdentity === admission.approvalIdentity;
       if (
         typeof toolCallId !== "string" ||
-        !admission?.directApproved ||
-        typeof admission.approvalIdentity !== "string" ||
+        (!matchingApproval && !matchingContinuation) ||
         current?.identity !== admission.proposalIdentity ||
         current.digest !== admission.proposalDigest ||
-        current.approvalIdentity !== admission.approvalIdentity ||
         current.invalidated ||
         (current.existingContentAtRisk && (
           !admission.acknowledged ||
@@ -211,11 +282,11 @@ export function createScaffoldApprovalRuntime() {
         ))
       ) return false;
       const operation = current.operations.find((candidate) =>
-        candidate.identity === admission.operationIdentity &&
-        !candidate.consumed && !candidate.reservedBy,
+        candidate.identity === admission.operationIdentity && candidate.status === UNATTEMPTED,
       );
       if (!operation) return false;
       operation.reservedBy = toolCallId;
+      operation.status = "reserved";
       return true;
     },
     settle,

@@ -179,7 +179,9 @@ test("shipped protocol defines complete summary, direct approval, and revision i
     "A clear user report that they created a Git checkpoint is the same unverified, non-approving acknowledgment",
     "new-only proposals remain directly approvable",
     "Retain a user-reported checkpoint or risk opt-out only while the exact proposal's paths, actions, contents, and digest remain unchanged",
-    "Cancellation, a terminal result, workflow/session/phase replacement, or teardown clears it",
+    "Cancellation, a non-eligible terminal result, workflow/session/phase replacement, restoration, or teardown clears it",
+    "A bare initial `continue` is no-write",
+    "Never replay completed work or retry failed, uncertain, or partly published work",
     "normal refreshed summary and require normal direct approval",
   ]) assert.ok(protocol.includes(signal), `missing protocol signal: ${signal}`);
   assert.equal(protocol.includes("Mandatory exact review"), false);
@@ -500,7 +502,7 @@ test("picm-new rejects unregistered mutations and alternate write-capable tools"
   assert.deepEqual(workspaceSnapshot(workspace), {});
 });
 
-test("picm-new retries a reviewed operation after failed execution", async (t) => {
+test("picm-new failed scaffold execution requires a revised preview instead of retrying", async (t) => {
   const { workspace, proposal } = scaffoldFixture(t);
   const h = commandHarness(workspace);
   await h.commands.get("picm-new").handler("stage pipeline", h.ctx);
@@ -525,12 +527,13 @@ test("picm-new retries a reviewed operation after failed execution", async (t) =
     result: {},
     isError: true,
   }, h.ctx);
+  await h.handlers.get("input")({ text: "continue", source: "interactive" }, h.ctx);
   const retry = await h.handlers.get("tool_call")({
     toolName: "write",
     toolCallId: "retry-write",
     input: operation.input,
   }, h.ctx);
-  assert.equal(retry, undefined);
+  assert.equal(retry?.block, true);
 });
 
 test("picm-new invalidates stale operations after a revision request", async (t) => {

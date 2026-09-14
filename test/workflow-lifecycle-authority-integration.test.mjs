@@ -123,6 +123,109 @@ test("workflow authority records cannot cross sessions or replacements", async (
   });
 });
 
+test("retained proposal continuations are invalidated by revisions and scope or phase replacement", async () => {
+  const invalidators = [
+    {
+      name: "revision",
+      async apply({ h, ctx }) {
+        await h.handlers.get("before_agent_start")({ prompt: "revise this proposal", source: "interactive" }, ctx);
+      },
+    },
+    {
+      name: "duplicate continuation",
+      async apply({ h, ctx }) {
+        await h.handlers.get("before_agent_start")({ prompt: "continue", source: "interactive" }, ctx);
+        await h.handlers.get("before_agent_start")({ prompt: "continue", source: "interactive" }, ctx);
+      },
+    },
+    {
+      name: "phase replacement",
+      async apply({ control, ctx }) {
+        await control.execute("end", { action: "end" }, undefined, undefined, ctx);
+        await control.execute("begin", { action: "begin" }, undefined, undefined, ctx);
+      },
+    },
+    {
+      name: "workflow replacement",
+      async apply({ h, ctx }) {
+        await activate(h, ctx, "picm-adopt", "coding");
+      },
+    },
+    {
+      name: "session replacement",
+      async apply({ h, root }) {
+        const replacement = h.context(root, "continuation-replacement-session");
+        await activate(h, replacement, "picm-adopt", "coding");
+        return replacement;
+      },
+    },
+    {
+      name: "workspace replacement",
+      async apply({ h, root, ctx }) {
+        const workspace = join(root, "continuation-replacement-workspace");
+        mkdirSync(workspace);
+        const replacement = h.context(workspace, ctx.sessionManager.getSessionId());
+        await activate(h, replacement, "picm-adopt", "coding");
+        return replacement;
+      },
+    },
+    {
+      name: "restoration",
+      async apply({ h, ctx }) {
+        await h.handlers.get("session_tree")({ reason: "restore" }, ctx);
+        await h.tools.get("picm_scan_control").execute("resume", { action: "begin" }, undefined, undefined, ctx);
+      },
+    },
+  ];
+
+  for (const { name, apply: invalidate } of invalidators) {
+    await withFixture(async ({ root }) => {
+      const h = extensionHarness();
+      const ctx = h.context(root, `continuation-${name}`);
+      const control = await activate(h, ctx, "picm-adopt", "coding");
+      const batch = h.tools.get("picm_proposal_batch");
+      const prepared = await batch.execute("prepare", {
+        action: "prepare",
+        operations: [
+          { type: "create", path: "continuation-completed.md", content: "completed\n" },
+          { type: "create", path: "continuation-unattempted.md", content: "unattempted\n" },
+        ],
+      }, undefined, undefined, ctx);
+      await batch.execute("present", {
+        action: "present",
+        proposalId: prepared.details.proposalId,
+        digest: prepared.details.digest,
+      }, undefined, undefined, ctx);
+      await h.handlers.get("before_agent_start")({ prompt: "approve" }, ctx);
+      const interrupted = await batch.execute(
+        "apply",
+        { action: "apply", proposalId: prepared.details.proposalId },
+        {
+          get aborted() {
+            return existsSync(join(root, "continuation-completed.md"));
+          },
+        },
+        undefined,
+        ctx,
+      );
+      assert.equal(interrupted.details.code, "PICM_PROPOSAL_ABORTED", name);
+      assert.equal(existsSync(join(root, "continuation-unattempted.md")), false, name);
+
+      const replacement = await invalidate({ h, root, ctx, control }) ?? ctx;
+      await h.handlers.get("before_agent_start")({ prompt: "continue", source: "interactive" }, replacement);
+      const rejected = await batch.execute(
+        "apply",
+        { action: "apply", proposalId: prepared.details.proposalId },
+        undefined,
+        undefined,
+        replacement,
+      );
+      assert.equal(rejected.details.ok, false, name);
+      assert.equal(existsSync(join(root, "continuation-unattempted.md")), false, name);
+    });
+  }
+});
+
 test("scaffold authority is session-scoped and terminal completion releases it", async () => {
   await withFixture(async ({ root }) => {
     const h = extensionHarness();
@@ -532,7 +635,7 @@ test("issued scaffold writes fail closed after every lifecycle authority revocat
   }
 });
 
-test("phase end releases a new-only scaffold reservation for fresh admission", async () => {
+test("phase end invalidates a scaffold reservation until a revised preview is approved", async () => {
   await withFixture(async ({ root }) => {
     const operation = { tool: "write", input: { path: "reissued-after-phase-end.md", content: "fresh\n" } };
     const h = extensionHarness();
@@ -551,19 +654,98 @@ test("phase end releases a new-only scaffold reservation for fresh admission", a
     );
 
     await control.execute("begin", { action: "begin" }, undefined, undefined, ctx);
+    const blocked = await h.handlers.get("tool_call")({
+      toolCallId: "stale-after-phase-end-write",
+      toolName: "write",
+      input: operation.input,
+    }, ctx);
+    assert.equal(blocked?.block, true);
+
+    await control.execute("end-revised", { action: "end" }, undefined, undefined, ctx);
+    await h.tools.get("picm_scaffold_proposal").execute(
+      "revised-preview",
+      { action: "preview", operations: [operation] },
+      undefined,
+      undefined,
+      ctx,
+    );
+    await h.handlers.get("input")({ text: "approve this exact scaffold", source: "interactive" }, ctx);
+    await control.execute("begin-revised", { action: "begin" }, undefined, undefined, ctx);
     assert.equal(await h.handlers.get("tool_call")({
-      toolCallId: "fresh-phase-end-write",
+      toolCallId: "revised-phase-end-write",
       toolName: "write",
       input: operation.input,
     }, ctx), undefined);
-    await h.tools.get("write").execute("fresh-phase-end-write", operation.input, undefined, undefined, ctx);
+    await h.tools.get("write").execute("revised-phase-end-write", operation.input, undefined, undefined, ctx);
     await h.handlers.get("tool_execution_end")({
-      toolCallId: "fresh-phase-end-write",
+      toolCallId: "revised-phase-end-write",
       toolName: "write",
       args: operation.input,
       isError: false,
     }, ctx);
     assert.equal(readFileSync(join(root, operation.input.path), "utf8"), operation.input.content);
+  });
+});
+
+test("same-session scaffold continuation consumes a completed/unattempted partial record", async () => {
+  await withFixture(async ({ root }) => {
+    const h = extensionHarness();
+    const ctx = h.context(root, "scaffold-continuation");
+    const first = { tool: "write", input: { path: "completed-scaffold.md", content: "completed\n" } };
+    const second = { tool: "write", input: { path: "continued-scaffold.md", content: "continued\n" } };
+    const control = h.tools.get("picm_scan_control");
+    await h.commands.get("picm-new").handler("partial scaffold", ctx);
+    await control.execute("preflight", { action: "preflight" }, undefined, undefined, ctx);
+    await control.execute("privacy", { action: "privacy", excludedPaths: [] }, undefined, undefined, ctx);
+    await h.tools.get("picm_scaffold_proposal").execute(
+      "partial-preview",
+      { action: "preview", operations: [first, second] },
+      undefined,
+      undefined,
+      ctx,
+    );
+    await h.handlers.get("input")({ text: "approve this exact scaffold", source: "interactive" }, ctx);
+    await control.execute("begin", { action: "begin" }, undefined, undefined, ctx);
+
+    assert.equal(await h.handlers.get("tool_call")({
+      toolCallId: "completed-scaffold-write",
+      toolName: "write",
+      input: first.input,
+    }, ctx), undefined);
+    await h.tools.get("write").execute("completed-scaffold-write", first.input, undefined, undefined, ctx);
+    await h.handlers.get("tool_execution_end")({
+      toolCallId: "completed-scaffold-write",
+      toolName: "write",
+      args: first.input,
+      isError: false,
+    }, ctx);
+    write(join(root, first.input.path), "external completed scaffold\n");
+
+    await h.handlers.get("agent_settled")({}, ctx);
+    await control.execute("resume-partial", { action: "begin" }, undefined, undefined, ctx);
+    await h.handlers.get("input")({ text: "continue", source: "interactive" }, ctx);
+
+    const replay = await h.handlers.get("tool_call")({
+      toolCallId: "replayed-scaffold-write",
+      toolName: "write",
+      input: first.input,
+    }, ctx);
+    assert.equal(replay?.block, true);
+    assert.equal(await h.handlers.get("tool_call")({
+      toolCallId: "continued-scaffold-write",
+      toolName: "write",
+      input: second.input,
+    }, ctx), undefined);
+    await h.tools.get("write").execute("continued-scaffold-write", second.input, undefined, undefined, ctx);
+    await h.handlers.get("tool_execution_end")({
+      toolCallId: "continued-scaffold-write",
+      toolName: "write",
+      args: second.input,
+      isError: false,
+    }, ctx);
+
+    assert.equal(readFileSync(join(root, first.input.path), "utf8"), "external completed scaffold\n");
+    assert.equal(readFileSync(join(root, second.input.path), "utf8"), second.input.content);
   });
 });
 

@@ -15,6 +15,7 @@ import test from "node:test";
 
 import { createGitReadGate } from "../extensions/runtime/git-read-gate.mjs";
 import { applyProposalBatch, prepareProposalBatch } from "../extensions/runtime/proposal-batch.mjs";
+import { createRuntimeCoordinator } from "../extensions/runtime/runtime-coordinator.mjs";
 
 import { git, write, withFixture } from "./helpers/git-fixtures.mjs";
 import { extensionHarness } from "./helpers/picm-extension-harness.mjs";
@@ -835,13 +836,15 @@ test("approved adoption and maintenance batches apply exact mixed operations wit
         action: "cancel",
         proposalId: aborted.details.proposalId,
       }, undefined, undefined, ctx);
-      assert.equal(abortedCancel.details.ok, false);
-      assert.equal(abortedCancel.details.code, "PICM_PROPOSAL_REPLACEMENT_REQUIRED");
-      await h.handlers.get("before_agent_start")({ prompt: "approve" }, ctx);
+      assert.equal(abortedCancel.details.ok, true);
+      await h.handlers.get("before_agent_start")({ prompt: "continue" }, ctx);
       const replay = await apply(aborted.details.proposalId);
       assert.equal(replay.details.ok, false);
       assert.equal(replay.details.code, "PICM_PROPOSAL_NOT_APPROVED");
       assert.equal(readFileSync(join(root, "AGENTS.md"), "utf8"), updatedAgents);
+      assert.equal(existsSync(join(root, "reference", "approval-notes.md")), false);
+      assert.equal(existsSync(join(root, "reference", "obsolete.md")), true);
+      assert.equal(existsSync(join(root, "routing", "legacy-route.md")), true);
       const abortedAudit = [...entries].reverse().find((entry) => entry.customType === "picm-proposal-batch" && entry.data.status === "aborted");
       assert.ok(abortedAudit);
       assert.deepEqual(abortedAudit.data.results, abortedResult.details.results);
@@ -916,6 +919,152 @@ test("approved adoption and maintenance batches apply exact mixed operations wit
       await control.execute("end", { action: "end" }, undefined, undefined, ctx);
     });
   }
+});
+
+test("an eligible same-session continuation applies only retained unattempted operations once", async () => {
+  await withFixture(async ({ root }) => {
+    const h = extensionHarness();
+    const ctx = h.context(root, "eligible-proposal-continuation");
+    const control = h.tools.get("picm_scan_control");
+    const batch = h.tools.get("picm_proposal_batch");
+    const operations = [
+      { type: "create", path: "completed.md", content: "original completed\n" },
+      { type: "create", path: "continued-a.md", content: "continued a\n" },
+      { type: "create", path: "continued-b.md", content: "continued b\n" },
+    ];
+
+    await h.commands.get("picm-adopt").handler("coding", ctx);
+    await control.execute("preflight", { action: "preflight" }, undefined, undefined, ctx);
+    await control.execute("privacy", { action: "privacy", excludedPaths: [] }, undefined, undefined, ctx);
+    await control.execute("begin", { action: "begin" }, undefined, undefined, ctx);
+    const prepared = await batch.execute("prepare", { action: "prepare", operations }, undefined, undefined, ctx);
+    await batch.execute("present", {
+      action: "present",
+      proposalId: prepared.details.proposalId,
+      digest: prepared.details.digest,
+    }, undefined, undefined, ctx);
+
+    await h.handlers.get("before_agent_start")({ prompt: "continue" }, ctx);
+    const initialContinue = await batch.execute(
+      "apply",
+      { action: "apply", proposalId: prepared.details.proposalId },
+      undefined,
+      undefined,
+      ctx,
+    );
+    assert.equal(initialContinue.details.code, "PICM_PROPOSAL_NOT_APPROVED");
+    assert.equal(existsSync(join(root, "completed.md")), false);
+
+    await h.handlers.get("before_agent_start")({ prompt: "approve" }, ctx);
+    const abortAfterFirst = {
+      get aborted() {
+        return existsSync(join(root, "completed.md"));
+      },
+    };
+    const interrupted = await batch.execute(
+      "apply",
+      { action: "apply", proposalId: prepared.details.proposalId },
+      abortAfterFirst,
+      undefined,
+      ctx,
+    );
+    assert.equal(interrupted.details.code, "PICM_PROPOSAL_ABORTED");
+    assert.deepEqual(interrupted.details.results.map(({ status }) => status), ["completed", "unattempted", "unattempted"]);
+    writeFileSync(join(root, "completed.md"), "external completed state\n");
+
+    await h.handlers.get("before_agent_start")({ prompt: "continue" }, ctx);
+    const continued = await batch.execute(
+      "apply",
+      { action: "apply", proposalId: prepared.details.proposalId },
+      undefined,
+      undefined,
+      ctx,
+    );
+    assert.equal(continued.details.ok, true);
+    assert.deepEqual(continued.details.results.map(({ status }) => status), ["completed", "completed", "completed"]);
+    assert.equal(readFileSync(join(root, "completed.md"), "utf8"), "external completed state\n");
+    assert.equal(readFileSync(join(root, "continued-a.md"), "utf8"), "continued a\n");
+    assert.equal(readFileSync(join(root, "continued-b.md"), "utf8"), "continued b\n");
+
+    await h.handlers.get("before_agent_start")({ prompt: "continue" }, ctx);
+    const duplicate = await batch.execute(
+      "apply",
+      { action: "apply", proposalId: prepared.details.proposalId },
+      undefined,
+      undefined,
+      ctx,
+    );
+    assert.equal(duplicate.details.code, "PICM_PROPOSAL_NOT_APPROVED");
+    assert.equal(readFileSync(join(root, "completed.md"), "utf8"), "external completed state\n");
+  });
+});
+
+test("failed or uncertain proposal operations cannot become continuation authority", async () => {
+  await withFixture(async ({ root }) => {
+    const h = extensionHarness({
+      createCoordinator: (options) => createRuntimeCoordinator({
+        ...options,
+        createGitGate(gateOptions) {
+          const gate = createGitReadGate(gateOptions);
+          return {
+            ...gate,
+            bindPath(plan) {
+              const binding = gate.bindPath(plan);
+              const writeFile = binding.operations.writeFile;
+              binding.operations.writeFile = async (path, ...args) => {
+                if (path !== join(root, "uncertain.md")) return writeFile(path, ...args);
+                await writeFile(path, "partly published\n");
+                throw Object.assign(new Error("synthetic uncertain write"), { code: "EIO" });
+              };
+              return binding;
+            },
+          };
+        },
+      }),
+    });
+    const ctx = h.context(root, "uncertain-proposal-continuation");
+    const control = h.tools.get("picm_scan_control");
+    const batch = h.tools.get("picm_proposal_batch");
+
+    await h.commands.get("picm-adopt").handler("coding", ctx);
+    await control.execute("preflight", { action: "preflight" }, undefined, undefined, ctx);
+    await control.execute("privacy", { action: "privacy", excludedPaths: [] }, undefined, undefined, ctx);
+    await control.execute("begin", { action: "begin" }, undefined, undefined, ctx);
+    const prepared = await batch.execute("prepare", {
+      action: "prepare",
+      operations: [
+        { type: "create", path: "completed-before-uncertain.md", content: "completed\n" },
+        { type: "create", path: "uncertain.md", content: "approved\n" },
+        { type: "create", path: "unattempted-after-uncertain.md", content: "unattempted\n" },
+      ],
+    }, undefined, undefined, ctx);
+    await batch.execute("present", {
+      action: "present",
+      proposalId: prepared.details.proposalId,
+      digest: prepared.details.digest,
+    }, undefined, undefined, ctx);
+    await h.handlers.get("before_agent_start")({ prompt: "approve" }, ctx);
+
+    const failed = await batch.execute(
+      "apply",
+      { action: "apply", proposalId: prepared.details.proposalId },
+      undefined,
+      undefined,
+      ctx,
+    );
+    assert.equal(failed.details.code, "PICM_PROPOSAL_IO_FAILED");
+    assert.deepEqual(failed.details.results.map(({ status }) => status), ["completed", "uncertain", "unattempted"]);
+    await h.handlers.get("before_agent_start")({ prompt: "continue" }, ctx);
+    const rejected = await batch.execute(
+      "apply",
+      { action: "apply", proposalId: prepared.details.proposalId },
+      undefined,
+      undefined,
+      ctx,
+    );
+    assert.equal(rejected.details.code, "PICM_PROPOSAL_NOT_APPROVED");
+    assert.equal(existsSync(join(root, "unattempted-after-uncertain.md")), false);
+  });
 });
 
 test("approved batches reauthorize every path before mutation against current exclusions", async () => {
@@ -1082,10 +1231,16 @@ test("approved batches reauthorize every path before mutation against current ex
         undefined,
         ctx,
       );
-      assert.equal(phaseReplaced.details.code, "PICM_PROPOSAL_CHECKPOINT_ACKNOWLEDGEMENT_REQUIRED");
-      await h.handlers.get("before_agent_start")({ prompt: "I understand the risk and want to proceed without a Git checkpoint." }, ctx);
-      await h.handlers.get("before_agent_start")({ prompt: "approve" }, ctx);
-      await assertBlocked(sessionMoveDestinationProposal);
+      assert.equal(phaseReplaced.details.code, "PICM_PROPOSAL_NOT_APPROVED");
+      await h.handlers.get("before_agent_start")({ prompt: "continue" }, ctx);
+      const noContinuationAcrossPhase = await batch.execute(
+        "apply",
+        { action: "apply", proposalId: sessionMoveDestinationProposal },
+        undefined,
+        undefined,
+        ctx,
+      );
+      assert.equal(noContinuationAcrossPhase.details.code, "PICM_PROPOSAL_NOT_APPROVED");
       assert.equal(readFileSync(join(root, "session-sentinel.md"), "utf8"), sentinelContent);
       assert.equal(readFileSync(join(root, "session-move-source.md"), "utf8"), sourceContents.sessionMove);
       assert.equal(existsSync(join(root, "session-move-destination.md")), false);
