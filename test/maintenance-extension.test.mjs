@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdirSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 import { fixture, harness } from "./helpers/maintenance-extension-harness.mjs";
@@ -41,37 +41,102 @@ test("command descriptions and completions expose optional arguments", () => {
   assert.equal(h.commands.get("picm-maintain").getArgumentCompletions("unknown"), null);
 });
 
-test("interactive maintain selects strict-first one-run depth without mutating the stored preset", async (t) => {
-  const cwd = fixture(t);
-  const h = harness();
+test("maintenance dispatch ignores legacy stored codebase-map metadata", async (t) => {
+  const storedPresets = ["light", "balanced", "strict", undefined];
+  const dispatches = [
+    {
+      name: "TUI Strict choice",
+      mode: "tui",
+      args: "",
+      selectResult: "Strict (recommended): broader systematic coverage across declared roots and mapped contexts; higher cost.",
+      depth: "strict",
+      opensSelector: true,
+    },
+    {
+      name: "TUI Balanced choice",
+      mode: "tui",
+      args: "",
+      selectResult: "Balanced: representative coverage of major boundaries and one coding path; lower cost.",
+      depth: "balanced",
+      opensSelector: true,
+    },
+    {
+      name: "TUI explicit Strict",
+      mode: "tui",
+      args: "strict",
+      depth: "strict",
+      opensSelector: false,
+    },
+    {
+      name: "TUI explicit Balanced",
+      mode: "tui",
+      args: "balanced",
+      depth: "balanced",
+      opensSelector: false,
+    },
+    {
+      name: "non-TUI bare default",
+      mode: "rpc",
+      args: "",
+      depth: "strict",
+      opensSelector: false,
+    },
+    {
+      name: "non-TUI explicit Strict",
+      mode: "rpc",
+      args: "strict",
+      depth: "strict",
+      opensSelector: false,
+    },
+    {
+      name: "non-TUI explicit Balanced",
+      mode: "rpc",
+      args: "balanced",
+      depth: "balanced",
+      opensSelector: false,
+    },
+  ];
 
-  await h.commands.get("picm-maintain").handler("coding", h.context(cwd));
+  for (const preset of storedPresets) {
+    for (const dispatch of dispatches) {
+      await t.test(`${preset ?? "absent"}: ${dispatch.name}`, async (t) => {
+        const cwd = fixture(t);
+        const configPath = join(cwd, ".picm/config.json");
+        const codebaseMap = {
+          shape: "root",
+          roots: ["src"],
+          map: "AGENTS.md",
+          localContexts: [],
+        };
+        if (preset !== undefined) codebaseMap.maintenancePreset = preset;
+        writeFileSync(configPath, `${JSON.stringify({
+          version: 1,
+          capabilities: { codebaseMap },
+        }, null, 2)}\n`);
+        const before = readFileSync(configPath, "utf8");
+        const h = harness({ selectResult: dispatch.selectResult });
 
-  assert.equal(h.selections.length, 1);
-  assert.deepEqual(h.selections[0], {
-    title: "Choose maintenance depth for this run (stored preset will not change)",
-    items: [
-      "Strict (recommended): broader systematic coverage across declared roots and mapped contexts; higher cost.",
-      "Balanced: representative coverage of major boundaries and one coding path; lower cost.",
-    ],
-  });
-  assert.match(h.sent[0], /User arguments:\ncoding/);
-  assert.match(h.sent[0], /Maintenance run depth: strict\. Apply this depth to this run only\./);
-  assert.match(h.sent[0], /Do not mutate `capabilities\.codebaseMap\.maintenancePreset`/);
-  assert.match(h.sent[0], /agent-document optimization.*Default to No/i);
-});
+        await h.commands.get("picm-maintain").handler(
+          dispatch.args,
+          h.context(cwd, dispatch.mode),
+        );
 
-test("explicit strict and balanced maintenance depths bypass the selector", async (t) => {
-  for (const depth of ["strict", "balanced"]) {
-    const cwd = fixture(t);
-    const h = harness();
-
-    await h.commands.get("picm-maintain").handler(depth, h.context(cwd));
-
-    assert.equal(h.selections.length, 0);
-    assert.doesNotMatch(h.sent[0], /User arguments:/);
-    assert.match(h.sent[0], new RegExp(`Maintenance run depth: ${depth}\\.`));
-    assert.match(h.sent[0], /Apply this depth to this run only/);
+        if (dispatch.opensSelector) {
+          assert.deepEqual(h.selections, [{
+            title: "Choose maintenance depth for this run (stored preset will not change)",
+            items: [
+              "Strict (recommended): broader systematic coverage across declared roots and mapped contexts; higher cost.",
+              "Balanced: representative coverage of major boundaries and one coding path; lower cost.",
+            ],
+          }]);
+        } else {
+          assert.deepEqual(h.selections, []);
+        }
+        assert.match(h.sent[0], new RegExp(`Maintenance run depth: ${dispatch.depth}\\.`));
+        assert.match(h.sent[0], /Do not mutate `capabilities\.codebaseMap\.maintenancePreset`/);
+        assert.equal(readFileSync(configPath, "utf8"), before);
+      });
+    }
   }
 });
 

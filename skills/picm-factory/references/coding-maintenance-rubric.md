@@ -20,33 +20,24 @@ Never quote sensitive findings into a maintenance report. Record generic risk de
 
 ## Maintenance depth
 
-For every later interactive `/picm-maintain` run, use the one-run depth supplied by the command prompt. A bare interactive command presents Strict and Balanced with Strict preselected; `/picm-maintain strict` and `/picm-maintain balanced` bypass that selector. The choice applies only to the current run and must not silently mutate `capabilities.codebaseMap.maintenancePreset`.
+For every later interactive `/picm-maintain` run, use the one-run depth supplied by the command prompt. A bare interactive command presents Strict and Balanced with Strict preselected; `/picm-maintain strict` and `/picm-maintain balanced` bypass that selector. In non-TUI dispatch, a bare command defaults to Strict without opening a selector. The choice applies only to the current run and must not silently mutate `capabilities.codebaseMap.maintenancePreset`.
 
 Strict (recommended): broader systematic coverage across declared roots and mapped contexts; higher cost.
 
 Balanced: representative coverage of major boundaries and one coding path; lower cost.
 
-Stored presets remain backward compatible. Explicit `light`, `balanced`, and `strict` values are readable. Scheduled `Run Now` uses the same Strict/Balanced selector as an ordinary interactive maintenance run rather than selecting a stored preset. Light is compatibility-only: never offer it in a new-user selector or use it for new adoption.
+Stored `maintenancePreset` values remain backward-compatible legacy metadata: explicit `light`, `balanced`, and `strict` values are preserved and readable, but never select a maintenance run depth. A missing value has no Balanced fallback. Scheduled `Run Now` uses the same Strict/Balanced selector as an ordinary interactive maintenance run rather than selecting stored metadata. Light has no active or scheduled compatibility dispatch: never offer it in a new-user selector or use it for new adoption.
 
-### Light (compatibility only)
+### Balanced
 
-Honor an existing explicit Light preset only when a compatibility path explicitly requests that stored depth.
-
-Check:
+Run these checks:
 
 - canonical routing and configured map paths exist;
 - declared code roots and local-context paths exist;
 - root routing points to the current map/equivalent;
 - map links do not target deleted or ignored paths;
 - mapped entry-point, manifest, test, and verification pointers still exist;
-- `.picm/` remains outside normal coding routes.
-
-Do not search broadly for new components.
-
-### Balanced
-
-Run all Light checks, plus:
-
+- `.picm/` remains outside normal coding routes;
 - compare visible workspace/manifests with mapped major boundaries;
 - identify likely new or removed meaningful components;
 - compare root and local responsibility descriptions for conflict;
@@ -173,7 +164,7 @@ In the normal maintenance report Summary, state:
 - primary profile;
 - whether codebase mapping is primary or composable;
 - map shape and roots inspected;
-- one-run maintenance depth (or stored preset for a scheduled compatibility run);
+- one-run maintenance depth;
 - areas deliberately not inspected.
 
 Coding findings should include evidence and confidence when they rely on inferred boundaries. Keep map presence, map correctness, and human approval separate. When comparing context efficiency, report purposeful files opened, searches performed, missed dependencies, and task correctness; report exact token savings only when the runtime exposes a reliable measurement.

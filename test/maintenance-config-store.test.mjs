@@ -94,6 +94,42 @@ test("preserves unknown config fields and existing file mode", async (t) => {
   assert.equal(updatedMode & 0o7000, 0);
 });
 
+test("preserves legacy codebase-map metadata during maintenance policy reads and writes", async (t) => {
+  for (const preset of ["light", "balanced", "strict", undefined]) {
+    await t.test(preset ?? "absent", async (t) => {
+      const { cwd, gate } = await repository(t);
+      const codebaseMap = {
+        shape: "root",
+        roots: ["src"],
+        map: "AGENTS.md",
+        localContexts: [],
+      };
+      if (preset !== undefined) codebaseMap.maintenancePreset = preset;
+      const original = {
+        version: 1,
+        capabilities: { codebaseMap },
+      };
+      const path = join(cwd, ".picm/config.json");
+      await fs.mkdir(join(cwd, ".picm"));
+      await fs.writeFile(path, `${JSON.stringify(original, null, 2)}\n`);
+      const store = createMaintenanceConfigStore({ cwd, gate });
+
+      const read = await store.read();
+      assert.equal(read.ok, true);
+      assert.deepEqual(read.config, original);
+
+      const updated = await store.updateMaintenance(monthly);
+      assert.equal(updated.ok, true);
+      const persisted = JSON.parse(await fs.readFile(path, "utf8"));
+      assert.deepEqual(persisted.capabilities.codebaseMap, codebaseMap);
+      assert.equal(
+        Object.hasOwn(persisted.capabilities.codebaseMap, "maintenancePreset"),
+        preset !== undefined,
+      );
+    });
+  }
+});
+
 test("blocks ignored and symlink maintenance configs or directories", async (t) => {
   const ignored = await repository(t, ".picm/config.json\n");
   await fs.mkdir(join(ignored.cwd, ".picm"));

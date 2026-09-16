@@ -12,7 +12,6 @@ import { join } from "node:path";
 import {
   BALANCED_MAINTENANCE_GUIDANCE,
   STRICT_MAINTENANCE_GUIDANCE,
-  resolveStoredCodingMaintenancePreset,
 } from "../extensions/runtime/coding-maintenance-depth.mjs";
 
 const root = process.cwd();
@@ -308,7 +307,6 @@ const codingGuidance = {
     "`inventory` for candidate discovery",
   ],
   "skills/picm-factory/references/coding-maintenance-rubric.md": [
-    "### Light (compatibility only)",
     "### Balanced",
     "### Strict",
     "Strict (recommended): broader systematic coverage across declared roots and mapped contexts; higher cost.",
@@ -361,18 +359,6 @@ for (const file of maintenanceDepthGuidanceFiles) {
     }
   }
 }
-for (const [stored, expected] of [
-  ["light", "light"],
-  ["balanced", "balanced"],
-  ["strict", "strict"],
-  [undefined, "balanced"],
-]) {
-  if (resolveStoredCodingMaintenancePreset(stored) !== expected) {
-    console.error(`Stored coding maintenance compatibility failed for: ${stored}`);
-    process.exit(1);
-  }
-}
-
 const adoptionPrivacyQuestionGuidance = {
   "skills/picm-factory/SKILL.md": [
     "Ask the security/privacy question before any scan",
