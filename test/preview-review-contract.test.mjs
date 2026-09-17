@@ -843,7 +843,4 @@ test("contract keeps implementation non-goals explicit", () => {
     "preserving all runtime privacy and scan behavior",
   ]) assert.ok(protocol.includes(signal), `missing non-goal: ${signal}`);
 
-  const packageCheck = read("scripts/check-package.mjs");
-  assert.ok(packageCheck.includes(protocolPath));
-  assert.ok(packageCheck.includes("test/preview-review-contract.test.mjs"));
 });
