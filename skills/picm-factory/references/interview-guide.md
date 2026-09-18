@@ -142,10 +142,11 @@ Before writing files:
    - source-material-only: confirm building around existing material without moving/rewriting it
    - existing architecture: recommend `/picm-adopt`; after ending discovery, require a direct choice of `adopt existing`, `add/replace scaffold`, or cancel; vague or preview-only input leaves the choice pending, and cancellation completes without writes
    - do not begin another protected phase while that choice is pending; after a directly observed add/replace or adopt choice is recorded, begin a new protected phase before project reads or drafting
-2. Confirm git safety:
-   - no git repo: recommend `git init`; require explicit confirmation to proceed without git
-   - dirty repo: show `git status --short`; require confirmation
-   - clean repo: proceed after scaffold approval
+2. Pair the current exact scaffold preview with the Git checkpoint recommendation from `preview-review-protocol.md`:
+   - strongly recommend a user-created Git commit covering current contents of affected existing files
+   - do not inspect Git status, history, or file contents to verify coverage; do not require a repository-wide clean state or ask the user to add sensitive or ignored material
+   - non-Git and new/empty workspaces remain supported; a first post-scaffold commit protects future contents only
+   - when the exact scaffold affects current existing content and coverage is absent or uncertain, obtain the protocol's explicit risk opt-out or a clear checkpoint report before normal direct scaffold approval; either is an unverified acknowledgment, not approval, while new-only scaffolds remain directly approvable
 3. Preview one current exact scaffold proposal:
    - enumerate every create, append, update, and overwrite action
    - create missing files/folders

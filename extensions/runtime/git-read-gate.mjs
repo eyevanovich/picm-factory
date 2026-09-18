@@ -11,7 +11,6 @@ import {
 } from "./privacy-policy.mjs";
 import {
   createPathExecutionBinding,
-  fileIdentity,
   resolvePathBindingLimits,
 } from "./path-execution-binding.mjs";
 
@@ -91,8 +90,6 @@ export function createGitReadGate({
 
   const declaredPackageRoot = resolve(packageRoot);
   const bindingLimits = resolvePathBindingLimits(pathBindingLimits);
-  let worktree;
-  let canonicalWorktree;
   let canonicalCwd;
   let canonicalPackageRoot;
   try {
@@ -107,7 +104,6 @@ export function createGitReadGate({
   let isolatedGitRoot;
   let isolatedGitDir;
   let isolatedGitInit;
-  let usingIsolatedGit = false;
   let disposed = false;
   let activeOperations = 0;
   let operationIdle;
@@ -156,11 +152,6 @@ export function createGitReadGate({
     }
   }
 
-  async function runWorkspaceGit(args) {
-    if (!usingIsolatedGit) return runGit(worktree, args);
-    const gitDir = await ensureIsolatedGit();
-    return runGit(worktree, ["--git-dir", gitDir, "--work-tree", worktree, ...args]);
-  }
 
   async function pathKind(path) {
     try {
@@ -204,15 +195,23 @@ export function createGitReadGate({
     });
   }
 
-  async function discoverWorktree() {
+  async function discoverWorktreeContext() {
     const result = await runGit(cwd, ["rev-parse", "--show-toplevel"]);
     if (result.code !== 0) {
       if (/fatal:\s+not a git repository\b/i.test(result.stderr)) {
-        worktree = resolve(cwd);
-        canonicalWorktree = await fs.realpath(worktree);
-        usingIsolatedGit = true;
-        await ensureIsolatedGit();
-        return true;
+        const worktree = resolve(cwd);
+        const canonicalWorktree = await fs.realpath(worktree);
+        const isolatedGitDirectory = await ensureIsolatedGit();
+        return {
+          worktree,
+          canonicalWorktree,
+          isolated: true,
+          runAtWorktree: (targetWorktree, args) => runGit(targetWorktree, args),
+          runWorkspaceGit: (args) => runGit(
+            worktree,
+            ["--git-dir", isolatedGitDirectory, "--work-tree", worktree, ...args],
+          ),
+        };
       }
       throw new Error(`Git worktree discovery failed: ${result.stderr.trim() || `exit ${result.code}`}`);
     }
@@ -221,53 +220,20 @@ export function createGitReadGate({
     if (!discoveredRoot) {
       throw new Error("Git worktree discovery returned an empty root");
     }
-    worktree = resolve(discoveredRoot);
-    canonicalWorktree = await fs.realpath(worktree);
-    usingIsolatedGit = false;
-    return true;
-  }
-
-  async function refreshInventoryUnchecked() {
-    await discoverWorktree();
-
-    const [candidateResult, ignoredOtherResult, ignoredCachedResult] = await Promise.all([
-      runWorkspaceGit(["ls-files", "-z", "--cached", "--others", "--exclude-standard"]),
-      runWorkspaceGit([
-        "ls-files",
-        "-z",
-        "--others",
-        "--ignored",
-        "--exclude-standard",
-        "--directory",
-        "--no-empty-directory",
-      ]),
-      runWorkspaceGit(["ls-files", "-z", "--cached", "--ignored", "--exclude-standard"]),
-    ]);
-    for (const result of [candidateResult, ignoredOtherResult, ignoredCachedResult]) {
-      if (result.code !== 0) {
-        throw new Error(`Git inventory failed: ${result.stderr.trim() || `exit ${result.code}`}`);
-      }
-    }
-
-    ignored = new Set([
-      ...parseNullList(ignoredOtherResult.stdout),
-      ...parseNullList(ignoredCachedResult.stdout),
-    ]);
-    candidates = new Set(
-      [...parseNullList(candidateResult.stdout)].filter((path) => !ignored.has(path)),
-    );
+    const worktree = resolve(discoveredRoot);
     return {
       worktree,
-      candidates: new Set(candidates),
-      ignored: new Set(ignored),
-      isolated: usingIsolatedGit,
+      canonicalWorktree: await fs.realpath(worktree),
+      isolated: false,
+      runAtWorktree: (targetWorktree, args) => runGit(targetWorktree, args),
+      runWorkspaceGit: (args) => runGit(worktree, args),
     };
   }
 
-  async function inventoryForBoundary(boundaryRoot) {
+  async function collectInventory(worktree, runInventoryGit, isolated) {
     const [candidateResult, ignoredOtherResult, ignoredCachedResult] = await Promise.all([
-      runGit(boundaryRoot, ["ls-files", "-z", "--cached", "--others", "--exclude-standard"]),
-      runGit(boundaryRoot, [
+      runInventoryGit(["ls-files", "-z", "--cached", "--others", "--exclude-standard"]),
+      runInventoryGit([
         "ls-files",
         "-z",
         "--others",
@@ -276,31 +242,43 @@ export function createGitReadGate({
         "--directory",
         "--no-empty-directory",
       ]),
-      runGit(boundaryRoot, ["ls-files", "-z", "--cached", "--ignored", "--exclude-standard"]),
+      runInventoryGit(["ls-files", "-z", "--cached", "--ignored", "--exclude-standard"]),
     ]);
     for (const result of [candidateResult, ignoredOtherResult, ignoredCachedResult]) {
       if (result.code !== 0) {
         throw new Error(`Git inventory failed: ${result.stderr.trim() || `exit ${result.code}`}`);
       }
     }
-    const boundaryIgnored = new Set([
+    const ignoredPaths = new Set([
       ...parseNullList(ignoredOtherResult.stdout),
       ...parseNullList(ignoredCachedResult.stdout),
     ]);
     return {
-      worktree: boundaryRoot,
+      worktree,
       candidates: new Set(
-        [...parseNullList(candidateResult.stdout)].filter((path) => !boundaryIgnored.has(path)),
+        [...parseNullList(candidateResult.stdout)].filter((path) => !ignoredPaths.has(path)),
       ),
-      ignored: boundaryIgnored,
-      isolated: false,
+      ignored: ignoredPaths,
+      isolated,
     };
   }
 
-  async function nestedGitMarker(startPath) {
+  async function refreshInventoryUnchecked(context) {
+    return collectInventory(context.worktree, context.runWorkspaceGit, context.isolated);
+  }
+
+  async function inventoryForBoundary(context, boundaryRoot) {
+    return collectInventory(
+      boundaryRoot,
+      (args) => context.runAtWorktree(boundaryRoot, args),
+      false,
+    );
+  }
+
+  async function nestedGitMarker(startPath, context) {
     for (
       let candidate = startPath;
-      isInside(canonicalWorktree, candidate);
+      isInside(context.canonicalWorktree, candidate);
       candidate = dirname(candidate)
     ) {
       try {
@@ -309,12 +287,12 @@ export function createGitReadGate({
       } catch (error) {
         if (error?.code !== "ENOENT") throw error;
       }
-      if (candidate === canonicalWorktree) break;
+      if (candidate === context.canonicalWorktree) break;
     }
     return undefined;
   }
 
-  async function boundaryForPath(resolvedPath) {
+  async function boundaryForPath(resolvedPath, context) {
     const intendedDirectory = resolvedPath.stat?.isDirectory()
       ? resolvedPath.canonicalPath
       : dirname(resolvedPath.canonicalPath);
@@ -328,16 +306,16 @@ export function createGitReadGate({
       discoveryCwd = resolvedPath.canonicalExistingPath;
     }
     if (
-      !isInside(canonicalWorktree, intendedDirectory) ||
-      !isInside(canonicalWorktree, discoveryCwd)
+      !isInside(context.canonicalWorktree, intendedDirectory) ||
+      !isInside(context.canonicalWorktree, discoveryCwd)
     ) {
       throw new Error("Git boundary discovery path is outside the canonical worktree");
     }
 
-    if (usingIsolatedGit) {
-      const result = await runGit(discoveryCwd, ["rev-parse", "--show-toplevel"]);
+    if (context.isolated) {
+      const result = await context.runAtWorktree(discoveryCwd, ["rev-parse", "--show-toplevel"]);
       if (result.code !== 0) {
-        const boundaryRoot = await nestedGitMarker(intendedDirectory);
+        const boundaryRoot = await nestedGitMarker(intendedDirectory, context);
         if (boundaryRoot) {
           throw unregisteredNestedGitBoundary(
             "Nested Git worktree is not registered as a parent gitlink",
@@ -353,9 +331,9 @@ export function createGitReadGate({
         throw new Error("Nested Git worktree discovery returned an empty root");
       }
       const nestedRoot = await fs.realpath(resolve(result.stdout.trim()));
-      if (nestedRoot === canonicalWorktree) {
-        const boundaryRoot = await nestedGitMarker(intendedDirectory);
-        if (boundaryRoot && boundaryRoot !== canonicalWorktree) {
+      if (nestedRoot === context.canonicalWorktree) {
+        const boundaryRoot = await nestedGitMarker(intendedDirectory, context);
+        if (boundaryRoot && boundaryRoot !== context.canonicalWorktree) {
           throw unregisteredNestedGitBoundary(
             "Nested Git worktree is not registered as a parent gitlink",
             boundaryRoot,
@@ -363,7 +341,7 @@ export function createGitReadGate({
         }
         return undefined;
       }
-      if (!isInside(canonicalWorktree, nestedRoot)) {
+      if (!isInside(context.canonicalWorktree, nestedRoot)) {
         throw new Error("Nested Git worktree discovery resolved outside the canonical worktree");
       }
       throw unregisteredNestedGitBoundary(
@@ -372,30 +350,48 @@ export function createGitReadGate({
       );
     }
 
+    const parentGitlinkProbes = new Map();
+    const parentGitlinkProbe = async (parentPath) => {
+      let probe = parentGitlinkProbes.get(parentPath);
+      if (!probe) {
+        probe = (async () => {
+          const gitlink = await context.runAtWorktree(context.canonicalWorktree, [
+            "ls-files",
+            "--stage",
+            "-z",
+            "--",
+            parentPath,
+          ]);
+          if (gitlink.code !== 0) {
+            throw new Error(`Parent Gitlink query failed: ${gitlink.stderr.trim() || `exit ${gitlink.code}`}`);
+          }
+          return hasGitlinkEntry(gitlink.stdout, parentPath);
+        })();
+        parentGitlinkProbes.set(parentPath, probe);
+      }
+      return probe;
+    };
+
     let parentGitlinkBoundary;
     for (
       let candidate = intendedDirectory;
-      candidate !== canonicalWorktree && isInside(canonicalWorktree, candidate);
+      candidate !== context.canonicalWorktree && isInside(context.canonicalWorktree, candidate);
       candidate = dirname(candidate)
     ) {
-      const parentPath = toGitPath(canonicalWorktree, candidate);
-      const gitlink = await runGit(canonicalWorktree, ["ls-files", "--stage", "-z", "--", parentPath]);
-      if (gitlink.code !== 0) {
-        throw new Error(`Parent Gitlink query failed: ${gitlink.stderr.trim() || `exit ${gitlink.code}`}`);
-      }
-      if (hasGitlinkEntry(gitlink.stdout, parentPath)) {
+      const parentPath = toGitPath(context.canonicalWorktree, candidate);
+      if (await parentGitlinkProbe(parentPath)) {
         parentGitlinkBoundary = candidate;
         break;
       }
     }
 
-    const result = await runGit(discoveryCwd, ["rev-parse", "--show-toplevel"]);
+    const result = await context.runAtWorktree(discoveryCwd, ["rev-parse", "--show-toplevel"]);
     if (result.code !== 0) {
       if (parentGitlinkBoundary) {
         throw new Error(`Nested Git worktree discovery failed: ${result.stderr.trim() || `exit ${result.code}`}`);
       }
-      const boundaryRoot = await nestedGitMarker(intendedDirectory);
-      if (boundaryRoot && boundaryRoot !== canonicalWorktree) {
+      const boundaryRoot = await nestedGitMarker(intendedDirectory, context);
+      if (boundaryRoot && boundaryRoot !== context.canonicalWorktree) {
         throw unregisteredNestedGitBoundary(
           "Nested Git worktree is not registered as a parent gitlink",
           boundaryRoot,
@@ -415,9 +411,9 @@ export function createGitReadGate({
       }
       throw new Error("Nested Git worktree discovery did not resolve the parent gitlink boundary");
     }
-    if (nestedRoot === canonicalWorktree) {
-      const boundaryRoot = await nestedGitMarker(intendedDirectory);
-      if (boundaryRoot && boundaryRoot !== canonicalWorktree) {
+    if (nestedRoot === context.canonicalWorktree) {
+      const boundaryRoot = await nestedGitMarker(intendedDirectory, context);
+      if (boundaryRoot && boundaryRoot !== context.canonicalWorktree) {
         throw unregisteredNestedGitBoundary(
           "Nested Git worktree is not registered as a parent gitlink",
           boundaryRoot,
@@ -425,16 +421,12 @@ export function createGitReadGate({
       }
       return undefined;
     }
-    if (!isInside(canonicalWorktree, nestedRoot)) {
+    if (!isInside(context.canonicalWorktree, nestedRoot)) {
       throw new Error("Nested Git worktree discovery resolved outside the canonical worktree");
     }
 
-    const parentPath = toGitPath(canonicalWorktree, nestedRoot);
-    const gitlink = await runGit(canonicalWorktree, ["ls-files", "--stage", "-z", "--", parentPath]);
-    if (gitlink.code !== 0) {
-      throw new Error(`Parent Gitlink query failed: ${gitlink.stderr.trim() || `exit ${gitlink.code}`}`);
-    }
-    if (!hasGitlinkEntry(gitlink.stdout, parentPath)) {
+    const parentPath = toGitPath(context.canonicalWorktree, nestedRoot);
+    if (!await parentGitlinkProbe(parentPath)) {
       throw unregisteredNestedGitBoundary(
         "Nested Git worktree is not registered as a parent gitlink",
         nestedRoot,
@@ -538,28 +530,26 @@ export function createGitReadGate({
       absolutePath: resolvedPath.absolutePath,
       canonicalPath: resolvedPath.canonicalPath,
       packageRoot: declaredPackageRoot,
-      targetIdentity: resolvedPath.stat ? fileIdentity(resolvedPath.stat) : undefined,
       existingPath: resolvedPath.existingPath,
       canonicalExistingPath: resolvedPath.canonicalExistingPath,
-      existingIdentity: resolvedPath.existingStat ? fileIdentity(resolvedPath.existingStat) : undefined,
       traversalEntries: resolvedPath.traversalEntries,
     };
     bindingPlans.add(plan);
     return plan;
   }
 
-  async function traversalDirectoryIsIgnored(canonicalPath, inventory) {
+  async function traversalDirectoryIsIgnored(canonicalPath, inventory, context) {
     const gitPath = toGitPath(inventory.worktree, canonicalPath);
     if (gitPath === ".git" || gitPath.startsWith(".git/")) return true;
-    const result = inventory.isolated || inventory.worktree === worktree
-      ? await runWorkspaceGit(["check-ignore", "--no-index", "-q", "--", gitPath])
-      : await runGit(inventory.worktree, ["check-ignore", "--no-index", "-q", "--", gitPath]);
+    const result = inventory.isolated || inventory.worktree === context.worktree
+      ? await context.runWorkspaceGit(["check-ignore", "--no-index", "-q", "--", gitPath])
+      : await context.runAtWorktree(inventory.worktree, ["check-ignore", "--no-index", "-q", "--", gitPath]);
     if (result.code === 0) return true;
     if (result.code === 1) return false;
     throw new Error(`Git ignore check was unresolved: ${result.stderr.trim() || `exit ${result.code}`}`);
   }
 
-  async function addTraversalEntries(resolvedPath, inventory, exclusions) {
+  async function addTraversalEntries(resolvedPath, inventory, exclusions, context) {
     if (!resolvedPath.stat?.isDirectory()) return;
     const entries = [];
     const entryPaths = new Set();
@@ -585,7 +575,7 @@ export function createGitReadGate({
             existingPath: absolutePath,
             canonicalExistingPath: canonicalPath,
             existingStat: stat,
-          });
+          }, context);
           result = { boundary };
         } catch (error) {
           if (error?.code !== UNREGISTERED_NESTED_GIT_BOUNDARY) throw error;
@@ -634,7 +624,7 @@ export function createGitReadGate({
         const canonicalPath = await fs.realpath(absolutePath);
         if (
           !isInside(resolvedPath.canonicalPath, canonicalPath) ||
-          !isInside(canonicalWorktree, canonicalPath) ||
+          !isInside(context.canonicalWorktree, canonicalPath) ||
           await privacyDecision(canonicalPath, exclusions)
         ) continue;
         const boundary = await traversalBoundaryDisposition(absolutePath, canonicalPath, stat);
@@ -652,7 +642,6 @@ export function createGitReadGate({
           canonicalPath,
           displayPath,
           isDirectory: false,
-          identity: fileIdentity(stat),
         });
       } catch (error) {
         if (error?.code !== "ENOENT") throw error;
@@ -664,8 +653,8 @@ export function createGitReadGate({
       const canonicalPath = await fs.realpath(displayPath);
       if (
         isInside(resolvedPath.canonicalPath, canonicalPath) &&
-        isInside(canonicalWorktree, canonicalPath) &&
-        !await traversalDirectoryIsIgnored(canonicalPath, inventory) &&
+        isInside(context.canonicalWorktree, canonicalPath) &&
+        !await traversalDirectoryIsIgnored(canonicalPath, inventory, context) &&
         !await privacyDecision(canonicalPath, exclusions)
       ) {
         const boundary = await traversalBoundaryDisposition(
@@ -679,7 +668,6 @@ export function createGitReadGate({
           canonicalPath,
           displayPath,
           isDirectory: true,
-          identity: fileIdentity(admittedStat),
         });
       }
     }
@@ -701,8 +689,8 @@ export function createGitReadGate({
         const canonicalPath = await fs.realpath(displayPath);
         if (
           !isInside(resolvedPath.canonicalPath, canonicalPath) ||
-          !isInside(canonicalWorktree, canonicalPath) ||
-          await traversalDirectoryIsIgnored(canonicalPath, inventory) ||
+          !isInside(context.canonicalWorktree, canonicalPath) ||
+          await traversalDirectoryIsIgnored(canonicalPath, inventory, context) ||
           await privacyDecision(canonicalPath, exclusions)
         ) continue;
         const boundary = await traversalBoundaryDisposition(
@@ -716,7 +704,6 @@ export function createGitReadGate({
           canonicalPath,
           displayPath,
           isDirectory: true,
-          identity: fileIdentity(admittedStat),
         });
         if (boundary.recurse) pendingDirectories.push(displayPath);
       }
@@ -765,9 +752,9 @@ export function createGitReadGate({
     };
   }
 
-  async function guardedInventoryForPath(resolvedPath, exclusions) {
+  async function guardedInventoryForPath(resolvedPath, exclusions, context) {
     const { canonicalPath } = resolvedPath;
-    const primaryGitPath = toGitPath(canonicalWorktree, canonicalPath);
+    const primaryGitPath = toGitPath(context.canonicalWorktree, canonicalPath);
     if (
       primaryGitPath === ".git" ||
       primaryGitPath.startsWith(".git/") ||
@@ -777,16 +764,16 @@ export function createGitReadGate({
       return { decision: { allowed: false, protected: true, reason: ".git internals are not readable" } };
     }
 
-    const nestedBoundary = await boundaryForPath(resolvedPath);
-    const boundaryRoot = nestedBoundary ?? canonicalWorktree;
+    const nestedBoundary = await boundaryForPath(resolvedPath, context);
+    const boundaryRoot = nestedBoundary ?? context.canonicalWorktree;
     const gitPath = toGitPath(boundaryRoot, canonicalPath);
     if (gitPath === ".git" || gitPath.startsWith(".git/")) {
       return { decision: { allowed: false, protected: true, reason: ".git internals are not readable" } };
     }
 
     if (nestedBoundary) {
-      const parentBoundaryPath = toGitPath(canonicalWorktree, nestedBoundary);
-      const parentIgnore = await runWorkspaceGit([
+      const parentBoundaryPath = toGitPath(context.canonicalWorktree, nestedBoundary);
+      const parentIgnore = await context.runWorkspaceGit([
         "check-ignore",
         "--no-index",
         "-q",
@@ -809,13 +796,13 @@ export function createGitReadGate({
 
     const inventory = await filterPrivacyInventory(
       nestedBoundary
-        ? await inventoryForBoundary(nestedBoundary)
-        : await refreshInventoryUnchecked(),
+        ? await inventoryForBoundary(context, nestedBoundary)
+        : await refreshInventoryUnchecked(context),
       exclusions,
     );
     const ignoreResult = nestedBoundary
-      ? await runGit(nestedBoundary, ["check-ignore", "--no-index", "-q", "--", gitPath])
-      : await runWorkspaceGit(["check-ignore", "--no-index", "-q", "--", gitPath]);
+      ? await context.runAtWorktree(nestedBoundary, ["check-ignore", "--no-index", "-q", "--", gitPath])
+      : await context.runWorkspaceGit(["check-ignore", "--no-index", "-q", "--", gitPath]);
     if (ignoreResult.code === 0) {
       return { decision: { allowed: false, protected: true, reason: "path is ignored by Git" } };
     }
@@ -831,60 +818,14 @@ export function createGitReadGate({
     return { inventory, gitPath };
   }
 
-  async function checkPrivacyPath(toolName, inputPath, privacyExcludedPaths = []) {
-    if (!PATH_TOOLS.has(toolName) || privacyExcludedPaths.length === 0) {
-      return { allowed: true, protected: false };
-    }
-    const exclusions = normalizePrivacyExcludedPaths(cwd, privacyExcludedPaths);
-    if (typeof inputPath !== "string" || inputPath.trim() === "") {
-      return { allowed: false, protected: true, reason: `${toolName} requires a path` };
-    }
-    try {
-      const resolvedPath = toolName === "write"
-        ? await resolveProspectivePath(inputPath, true)
-        : await resolveExistingPath(inputPath, true);
-      if (resolvedPath.blocked) {
-        return { allowed: false, protected: true, reason: resolvedPath.reason };
-      }
-      const decision = await privacyDecision(resolvedPath.canonicalPath, exclusions) ?? {
-        allowed: true,
-        protected: true,
-        reason: "path is outside configured PiCM privacy exclusions",
-      };
-      if (decision.allowed && resolvedPath.stat?.isDirectory()) {
-        if (!TRAVERSAL_TOOLS.has(toolName)) {
-          return {
-            allowed: false,
-            protected: true,
-            reason: "path is not in the Git-derived candidate inventory",
-          };
-        }
-        await discoverWorktree();
-        const boundary = await guardedInventoryForPath(resolvedPath, exclusions);
-        if (boundary.decision) return boundary.decision;
-        const { inventory } = boundary;
-        await addTraversalEntries(resolvedPath, inventory, exclusions);
-      }
-      return decision.allowed
-        ? allowedPathDecision(decision, toolName, resolvedPath)
-        : decision;
-    } catch (error) {
-      return {
-        allowed: false,
-        protected: true,
-        reason: `privacy path resolution failed: ${error instanceof Error ? error.message : error}`,
-      };
-    }
-  }
-
   async function checkPathUnchecked(
     toolName,
     inputPath,
     { stripToolPrefix = true, privacyExcludedPaths = [] } = {},
+    context,
   ) {
     if (!PATH_TOOLS.has(toolName)) return { allowed: true, protected: false };
     const exclusions = normalizePrivacyExcludedPaths(cwd, privacyExcludedPaths);
-    await discoverWorktree();
     if (typeof inputPath !== "string" || inputPath.trim() === "") {
       if (TRAVERSAL_TOOLS.has(toolName)) {
         return { allowed: false, protected: true, reason: `${toolName} requires a guarded file path` };
@@ -912,7 +853,7 @@ export function createGitReadGate({
     const trustedPackageRead = await trustedPackageReadDecision(resolvedPath, toolName);
     if (trustedPackageRead) return trustedPackageRead;
 
-    if (!isInside(canonicalWorktree, resolvedPath.canonicalPath)) {
+    if (!isInside(context.canonicalWorktree, resolvedPath.canonicalPath)) {
       return { allowed: false, protected: true, reason: "path is outside the canonical Git worktree" };
     }
 
@@ -928,7 +869,7 @@ export function createGitReadGate({
     const privatePath = await privacyDecision(resolvedPath.canonicalPath, exclusions);
     if (privatePath) return privatePath;
 
-    const boundary = await guardedInventoryForPath(resolvedPath, exclusions);
+    const boundary = await guardedInventoryForPath(resolvedPath, exclusions, context);
     if (boundary.decision) return boundary.decision;
     const { inventory, gitPath } = boundary;
 
@@ -940,7 +881,7 @@ export function createGitReadGate({
           reason: "path is not in the Git-derived candidate inventory",
         };
       }
-      await addTraversalEntries(resolvedPath, inventory, exclusions);
+      await addTraversalEntries(resolvedPath, inventory, exclusions, context);
     }
     if (READ_LIKE_TOOLS.has(toolName) && !resolvedPath.stat?.isDirectory() && !inventory.candidates.has(gitPath)) {
       return { allowed: false, protected: true, reason: "path is not in the Git-derived candidate inventory" };
@@ -963,11 +904,13 @@ export function createGitReadGate({
 
   async function checkPath(toolName, inputPath, privacyExcludedPaths = []) {
     try {
-      return await withOperation(() => checkPathUnchecked(
-        toolName,
-        inputPath,
-        { privacyExcludedPaths },
-      ));
+      return await withOperation(async () => {
+        if (!PATH_TOOLS.has(toolName)) {
+          return checkPathUnchecked(toolName, inputPath, { privacyExcludedPaths });
+        }
+        const context = await discoverWorktreeContext();
+        return checkPathUnchecked(toolName, inputPath, { privacyExcludedPaths }, context);
+      });
     } catch (error) {
       return {
         allowed: false,
@@ -1011,24 +954,28 @@ export function createGitReadGate({
   async function refreshInventory(inputPath, privacyExcludedPaths = []) {
     return withOperation(async () => {
       const exclusions = normalizePrivacyExcludedPaths(cwd, privacyExcludedPaths);
-      const primary = await filterPrivacyInventory(await refreshInventoryUnchecked(), exclusions);
-      if (inputPath === undefined) return primary;
+      const context = await discoverWorktreeContext();
+      if (inputPath === undefined) {
+        return filterPrivacyInventory(await refreshInventoryUnchecked(context), exclusions);
+      }
       const resolved = await resolveExistingPath(inputPath, true);
       if (resolved.blocked) throw new Error(resolved.reason);
       if (!resolved.stat.isDirectory()) throw new Error("inventory path must be a worktree directory");
-      if (!isInside(canonicalWorktree, resolved.canonicalPath)) {
+      if (!isInside(context.canonicalWorktree, resolved.canonicalPath)) {
         throw new Error("inventory path is outside the canonical Git worktree");
       }
       canonicalCwd ??= await fs.realpath(cwd);
       const expected = resolve(canonicalCwd, relative(resolve(cwd), resolved.absolutePath));
       if (resolved.canonicalPath !== expected) throw new Error("inventory path traverses a symlink");
-      if (resolved.canonicalPath === canonicalWorktree) return primary;
-      const nestedBoundary = await boundaryForPath(resolved);
+      if (resolved.canonicalPath === context.canonicalWorktree) {
+        return filterPrivacyInventory(await refreshInventoryUnchecked(context), exclusions);
+      }
+      const nestedBoundary = await boundaryForPath(resolved, context);
       if (nestedBoundary !== resolved.canonicalPath) {
         throw new Error("inventory path is not an initialized submodule worktree root");
       }
-      const parentBoundaryPath = toGitPath(canonicalWorktree, nestedBoundary);
-      const parentIgnore = await runWorkspaceGit([
+      const parentBoundaryPath = toGitPath(context.canonicalWorktree, nestedBoundary);
+      const parentIgnore = await context.runWorkspaceGit([
         "check-ignore",
         "--no-index",
         "-q",
@@ -1039,7 +986,7 @@ export function createGitReadGate({
       if (parentIgnore.code !== 1) {
         throw new Error(`Parent Git ignore check was unresolved: ${parentIgnore.stderr.trim() || `exit ${parentIgnore.code}`}`);
       }
-      return filterPrivacyInventory(await inventoryForBoundary(nestedBoundary), exclusions);
+      return filterPrivacyInventory(await inventoryForBoundary(context, nestedBoundary), exclusions);
     });
   }
 
@@ -1072,7 +1019,6 @@ export function createGitReadGate({
     checkBash,
     checkPath,
     checkTrustedPackageRead,
-    checkPrivacyPath,
     dispose,
     preflight,
     refreshInventory,

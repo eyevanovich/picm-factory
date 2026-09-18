@@ -280,7 +280,7 @@ Record only what maintenance needs. Example coding-primary config:
 
 For a hybrid, preserve the primary workflow profile and use the same optional `capabilities.codebaseMap` object. Roots may overlap `paths.workflowFolders`. If the map lives in the routing file or an existing architecture document, record that path instead of manufacturing `CONTEXT-MAP.md`.
 
-Existing configs remain compatible: explicit `light`, `balanced`, and `strict` values are readable and honored, while a historically missing value falls back to Balanced. Light is compatibility-only and must not appear in new adoption choices or new adoption output.
+Existing configs remain compatible: explicit `light`, `balanced`, and `strict` values are preserved and readable as legacy metadata, but never select a maintenance run depth. A historically missing value has no Balanced fallback. Light has no active or scheduled compatibility dispatch and must not appear in new adoption choices or new adoption output.
 
 When the user approves durable PiCM-only scan exclusions, preserve their normalized project-relative paths in the same config:
 

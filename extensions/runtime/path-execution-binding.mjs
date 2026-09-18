@@ -1,4 +1,4 @@
-import { existsSync, lstatSync, realpathSync, statSync } from "node:fs";
+import { existsSync, lstatSync, realpathSync } from "node:fs";
 import { open } from "node:fs/promises";
 import * as fsPromises from "node:fs/promises";
 import { spawn } from "node:child_process";
@@ -38,10 +38,6 @@ function ignoreLateSubprocessError() {}
 
 function retainLateErrorSink(emitter) {
   emitter?.on?.("error", ignoreLateSubprocessError);
-}
-
-export function fileIdentity(stat) {
-  return { dev: stat?.dev, ino: stat?.ino };
 }
 
 function startsWith(buffer, bytes) {
@@ -467,8 +463,10 @@ export async function executeBoundGrep(binding, params, signal, matcherOptions) 
   if (signal?.aborted) throw new Error("Operation aborted");
   for (const file of files) {
     if (signal?.aborted) throw new Error("Operation aborted");
-    const fileName = relative(binding.absolutePath, file.path) || basename(file.path);
-    if (glob && !globMatches(fileName, glob) && !globMatches(basename(file.path), glob)) continue;
+    const fileName = binding.files
+      ? file.path.split(sep).join("/")
+      : relative(binding.absolutePath, file.path) || basename(file.path);
+    if (glob && !globMatches(fileName, glob) && !globMatches(basename(fileName), glob)) continue;
     const fileBuffer = await file.readFile();
     const byteLength = Buffer.isBuffer(fileBuffer) ? fileBuffer.length : Buffer.byteLength(String(fileBuffer), "utf8");
     if (byteLength > resourceLimits.maxRetainedFileBytes) {
@@ -694,6 +692,10 @@ export function createPathExecutionBinding(plan, limitOverrides) {
     return target;
   }
 
+  function assertRegularFile(st) {
+    if (!st.isFile()) fail("target is not a regular file");
+  }
+
   async function assertRetainedFile(entry) {
     const target = entry.canonicalPath ?? entry.absolutePath;
     const currentCanonical = await canonicalProspectivePath(target);
@@ -702,7 +704,8 @@ export function createPathExecutionBinding(plan, limitOverrides) {
     }
     const st = await fsPromises.lstat(target);
     if (st.isSymbolicLink()) fail("file became a symlink");
-    if (st.isFile() && st.nlink > 1) fail("validated target has multiple hard links");
+    assertRegularFile(st);
+    if (st.nlink > 1) fail("validated target has multiple hard links");
     return { target, st };
   }
 
@@ -710,7 +713,8 @@ export function createPathExecutionBinding(plan, limitOverrides) {
     const target = await assertBoundTarget(filePath);
     const st = await fsPromises.lstat(target);
     if (st.isSymbolicLink()) fail("target became a symlink after validation");
-    if (st.isFile() && st.nlink > 1) fail("validated target has multiple hard links");
+    assertRegularFile(st);
+    if (st.nlink > 1) fail("validated target has multiple hard links");
     return { target, st };
   }
 
@@ -762,7 +766,8 @@ export function createPathExecutionBinding(plan, limitOverrides) {
               try {
                 const st = await fsPromises.lstat(target);
                 if (st.isSymbolicLink()) fail("target became a symlink");
-                if (st.isFile() && st.nlink > 1) fail("validated target has multiple hard links");
+                assertRegularFile(st);
+                if (st.nlink > 1) fail("validated target has multiple hard links");
               } catch (e) {
                 if (e.code !== "ENOENT") throw e;
               }
@@ -778,7 +783,18 @@ export function createPathExecutionBinding(plan, limitOverrides) {
           ? {
               mkdir: async (dir, options) => {
                 const target = await assertBoundTarget(dir, { allowAncestor: true });
-                return fsPromises.mkdir(target, { recursive: true, ...options });
+                // Node offers no portable directory-relative mkdir primitive, so an external
+                // filesystem actor can still replace an ancestor after this application gate.
+                try {
+                  return await fsPromises.mkdir(target, { recursive: false, ...options });
+                } catch (error) {
+                  if (options === undefined && error?.code === "EEXIST") {
+                    const current = await assertBoundTarget(target, { allowAncestor: true });
+                    const st = await fsPromises.lstat(current);
+                    if (st.isDirectory()) return;
+                  }
+                  throw error;
+                }
               },
               lstat: async (path) => {
                 const target = await assertBoundTarget(path);
@@ -792,7 +808,8 @@ export function createPathExecutionBinding(plan, limitOverrides) {
                 try {
                   const st = await fsPromises.lstat(target);
                   if (st.isSymbolicLink()) fail("target became a symlink");
-                  if (st.isFile() && st.nlink > 1) fail("validated target has multiple hard links");
+                  assertRegularFile(st);
+                  if (st.nlink > 1) fail("validated target has multiple hard links");
                 } catch (e) {
                   if (e.code !== "ENOENT") throw e;
                 }
