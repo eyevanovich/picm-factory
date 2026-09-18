@@ -206,14 +206,15 @@ export function createScaffoldApprovalRuntime() {
   function complete(scope, toolCallId, succeeded) {
     const current = proposals.get(scope);
     const operation = current?.operations.find((candidate) => candidate.reservedBy === toolCallId);
-    if (!operation) return;
+    if (!operation) return false;
     operation.reservedBy = undefined;
     if (succeeded) {
       operation.status = COMPLETED;
-      return;
+      return true;
     }
     operation.status = "failed";
     invalidate(current);
+    return false;
   }
 
   function release(scope, toolCallId) {
@@ -222,6 +223,16 @@ export function createScaffoldApprovalRuntime() {
     if (!operation) return;
     operation.reservedBy = undefined;
     operation.status = UNATTEMPTED;
+  }
+
+  function isFullyCompleted(scope) {
+    const current = proposals.get(scope);
+    return Boolean(
+      current &&
+      !current.invalidated &&
+      current.operations.length > 0 &&
+      current.operations.every((operation) => operation.status === COMPLETED),
+    );
   }
 
   function settle(scope, workflowCompleted) {
@@ -251,6 +262,7 @@ export function createScaffoldApprovalRuntime() {
     },
     complete,
     has: (scope) => proposals.has(scope),
+    isFullyCompleted,
     replaceWithInvalidatedSentinel: (scope) => {
       proposals.set(scope, proposal([], { invalidated: true }));
     },

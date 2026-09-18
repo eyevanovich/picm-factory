@@ -1179,13 +1179,16 @@ export function createRuntimeCoordinator({
     if (!isLocalSpecialistRoute(route)) {
       throw new Error("SPECIALIST_GUIDANCE_NOT_APPROVED: scaffold routes must be local");
     }
-    const approvedPath = resolve(ctx.cwd, route);
-    if (!workflow.specialist.approvedWrites.has(approvedPath)) {
-      throw new Error("SPECIALIST_GUIDANCE_NOT_APPROVED: scaffold file must be an approved write");
-    }
     const decision = await runtimeFor(ctx).gate.checkPath("read", route, workflow.privacy.excludedPaths);
-    if (!decision.allowed || decision.executionBinding?.canonicalPath !== approvedPath) {
+    const approvedPath = decision.executionBinding?.canonicalPath;
+    if (!decision.allowed || typeof approvedPath !== "string") {
       throw new Error("SPECIALIST_GUIDANCE_NOT_APPROVED: scaffold file must pass the canonical privacy boundary");
+    }
+    if (
+      !workflow.specialist.approvedWrites.has(approvedPath) &&
+      !workflow.specialist.approvedEdits.has(approvedPath)
+    ) {
+      throw new Error("SPECIALIST_GUIDANCE_NOT_APPROVED: scaffold file must be an approved write or edit");
     }
     const binding = runtimeFor(ctx).gate.bindPath(decision.executionBinding);
     try {
@@ -1209,19 +1212,67 @@ export function createRuntimeCoordinator({
     ];
   }
 
+  function specialistGuidanceProposal(workflow) {
+    const admission = scaffoldApproval.admission(workflow.scope, {});
+    if (!admission.active) return undefined;
+    return {
+      identity: admission.proposalIdentity,
+      digest: admission.proposalDigest,
+    };
+  }
+
+  function requireCurrentSpecialistGuidance(workflow, ctx, proposal) {
+    if (
+      !workflow ||
+      workflowFor(ctx) !== workflow ||
+      !lifecycle.isCurrent(workflow) ||
+      workflow.terminal.completed
+    ) {
+      throw new Error("SPECIALIST_GUIDANCE_NOT_APPROVED: Specialist workflow changed while rendering guidance");
+    }
+    const currentProposal = specialistGuidanceProposal(workflow);
+    if (
+      proposal
+        ? !currentProposal ||
+          currentProposal.identity !== proposal.identity ||
+          currentProposal.digest !== proposal.digest ||
+          !scaffoldApproval.isFullyCompleted(workflow.scope)
+        : currentProposal
+    ) {
+      throw new Error("SPECIALIST_GUIDANCE_NOT_APPROVED: complete the current exact scaffold proposal first");
+    }
+  }
+
   async function specialistRouteSemantics(ctx) {
     const workflow = workflowFor(ctx);
-    let config = workflow?.specialistConfig;
-    if (workflow?.specialistConfigEdited) {
-      config = JSON.parse(await readApprovedSpecialistFile(workflow, ctx, ".picm/config.json"));
+    if (!workflow || workflow.command !== "picm-new") {
+      throw new Error("SPECIALIST_GUIDANCE_NOT_APPROVED: complete approved Specialist scaffold writes first");
     }
+    const proposal = specialistGuidanceProposal(workflow);
+    if (proposal && !scaffoldApproval.isFullyCompleted(workflow.scope)) {
+      throw new Error("SPECIALIST_GUIDANCE_NOT_APPROVED: complete the current exact scaffold proposal first");
+    }
+    requireCurrentSpecialistGuidance(workflow, ctx, proposal);
+
+    let config;
+    try {
+      config = JSON.parse(await readApprovedSpecialistFile(workflow, ctx, ".picm/config.json"));
+    } catch (error) {
+      if (error instanceof SyntaxError) {
+        throw new Error("SPECIALIST_GUIDANCE_NOT_APPROVED: persisted Specialist config is invalid");
+      }
+      throw error;
+    }
+    requireCurrentSpecialistGuidance(workflow, ctx, proposal);
+
     const recipePath = config?.paths?.firstRecipe;
-    if (!workflow || !isLocalSpecialistRoute(recipePath)) {
+    if (!isLocalSpecialistRoute(recipePath)) {
       throw new Error("SPECIALIST_GUIDANCE_NOT_APPROVED: complete approved Specialist scaffold writes first");
     }
     const finalContents = new Map();
     for (const requiredPath of requiredSpecialistPaths(config)) {
       const content = await readApprovedSpecialistFile(workflow, ctx, requiredPath);
+      requireCurrentSpecialistGuidance(workflow, ctx, proposal);
       finalContents.set(resolve(ctx.cwd, requiredPath), content);
     }
     const recipe = finalContents.get(resolve(ctx.cwd, recipePath));
@@ -1247,7 +1298,7 @@ export function createRuntimeCoordinator({
     return false;
   }
 
-  function validateSpecialistScaffold(workflow, ctx, config, recipe, scaffoldContents = workflow.specialist.approvedWrites) {
+  function validateSpecialistScaffold(workflow, ctx, config, recipe, scaffoldContents) {
     const recipePath = config?.paths?.firstRecipe;
     const specialistConfig = config?.generatedBy === "picm-factory" && config?.profile === "specialist-folder";
     if (!specialistConfig || !isLocalSpecialistRoute(recipePath) || typeof recipe !== "string") return undefined;
@@ -1269,7 +1320,7 @@ export function createRuntimeCoordinator({
       isLocalSpecialistRoute(semantics.expectedArtifact) &&
       isLocalSpecialistRoute(semantics.nextActionSource);
     const runtimeInputsAreNotScaffolded = runtimeInputPaths.every(
-      (inputPath) => !workflow.specialist.approvedWrites.has(resolve(ctx.cwd, inputPath)),
+      (inputPath) => !workflow.specialist.approvedWrites.has(resolve(workflow.scope.workspace, inputPath)),
     );
     const requiredPaths = requiredSpecialistPaths(config);
     const completeInventory = requiredPaths.every((requiredPath) => {
@@ -1295,50 +1346,17 @@ export function createRuntimeCoordinator({
       lifecycle.current(workflowScopeFor(ctx)) === workflow;
     try {
       if (!current) return;
-      scaffoldApproval.complete(workflow.scope, event.toolCallId, !event.isError);
+      const completedScaffoldMutation = scaffoldApproval.complete(workflow.scope, event.toolCallId, !event.isError);
       if (
         workflow.command === "picm-new" &&
-        event.toolName === "edit" &&
-        event.isError !== true &&
-        typeof event.args?.path === "string" &&
-        resolve(ctx.cwd, event.args.path) === resolve(ctx.cwd, ".picm/config.json")
+        completedScaffoldMutation &&
+        issued.scaffoldMutation === true &&
+        typeof issued.binding?.canonicalPath === "string"
       ) {
-        workflow.specialist.configEdited = true;
-        workflow.specialist.routeSemantics = undefined;
-      }
-      if (
-        workflow.command === "picm-new" &&
-        event.toolName === "write" &&
-        event.isError !== true &&
-        typeof event.args?.path === "string" &&
-        typeof event.args?.content === "string"
-      ) {
-        const path = resolve(ctx.cwd, event.args.path);
-        workflow.specialist.scaffoldApproved = false;
-        workflow.specialist.routeSemantics = undefined;
-        workflow.specialist.approvedWrites.set(path, event.args.content);
-        if (path === resolve(ctx.cwd, ".picm/config.json")) {
-          try {
-            const config = JSON.parse(event.args.content);
-            workflow.specialist.configWritten = config?.generatedBy === "picm-factory" && config?.profile === "specialist-folder";
-            workflow.specialist.config = workflow.specialist.configWritten ? config : undefined;
-            workflow.specialist.configEdited = false;
-            const recipePath = config?.paths?.firstRecipe;
-            const recipe = typeof recipePath === "string"
-              ? workflow.specialist.approvedWrites.get(resolve(ctx.cwd, recipePath))
-              : undefined;
-            const semantics = validateSpecialistScaffold(workflow, ctx, config, recipe);
-            if (semantics) {
-              workflow.specialist.routeSemantics = semantics;
-              workflow.specialist.scaffoldApproved = true;
-            }
-          } catch {
-            workflow.specialist.configWritten = false;
-            workflow.specialist.config = undefined;
-            workflow.specialist.configEdited = false;
-            workflow.specialist.routeSemantics = undefined;
-            workflow.specialist.scaffoldApproved = false;
-          }
+        if (issued.binding.toolName === "write") {
+          workflow.specialist.approvedWrites.set(issued.binding.canonicalPath, true);
+        } else if (issued.binding.toolName === "edit") {
+          workflow.specialist.approvedEdits.add(issued.binding.canonicalPath);
         }
       }
     } finally {
@@ -1538,7 +1556,15 @@ export function createRuntimeCoordinator({
     const admission = workflow ? scaffoldApproval.admission(workflow.scope, event) : { active: false };
     if (admission.active) {
       const maintenancePreview = event.toolName === "picm_maintenance_policy" && event.input?.action === "preview";
-      const allowedControl = new Set(["read", "grep", "rg", "find", "ls", "picm_scan_control"]);
+      const allowedControl = new Set([
+        "read",
+        "grep",
+        "rg",
+        "find",
+        "ls",
+        "picm_scan_control",
+        "picm_specialist_first_run_guidance",
+      ]);
       if (!allowedControl.has(event.toolName) && event.toolName !== "picm_scaffold_proposal" && !maintenancePreview && !admission.allowed) {
         return blockedScaffoldMutation();
       }

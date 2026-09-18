@@ -81,11 +81,7 @@ export function createWorkflowLifecycle({ canonicalizeWorkspace = resolve } = {}
       terminal: { completed: false },
       specialist: {
         approvedWrites: new Map(),
-        configWritten: false,
-        config: undefined,
-        configEdited: false,
-        routeSemantics: undefined,
-        scaffoldApproved: false,
+        approvedEdits: new Set(),
       },
     };
     const alias = (get) => ({ enumerable: false, get });
@@ -108,11 +104,7 @@ export function createWorkflowLifecycle({ canonicalizeWorkspace = resolve } = {}
       completed: alias(() => record.terminal.completed),
       excludedPaths: alias(() => record.privacy.excludedPaths),
       approvedWrites: alias(() => record.specialist.approvedWrites),
-      specialistConfigWritten: alias(() => record.specialist.configWritten),
-      specialistConfig: alias(() => record.specialist.config),
-      specialistConfigEdited: alias(() => record.specialist.configEdited),
-      specialistRouteSemantics: alias(() => record.specialist.routeSemantics),
-      specialistScaffoldApproved: alias(() => record.specialist.scaffoldApproved),
+      approvedEdits: alias(() => record.specialist.approvedEdits),
     });
     return record;
   }
