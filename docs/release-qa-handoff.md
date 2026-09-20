@@ -1,26 +1,28 @@
-# Release QA handoff — paused by operator
+# Release QA handoff — focused continuation completed
 
-## Start here
+## Outcome
 
-**Do not resume automatically.** Ivan stopped the campaign to move to a fresh
-session on a cheaper model. Confirm the new session's model and bounded scope
-before further QA. Durable task: **`picm-x6c.21`** (`bd show picm-x6c.21`). Beads
-owns task status; this document is the operational checkpoint. Do not close
-older issues merely because related fixes landed.
+This historical checkpoint was consumed by the bounded lower-cost continuation
+for **`picm-x6c.21`**. Do not resume the old controllers, stale subject panes,
+or their approvals. The tested runtime/source revision is
+`cd4aa07c932e49a57a0db42885d00f70b3953fde`; the focused results and remaining
+coverage are in [release-qa-2026-09.md](release-qa-2026-09.md).
 
-Read next:
-- [Campaign evidence summary](release-qa-2026-09.md).
-- [Practical safety contract](adr/0001-practical-write-safety.md).
-- `qa-runner/CONTEXT.md` before interactive commands.
-- Relevant sections of `docs/layout-fixture-qa.md` and
-  `docs/picm-new-scenarios.md`, rather than replaying every old session.
+The campaign is **not release approval**: P1 `picm-x6c.22` tracks the missing
+local-only ignore offer, and P2 `picm-x6c.23` tracks submodule privacy re-entry
+guidance. Beads owns their status. Preserve the historical state below only for
+evidence; do not treat it as live execution authority.
+
+For future QA, read the campaign report, [Practical safety contract](adr/0001-practical-write-safety.md), `qa-runner/CONTEXT.md`, and only the relevant
+sections of `docs/layout-fixture-qa.md` / `docs/picm-new-scenarios.md`.
 
 ## Repository and authority
 
 - Repository: `/Users/ipiesh/Desktop/projects/picm-factory`.
 - Branch/upstream: `feature/x6c-tickets` / `origin/feature/x6c-tickets`.
-- Last tested runtime head: `f287796b3aa9d28e3d399e1f1b7969adf6d41198`.
-  Subsequent handoff commits change documentation only; verify actual Git status.
+- Historical paused-runtime head: `f287796b3aa9d28e3d399e1f1b7969adf6d41198`.
+  Focused continuation source head: `cd4aa07c932e49a57a0db42885d00f70b3953fde`.
+  Verify actual Git status before any future work.
 - Code changes stay in this repository; disposable fixture copies, caches and
   evidence stay in `/tmp`. No global edits, credentials inspection, destructive
   actions elsewhere, or force pushes.

@@ -1,11 +1,11 @@
 # Release-candidate fixture QA — September 2026
 
-## Status: paused by operator, not release approval
+## Status: focused campaign complete, not release approval
 
 Resume checkpoint: [release-qa-handoff.md](release-qa-handoff.md).
-Durable task: `picm-x6c.21`. Both controllers stopped and their owned subject
-panes were closed. The operator wants a fresh session on a cheaper model;
-no automatic full-matrix rerun should start.
+Durable task: `picm-x6c.21`. The paused-controller checkpoint was consumed by
+six fresh, bounded lower-cost sessions; no automatic full-matrix rerun started.
+New findings remain tracked separately, so this is not release approval.
 
 Scope: current `feature/x6c-tickets` branch, starting at
 `b692cbce5970f3e460506b66ee76deba07092423`. This is a current-code smoke
@@ -21,8 +21,9 @@ not hostile-race-proof filesystem guarantees or automatic rollback.
 
 ## Method and evidence
 
-- Real visible Pi 0.85.1 sessions with the local source package explicitly loaded,
-  using `openai-codex/gpt-6-astra`; one subject per controller lane at a time.
+- Real visible Pi 0.85.1 sessions with the local source package explicitly loaded.
+  The earlier broad lanes used `openai-codex/gpt-6-astra`; the final six focused
+  sessions used fresh `openai-codex/gpt-5.6-terra` subjects, one at a time.
 - Chat text was inspected in the editor before a separate Enter submission.
 - Fresh disposable copies, local synthetic Git checkpoints where needed, exact
   preview/approval checks, tool/session captures, and final mutation comparisons.
@@ -132,22 +133,57 @@ the exact reproduction and evidence paths; no fix for this variant was attempted
 The last pinned package check still passes 346 tests. The remaining defect
 means that green automated checks do not establish release readiness.
 
+## Focused final-head addendum: `cd4aa07`
+
+`cd4aa07c932e49a57a0db42885d00f70b3953fde` fixes the broader unchanged
+inventory-only preview request with an actual extension-hook regression. Its
+focused `npm run check` passed **347 tests** and package validation; the commit
+is pushed on `feature/x6c-tickets`.
+
+Six fresh direct sessions, recorded under the ephemeral evidence root, were run
+without resuming either earlier controller or replaying the baseline matrix.
+The index is `lower-cost-fresh/layout-ledger.md`; individual evidence is in
+`sessions/root-stage/`, `sessions/nested-stage/`, `sessions/faq-specialist/`,
+`sessions/min-specialist/`, `sessions/mixed-maint/`, and
+`sessions/submodule-boundary/` beneath that same root:
+
+- Root seven-file Stage approval now survives full preview, `continue`, `.`, and
+  the formerly blocking inventory-only wording; approved writes and post-write
+  inventory matched exactly.
+- Nested Stage creation produced both multi-level stage parents, and the FAQ
+  Specialist receipt/guidance flow passed.
+- The minimal four-file Specialist created only its exact scaffold and derived
+  guidance successfully, but **failed** to offer the required exact optional
+  `/.gitignore` entry or explain commit protection for a named local-only input.
+  This is release blocker `picm-x6c.22`.
+- Mixed maintenance rendered exact per-path content, linked-move review,
+  Previous/Next/Return/re-entry navigation, and kept `continue` no-write until a
+  separate risk acknowledgement and direct approval. Its exact four-operation
+  result matched the presented proposal.
+- An explicitly included, already-present synthetic submodule was protected as a
+  separate worktree: parent and nested inventories differed correctly; nested
+  Git-ignore and session exclusions stayed unread; only its safe file was read;
+  and no clone, fetch, initialization, proposal, or write occurred. A guidance
+  ambiguity caused a safely rejected post-`end` privacy-control call before
+  recovery; follow-up `picm-x6c.23` tracks the valid re-entry sequence.
+
 ## Remaining coverage / release blockers
 
-- Retest every second-round product failure at a clean pinned head, including
-  successful Specialist final guidance and complete nested scaffold generation.
-- Retry mixed-maintenance exact per-path review/navigation after the provider
-  `fetch failed` interruption. Earlier access verification failure and this later
-  fetch failure are infrastructure outcomes, not product passes.
-- Exercise an explicitly included submodule as a separate protected worktree.
+- Resolve and independently retest P1 `picm-x6c.22`; do not claim release
+  readiness while its local-only commit-protection offer is missing.
+- Resolve `picm-x6c.23` or explicitly document the supported submodule
+  confirmation sequence, then retest that narrow flow without weakening the
+  verified boundary.
 - Finish optional paired navigation-note calibration and remaining placement /
-  persisted-privacy branches where applicable.
-- Preserve per-head evidence: do not relabel baseline passes as final-head runs.
+  persisted-privacy branches where applicable. These were deliberately not
+  replayed as part of the bounded campaign.
+- Preserve per-head evidence: baseline passes remain historical and are not
+  promoted to `cd4aa07` coverage.
 - Rare late-cancellation/partial-mutation timing cases have automated coverage;
   they have not all been injected interactively. No promise of transactional
   rollback or race-proof pathname operations is made.
 - First-run business artifact production is outside the completed scaffold
   contract/checklist smoke tests so far.
 
-Update this checkpoint after pinned retests and independent review. Do not tag or
-publish while product failures or material unexplained coverage gaps remain.
+Do not tag or publish while product failures or material unexplained coverage
+gaps remain.
