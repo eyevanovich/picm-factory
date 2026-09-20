@@ -18,6 +18,8 @@ Rollback is another write sequence. It can fail, erase intervening edits, or req
 
 Keep explicit workflow activation, privacy review, all ignore/exclusion sources, project and worktree limits, and Git-internal protections. Keep checks for symlinks, hard links, unsupported file types, and expected source content. A denial stops the operation; excluded contents stay out of previews, diagnostics, recovery guidance, and audit entries.
 
+The privacy bootstrap is a narrow internal exception to the Git read gate because persisted exclusions must be available before protected scanning starts, even when `.picm/config.json` is ignored. Its pathless capability is fixed to canonical `<cwd>/.picm/config.json`; it may return only validated `privacy` and a completed-setup indicator, and may conditionally replace only `privacy` after exact confirmation. Opaque config members remain internal and are preserved during that update. Ordinary config reads and maintenance operations remain Git-gated. The bootstrap rejects linked, aliased, outside, non-regular, or multiply linked config paths and validates the canonical directory and file immediately before its operations.
+
 Checkpoint guidance grants no new arbitrary agent-shell access during protected workflows. Separate runtime confirmations for persisted privacy exclusions and standalone maintenance-policy writes remain required.
 
 ## R2 — Bound the filesystem guarantee

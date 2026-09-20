@@ -90,6 +90,26 @@ test("persistent privacy review writes config and protects later inventories", a
   });
 });
 
+test("coordinator preflight uses the ignored-config bootstrap projection", async () => {
+  await withFixture(async ({ root }) => {
+    write(join(root, ".gitignore"), ".picm/config.json\n");
+    write(join(root, ".picm/config.json"), JSON.stringify({
+      adoption: { status: "adopted", internal: "not-coordinator-state" },
+      privacy: { excludedPaths: ["safe-dir"] },
+      opaque: { secretLikeValue: "never-return" },
+    }));
+    const h = extensionHarness();
+    const ctx = h.context(root, "ignored-bootstrap-projection");
+    const control = h.tools.get("picm_scan_control");
+    await h.commands.get("picm-maintain").handler("", ctx);
+    const preflight = await control.execute("preflight", { action: "preflight" }, undefined, undefined, ctx);
+    assert.equal(preflight.details.privacyQuestionIsConcise, true);
+    assert.deepEqual(preflight.details.excludedPaths, ["safe-dir"]);
+    assert.equal(JSON.stringify(preflight.details).includes("secretLikeValue"), false);
+    assert.equal(JSON.stringify(preflight.details).includes("not-coordinator-state"), false);
+  });
+});
+
 test("declining persistent privacy keeps review incomplete", async () => {
   await withFixture(async ({ root }) => {
     const h = extensionHarness({ confirm: false });

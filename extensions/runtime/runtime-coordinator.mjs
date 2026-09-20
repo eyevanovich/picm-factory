@@ -265,7 +265,7 @@ export function createRuntimeCoordinator({
       requireCurrentWorkflow(sessionId, workflow);
       lifecycle.transition(workflow, "preflight-complete");
       if (workflow.command === "picm-maintain" || workflow.command === "picm-optimize") {
-        const current = await runtimeFor(ctx).store.readPrivacyForReview();
+        const current = await runtimeFor(ctx).store.privacyBootstrap.read();
         requireCurrentWorkflow(sessionId, workflow);
         if (!current.ok) throw new Error(`${current.code}: ${current.message}`);
         const persistedExcludedPaths = Array.isArray(current.privacy?.excludedPaths)
@@ -275,7 +275,7 @@ export function createRuntimeCoordinator({
           excludedPaths: persistedExcludedPaths,
           privacyFollowupPending: Array.isArray(current.privacy?.excludedPaths),
           privacyQuestionIsConcise:
-            Array.isArray(current.privacy?.excludedPaths) || hasCompletedPicmSetup(current.config),
+            Array.isArray(current.privacy?.excludedPaths) || Boolean(current.completedSetup),
         });
       }
       return {
@@ -295,7 +295,7 @@ export function createRuntimeCoordinator({
         throw new Error("PICM_PREFLIGHT_INCOMPLETE: complete picm_scan_control preflight before privacy review");
       }
       const store = runtimeFor(ctx).store;
-      const current = await store.readPrivacyForReview();
+      const current = await store.privacyBootstrap.read();
       requireCurrentWorkflow(sessionId, workflow);
       if (!current.ok) throw new Error(`${current.code}: ${current.message}`);
       const additions = mergePrivacyExcludedPaths(ctx.cwd, excludedPaths);
@@ -329,7 +329,7 @@ export function createRuntimeCoordinator({
             message: "No privacy settings were changed and scan privacy review remains incomplete",
           };
         }
-        const update = await store.compareAndUpdatePrivacyForReview(current.privacy, nextPrivacy);
+        const update = await store.privacyBootstrap.compareAndUpdate(current.privacy, nextPrivacy);
         requireCurrentWorkflow(sessionId, workflow);
         if (!update.ok) throw new Error(`${update.code}: ${update.message}`);
         if (update.conflict) throw new Error(`${update.code}: ${update.message}`);
@@ -344,7 +344,7 @@ export function createRuntimeCoordinator({
           additions,
         ),
         captureAdoptionBaseline: workflow.command === "picm-adopt" && !workflow.adoption.baselineCaptured,
-        wasAlreadyAdopted: current.config?.adoption?.status === "adopted",
+        wasAlreadyAdopted: current.completedSetup === "adopted",
       });
       invalidatePhaseAuthority(workflow.scope);
       return {
@@ -885,7 +885,7 @@ export function createRuntimeCoordinator({
     let result;
     try {
       throwIfAborted(execution.signal, "PICM_PROPOSAL_ABORTED");
-      const persisted = await runtimeFor(ctx).store.readPrivacyForReview();
+      const persisted = await runtimeFor(ctx).store.privacyBootstrap.read();
       requireCurrentWorkflow(sessionId, workflow);
       throwIfAborted(execution.signal, "PICM_PROPOSAL_ABORTED");
       if (current.status !== "applying" || (continuing && current.continuation?.identity !== continuationIdentity)) {
