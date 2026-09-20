@@ -189,6 +189,7 @@ Typical findings:
 
 Healing paths:
 
+- For root payload overload, propose a Tier 1 routing split: keep root instructions concise and move durable reference, history, or task-specific payload into focused existing homes or the smallest justified new files, linked from root. Adding a route alone does not repair an overloaded root. Preserve user-owned history and unique constraints; ask which conflicting rules are current before proposing substantive rule changes.
 - Tier 2 contract fix: replace repeated mechanical steps with a concise pointer to a user-confirmed script path or MCP/tool name, plus expected inputs/outputs and review requirements.
 - If no script/tool has been named, ask whether the user wants an extraction proposal; do not invent, implement, or execute an integration as part of maintenance approval.
 - Preserve the summary-preview and direct-approval gate before file moves, sends, external API effects, or edits to context files. Review linked move sources and destinations together under `preview-review-protocol.md`.
