@@ -27,6 +27,7 @@ const COMPLETED_CHECKPOINT_ACTION = /\b(?:created|made|committed|saved|recorded|
 const GIT_SNAPSHOT_REPORT = /\b(?:saved|recorded|backed up)\b.*\b(?:files?|changes?|work)\b.*\bgit\b/;
 const VAGUE_REPLIES = new Set(["preview only", "continue", "looks good", "yes", "go ahead", "."]);
 const NAVIGATION_REPLIES = new Set(["view all", "review files", "show the diff", "show diff", "inspect the diff"]);
+const INVENTORY_ONLY_PREVIEW_REQUEST = /^preview only for now[.!]\s+when i subsequently approve, please check the resulting file inventory before finishing so the summary accurately lists what was created[.!]?$/;
 const CANCELLATION_REQUEST = /\b(?:cancel|stop|decline|withdraw|never mind|do not apply|don't apply)\b/;
 const REVISION_REQUEST = /\b(?:add|adjust|change|delete|edit|modify|remove|rename|replace|revise|rewrite|update|instead)\b/;
 
@@ -169,6 +170,7 @@ export function createScaffoldApprovalRuntime() {
     }
     if (isPlausibleCheckpointReport(reply)) return authorityChanged();
     const navigation = NAVIGATION_REPLIES.has(reply) ||
+      INVENTORY_ONLY_PREVIEW_REQUEST.test(reply) ||
       /^preview only[.!]\s+show\b[^?!]*[.!]?$/.test(reply) ||
       /^(?:show (?:the )?diff for|inspect (?:the )?file) [\w./-]+$/.test(reply);
     if (!VAGUE_REPLIES.has(reply) && !navigation) invalidate(current);

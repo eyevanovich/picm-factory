@@ -175,6 +175,60 @@ for (const [name, path, review] of [
   });
 }
 
+test("inventory-only preview request keeps an unchanged seven-file stage proposal approvable", async () => {
+  await withFixture(async ({ root }) => {
+    const h = extensionHarness();
+    const ctx = h.context(root, "stage-inventory-preview-request");
+    const operations = [
+      "AGENTS.md",
+      "CONTEXT.md",
+      "reference/style-guide.md",
+      "01_intake/CONTEXT.md",
+      "02_draft/CONTEXT.md",
+      "03_review/CONTEXT.md",
+      ".picm/config.json",
+    ].map((path) => ({ tool: "write", input: { path, content: `Reviewed ${path}\n` } }));
+    try {
+      await start(h, ctx, "picm-new");
+      await invoke(h, ctx, "inventory-before", "picm_scan_control", { action: "inventory" });
+      await invoke(h, ctx, "preview", "picm_scaffold_proposal", { action: "preview", operations });
+
+      for (const text of [
+        "preview only. Show the complete exact proposed contents of all seven files.",
+        "continue",
+        ".",
+        "Preview only for now. When I subsequently approve, please check the resulting file inventory before finishing so the summary accurately lists what was created.",
+      ]) {
+        await h.handlers.get("agent_settled")({}, ctx);
+        await reply(h, ctx, text);
+        assert.equal(existsSync(join(root, "AGENTS.md")), false);
+        assert.equal((await h.handlers.get("tool_call")({
+          toolCallId: `unapproved-${text}`,
+          toolName: "write",
+          input: operations[0].input,
+        }, ctx)).block, true);
+      }
+
+      await h.handlers.get("agent_settled")({}, ctx);
+      await reply(h, ctx, "approve this exact scaffold");
+      for (const [index, operation] of operations.entries()) {
+        await invoke(h, ctx, `write-${index}`, operation.tool, operation.input);
+        assert.equal(readFileSync(join(root, operation.input.path), "utf8"), operation.input.content);
+      }
+      await h.handlers.get("agent_settled")({}, ctx);
+      const inventory = await invoke(h, ctx, "inventory-after", "picm_scan_control", { action: "inventory" });
+      assert.equal(inventory.details.newWorkflowIntentRequired, false);
+      for (const operation of operations) {
+        assert.ok(inventory.details.candidates.includes(operation.input.path), operation.input.path);
+      }
+      await invoke(h, ctx, "end", "picm_scan_control", { action: "end" });
+      assert.equal((await invoke(h, ctx, "complete", "picm_scan_control", { action: "complete" })).details.completed, true);
+    } finally {
+      await h.handlers.get("session_shutdown")({}, ctx);
+    }
+  });
+});
+
 for (const response of [
   "preview only. Show the files, then change the root instructions.",
   "preview only. Show the proposal. Cancel.",
