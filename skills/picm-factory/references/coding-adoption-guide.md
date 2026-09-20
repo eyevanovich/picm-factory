@@ -30,6 +30,16 @@ Do not follow symlinks during protected scans. A non-excluded symlink can resolv
 
 Treat each submodule as a separate repository boundary. Do not initialize, fetch, or enter it automatically. If the user explicitly includes an already available submodule, apply parent Git rules, session/config privacy exclusions, and that submodule's own Git exclusions before reading anything.
 
+### Explicit submodule re-entry after a scan end
+
+When the parent scan phase has ended, obtain fresh conversational confirmation that the user wants to include the already-present submodule under the already-reviewed privacy boundary. That confirmation is not another `picm_scan_control privacy` action: the parent phase retains its confirmed config and session exclusions, and `privacy` is invalid after `end`.
+
+1. Call `picm_scan_control` with `action: "begin"` to start the next protected phase.
+2. Call `picm_scan_control` with `action: "inventory"` and the present submodule worktree root as `path` (for example, `vendor/lib`). This validates the initialized submodule root, its parent Git boundary, and its own Git rules while retaining the existing PiCM exclusions.
+3. Read only the resulting safe candidates, then `end` the phase before continuing or completing the workflow.
+
+If the user needs additional session or persisted exclusions, do not scan the submodule in that settled workflow. Complete it and restart `/picm-adopt` so privacy review can record the full exclusion set before any scan. Never clone, initialize, fetch, or write while handling this re-entry.
+
 When `.git` is absent, the extension creates temporary bare Git metadata only after privacy review, points it at the workspace for candidate and remaining Git-exclude evaluation, and removes it on session shutdown. It never runs `git init` in the user's workspace. If Git, privacy-config validation, or an ignore check is unavailable, stop rather than weakening enforcement.
 
 The exclusion boundary reduces exposure but does not prove remaining files are safe. Avoid quoting credential-shaped or sensitive content in maps and reports.

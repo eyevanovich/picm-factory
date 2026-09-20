@@ -2,8 +2,10 @@ import assert from "node:assert/strict";
 import {
   cpSync,
   existsSync,
+  mkdirSync,
   mkdtempSync,
   readFileSync,
+  realpathSync,
   rmSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
@@ -281,6 +283,93 @@ test("Curated coding adoption reopens a protected phase before inspection and co
       proposalDeclineWroteConfig: false,
     },
   }, null, 2));
+});
+
+test("submodule re-entry begins a new phase with retained privacy exclusions", async (t) => {
+  const root = mkdtempSync(join(tmpdir(), "picm-submodule-reentry-"));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  git(root, "init", "-q");
+
+  const subRoot = join(root, "vendor", "lib");
+  mkdirSync(subRoot, { recursive: true });
+  git(subRoot, "init", "-q");
+  write(join(subRoot, ".gitignore"), "nested-private.md\n");
+  write(join(subRoot, "safe.md"), "safe nested source\n");
+  write(join(subRoot, "session-private.md"), "session-private source\n");
+  write(join(subRoot, "config-private.md"), "persisted-private source\n");
+  write(join(subRoot, "nested-private.md"), "ignored nested source\n");
+  git(subRoot, "add", ".gitignore", "safe.md", "session-private.md", "config-private.md");
+  git(subRoot, "-c", "user.name=PiCM Test", "-c", "user.email=picm@example.invalid", "commit", "-qm", "submodule");
+  git(root, "add", "vendor/lib");
+  git(root, "-c", "user.name=PiCM Test", "-c", "user.email=picm@example.invalid", "commit", "-qm", "parent");
+  const configPath = join(root, ".picm", "config.json");
+  write(configPath, `${JSON.stringify({ privacy: { excludedPaths: ["vendor/lib/config-private.md"] } })}\n`);
+  const initialConfig = readFileSync(configPath, "utf8");
+
+  const h = extensionHarness();
+  const ctx = h.context(root, "submodule-reentry");
+  const control = h.tools.get("picm_scan_control");
+  await h.commands.get("picm-adopt").handler("coding", ctx);
+  await control.execute("preflight", { action: "preflight" }, undefined, undefined, ctx);
+  await control.execute(
+    "privacy",
+    { action: "privacy", excludedPaths: ["vendor/lib/session-private.md"] },
+    undefined,
+    undefined,
+    ctx,
+  );
+  await control.execute("parent-begin", { action: "begin" }, undefined, undefined, ctx);
+  await control.execute("parent-inventory", { action: "inventory" }, undefined, undefined, ctx);
+  await control.execute("parent-end", { action: "end" }, undefined, undefined, ctx);
+
+  await control.execute("submodule-begin", { action: "begin" }, undefined, undefined, ctx);
+  const submodule = await control.execute(
+    "submodule-inventory",
+    { action: "inventory", path: "vendor/lib" },
+    undefined,
+    undefined,
+    ctx,
+  );
+
+  assert.equal(submodule.details.worktree, realpathSync(subRoot));
+  assert.equal(submodule.details.candidates.includes("safe.md"), true);
+  assert.equal(submodule.details.candidates.includes("session-private.md"), false);
+  assert.equal(submodule.details.candidates.includes("config-private.md"), false);
+  assert.equal(submodule.details.candidates.includes("nested-private.md"), false);
+  assert.equal(await h.handlers.get("tool_call")(
+    { toolName: "read", input: { path: "vendor/lib/safe.md" } },
+    ctx,
+  ), undefined);
+  const sessionExcluded = await h.handlers.get("tool_call")(
+    { toolName: "read", input: { path: "vendor/lib/session-private.md" } },
+    ctx,
+  );
+  assert.equal(sessionExcluded.block, true);
+  assert.match(sessionExcluded.reason, /PiCM privacy policy/);
+  const configExcluded = await h.handlers.get("tool_call")(
+    { toolName: "read", input: { path: "vendor/lib/config-private.md" } },
+    ctx,
+  );
+  assert.equal(configExcluded.block, true);
+  assert.match(configExcluded.reason, /PiCM privacy policy/);
+  const nestedIgnored = await h.handlers.get("tool_call")(
+    { toolName: "read", input: { path: "vendor/lib/nested-private.md" } },
+    ctx,
+  );
+  assert.equal(nestedIgnored.block, true);
+  assert.match(nestedIgnored.reason, /ignored by Git/);
+  write(join(root, ".gitignore"), "vendor/lib\n");
+  const parentIgnored = await h.handlers.get("tool_call")(
+    { toolName: "read", input: { path: "vendor/lib/safe.md" } },
+    ctx,
+  );
+  assert.equal(parentIgnored.block, true);
+  assert.match(parentIgnored.reason, /submodule boundary is ignored by parent Git worktree/);
+
+  await control.execute("submodule-end", { action: "end" }, undefined, undefined, ctx);
+  const complete = await control.execute("complete", { action: "complete" }, undefined, undefined, ctx);
+  assert.equal(complete.details.completed, true);
+  assert.equal(readFileSync(configPath, "utf8"), initialConfig);
 });
 
 test("privacy-reviewed scan authorization and exclusions survive resuming the same session", async () => {

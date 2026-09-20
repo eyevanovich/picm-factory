@@ -198,7 +198,7 @@ Expected behavior:
 - Does not follow `ignored-target-link` to the ignored `.env` target.
 - Visible Pi tool logs contain no read of any ignored file or symlink target.
 - Still asks whether tracked files or other approved paths contain secrets; ignore rules are not treated as proof that every remaining path is safe.
-- If a submodule is explicitly included, treats it as a separate worktree and repeats privacy confirmation, Git candidate listing, and per-path ignore checks without initializing/fetching it automatically.
+- After a parent scan `end`, an explicitly included present submodule receives fresh conversational confirmation under the retained privacy boundary; it then calls `begin` and `inventory` with `path: "vendor/lib"` without another `privacy` action. The separate worktree applies parent, nested Git, PiCM, and session exclusions; safe candidates remain readable while excluded paths remain blocked, and no clone, initialization, fetch, proposal, or write occurs.
 
 Observed smoke: 2026-07-22 in visible Zellij/Pi panes against `/tmp/picm-coding-ignore-smoke`.
 
