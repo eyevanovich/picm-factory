@@ -269,10 +269,11 @@ export default function picmFactoryExtension(
       "Only an explicit /picm-new, /picm-adopt, /picm-maintain, or /picm-optimize command authorizes picm_scan_control; natural-language requests do not.",
       "After an explicit command, call picm_scan_control preflight before any scan. For /picm-maintain and /picm-optimize, if preflight returns privacyQuestionIsConcise true, ask exactly: Name any additional project-relative files or directory that should be excluded from reads, or reply `none` to continue. Then call privacy with every exact project-relative excluded path. Otherwise, ask the full privacy question before privacy and begin.",
       "Use picm_scan_control privacy with persist true only when the user requests durable exclusions. First present and obtain acceptance of the complete concise .picm/config.json summary, explain the privacy configuration impact, then use the action's exact TUI patch confirmation as the separate runtime write confirmation.",
+      "When the user cancels the workflow, call picm_scan_control cancel, including before privacy review or between phases. It clears authorization without reading project files, rolling back completed writes, or recording maintenance completion.",
       "Use picm_scan_control inventory only after begin, end after each scan phase, and complete when the PiCM workflow finishes. An end intentionally blocks later project/resource reads: do not retry a gate-blocked read; begin the next inspection phase first. After coding mapping and adoption-depth choices, begin a new phase before the Strict examination, map analysis, or Curated documentation inventory. Use new-intent only for the directly observed choice reported by the /picm-new runtime; it does not approve writes. After an adoption writes exact adoption.status \"adopted\", call adoption-complete to present the initial-maintenance choice; other adoption outcomes finish normally without the choice.",
     ],
     parameters: Type.Object({
-      action: StringEnum(["preflight", "privacy", "begin", "inventory", "end", "complete", "adoption-complete", "new-intent", "status"] as const),
+      action: StringEnum(["preflight", "privacy", "begin", "inventory", "end", "complete", "cancel", "adoption-complete", "new-intent", "status"] as const),
       intent: Type.Optional(StringEnum(["add-replace", "adopt-existing", "cancel"] as const)),
       path: Type.Optional(Type.String({ minLength: 1 })),
       excludedPaths: Type.Optional(Type.Array(Type.String({ minLength: 1 }))),
@@ -296,7 +297,7 @@ export default function picmFactoryExtension(
         if (result.maintenanceReset && (!result.maintenanceReset.ok || result.maintenanceReset.conflict) && ctx.hasUI) {
           ctx.ui.notify(`[picm-factory] ${result.warning ?? result.message}`, "warning");
         }
-      } else if (params.action === "complete" || result.completed) {
+      } else if (params.action === "complete" || params.action === "cancel" || result.completed) {
         if (result.completed) {
           const serialized = coordinator.serializeWorkflow(ctx, "completed");
           if (serialized) pi.appendEntry(scanWorkflowEntryType, serialized);
@@ -492,7 +493,7 @@ export default function picmFactoryExtension(
 
     const continuation = await coordinator.continueAdoptionAsMaintenance(ctx);
     try {
-      pi.sendUserMessage(buildMaintenanceContinuationPrompt(depth));
+      pi.sendUserMessage(buildMaintenanceContinuationPrompt(depth), { deliverAs: "steer" });
     } catch (error) {
       coordinator.clearWorkflow(ctx);
       recordClearedWorkflow(ctx);

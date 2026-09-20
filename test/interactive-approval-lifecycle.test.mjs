@@ -136,3 +136,22 @@ test("a current-content checkpoint report acknowledges risk but does not approve
     }
   });
 });
+
+test("workflow cancellation revokes issued scaffold authority and preserves completed files", async () => {
+  await withFixture(async ({ root }) => {
+    const h = extensionHarness();
+    const ctx = h.context(root);
+    await start(h, ctx, "picm-new");
+    const operations = ["AGENTS.md", "CONTEXT.md"].map((path) => ({ tool: "write", input: { path, content: "Approved\n" } }));
+    await invoke(h, ctx, "preview", "picm_scaffold_proposal", { action: "preview", operations });
+    await reply(h, ctx, "approve this exact scaffold");
+    await invoke(h, ctx, "first", "write", operations[0].input);
+    assert.equal(await h.handlers.get("tool_call")({ toolCallId: "issued", toolName: "write", input: operations[1].input }, ctx), undefined);
+    await invoke(h, ctx, "cancel", "picm_scan_control", { action: "cancel" });
+    await assert.rejects(h.tools.get("write").execute("issued", operations[1].input, undefined, undefined, ctx), /PICM_PATH_BINDING/);
+    assert.equal(readFileSync(join(root, "AGENTS.md"), "utf8"), "Approved\n");
+    assert.equal(existsSync(join(root, "CONTEXT.md")), false);
+    await assert.rejects(invoke(h, ctx, "queued-begin", "picm_scan_control", { action: "begin" }), /PICM_SCAN_NOT_AUTHORIZED/);
+    await h.handlers.get("session_shutdown")({}, ctx);
+  });
+});

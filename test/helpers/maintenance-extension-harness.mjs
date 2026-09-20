@@ -28,7 +28,7 @@ export function nonGitFixture(t, maintenance) {
 }
 
 export function harness(options = {}) {
-  const { entries = [], confirm = true, selectHandler, sendError, extensionOptions } = options;
+  const { entries = [], confirm = true, selectHandler, sendError, sendHandler, extensionOptions } = options;
   const handlers = new Map();
   const commands = new Map();
   const tools = new Map();
@@ -46,8 +46,9 @@ export function harness(options = {}) {
     registerCommand(name, definition) { commands.set(name, definition); },
     registerTool(definition) { tools.set(definition.name, definition); },
     appendEntry(customType, data) { entries.push({ type: "custom", customType, data }); },
-    sendUserMessage(message) {
+    sendUserMessage(message, options) {
       if (sendError) throw sendError;
+      sendHandler?.(message, options);
       sent.push(message);
     },
   };

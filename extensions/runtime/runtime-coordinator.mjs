@@ -251,6 +251,13 @@ export function createRuntimeCoordinator({
     const { action, path, excludedPaths = [], persist = false } = params;
     const sessionId = sessionIdFor(ctx);
     const workflow = workflowFor(ctx);
+    if (action === "cancel") {
+      clearWorkflow(ctx);
+      return {
+        ok: true, action, cancelled: true, authorized: false, active: false, completed: false,
+        message: "Workflow cancelled. Completed changes remain; cancellation does not record maintenance completion.",
+      };
+    }
     if (workflow?.scanSettled && !workflow.completed && action !== "begin" && action !== "complete" && action !== "new-intent") {
       throw new Error("PICM_SCAN_SETTLED: after ending a scan, only begin for the next phase, record a pending new-workflow intent, or complete is allowed");
     }

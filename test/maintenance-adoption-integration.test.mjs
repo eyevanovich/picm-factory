@@ -188,7 +188,11 @@ test("declined privacy does not capture the adoption baseline", async (t) => {
 test("initial maintenance reuses adoption exclusions, selects strict first, and resets only after maintenance completes", async (t) => {
   const cwd = fixture(t, oldDue("nudge"));
   let selection = 0;
+  let processing = false;
   const h = harness({
+    sendHandler: (_message, options) => {
+      if (processing) assert.equal(options?.deliverAs, "steer", "busy tool continuation must be queued");
+    },
     selectHandler: (title, items) => {
       selection += 1;
       if (selection === 1) {
@@ -208,7 +212,9 @@ test("initial maintenance reuses adoption exclusions, selects strict first, and 
   const afterAdoption = readFileSync(join(cwd, ".picm/config.json"), "utf8");
   await h.scanControl.execute("id", { action: "begin" }, undefined, undefined, ctx);
   await h.scanControl.execute("id", { action: "end" }, undefined, undefined, ctx);
+  processing = true;
   const started = await h.scanControl.execute("id", { action: "adoption-complete" }, undefined, undefined, ctx);
+  assert.equal(h.sent.length, 2);
 
   assert.equal(started.details.initialMaintenance, "started");
   assert.equal(started.details.command, "picm-maintain");
