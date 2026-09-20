@@ -1323,7 +1323,6 @@ export function createRuntimeCoordinator({
       return true;
     }
     if (workflow) {
-      lifecycle.transition(workflow, "deactivate-scan");
       revokeScaffoldMutationBindings(workflow.scope);
       scaffoldApproval.settle(workflow.scope, false);
       releaseBindings(workflow.scope);
@@ -1483,7 +1482,7 @@ export function createRuntimeCoordinator({
     }
 
     if (workflow && event.toolName === "picm_scan_control") return { allowed: true };
-    if (workflow?.command === "picm-new" && event.toolName === "picm_scaffold_proposal" && !scanActive) return { allowed: true };
+    if (workflow?.command === "picm-new" && workflow.scanStarted && event.toolName === "picm_scaffold_proposal") return { allowed: true };
 
     if (workflow && event.toolName === "picm_specialist_first_run_guidance") {
       if (workflow.command === "picm-new" && workflow.privacyReviewed && workflow.scanStarted) {

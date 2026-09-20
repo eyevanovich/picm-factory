@@ -722,7 +722,8 @@ test("same-session scaffold continuation consumes a completed/unattempted partia
     write(join(root, first.input.path), "external completed scaffold\n");
 
     await h.handlers.get("agent_settled")({}, ctx);
-    await control.execute("resume-partial", { action: "begin" }, undefined, undefined, ctx);
+    const settled = await control.execute("settled-status", { action: "status" }, undefined, undefined, ctx);
+    assert.equal(settled.details.active, true);
     await h.handlers.get("input")({ text: "continue", source: "interactive" }, ctx);
 
     const replay = await h.handlers.get("tool_call")({

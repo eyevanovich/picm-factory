@@ -20,6 +20,7 @@ const CHECKPOINT_REPORTS = [
   /^(?:(?:i|we) )?(?:created|made|have created|have made) (?:a |the )?git (?:checkpoint|commit)(?: (?:covering|for)\b.*)?[.!]?$/,
   /^(?:a |the )?git (?:checkpoint|commit) (?:was )?(?:created|made)[.!]?$/,
   /^(?:(?:i|we) )?(?:have )?committed\b.*\b(?:in|to) git[.!]?$/,
+  /^(?:a |the )?(?:(?:git|fixture) )?checkpoint(?: commit)? covers the current contents of all affected existing files(?: (?:in|for) (?:this|the) (?:replacement |current )?proposal)?[.!]?(?: continue[.!]?)?$/,
 ];
 const CHECKPOINT_REPORT_LANGUAGE = /\b(?:checkpoint|commit(?:ted)?)\b/;
 const COMPLETED_CHECKPOINT_ACTION = /\b(?:created|made|committed|saved|recorded|finished|completed|done)\b/;
