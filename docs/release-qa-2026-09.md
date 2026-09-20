@@ -1,6 +1,11 @@
 # Release-candidate fixture QA — September 2026
 
-## Status: in progress, not release approval
+## Status: paused by operator, not release approval
+
+Resume checkpoint: [release-qa-handoff.md](release-qa-handoff.md).
+Durable task: `picm-x6c.21`. Both controllers stopped and their owned subject
+panes were closed. The operator wants a fresh session on a cheaper model;
+no automatic full-matrix rerun should start.
 
 Scope: current `feature/x6c-tickets` branch, starting at
 `b692cbce5970f3e460506b66ee76deba07092423`. This is a current-code smoke
@@ -110,6 +115,22 @@ note: cancellation must not deny an earlier committed maintenance cycle. That
 wording was corrected and a completed-maintenance→cancel regression added.
 Real affected-scenario retests are still required; green automated checks alone
 do not close these findings.
+
+## Final current-head checkpoint
+
+At `f287796`, adoption-to-maintenance dispatch and early/late cancellation
+passed interactive checks (five scoped ledger rows, not five sessions).
+
+One root-stage scaffold case remains failed/partial: after an unchanged exact
+preview, the request “Preview only for now. When I subsequently approve, please
+check the resulting file inventory before finishing so the summary accurately
+lists what was created.” caused later exact approval to be blocked. No files
+were written; an identical refreshed proposal was never approved. This broader
+wording is not covered by the narrower preview-only fix. The handoff preserves
+the exact reproduction and evidence paths; no fix for this variant was attempted.
+
+The last pinned package check still passes 346 tests. The remaining defect
+means that green automated checks do not establish release readiness.
 
 ## Remaining coverage / release blockers
 
