@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { realpathSync } from "node:fs";
-import { isAbsolute, relative, resolve, sep } from "node:path";
+import { relative, resolve, sep } from "node:path";
 import { createGitReadGate } from "./git-read-gate.mjs";
 import { createMaintenanceConfigStore } from "./maintenance-config-store.mjs";
 import { createMaintenanceController } from "./maintenance-controller.mjs";
@@ -28,6 +28,7 @@ import {
 } from "./proposal-batch.mjs";
 import {
   hasUnresolvedSpecialistPlaceholder,
+  isLocalSpecialistRoute,
   parseSpecialistFirstRunRecipe,
 } from "./specialist-first-run-guidance.mjs";
 
@@ -84,11 +85,6 @@ function hasCompletedPicmSetup(config) {
       isRecord(config.paths)
     )
   );
-}
-
-function isLocalSpecialistRoute(value) {
-  return typeof value === "string" && value.trim() === value && value !== "" &&
-    !isAbsolute(value) && !value.split(/[\\/]/).includes("..");
 }
 
 export function createRuntimeCoordinator({
@@ -1198,18 +1194,31 @@ export function createRuntimeCoordinator({
     }
   }
 
-  function requiredSpecialistPaths(config) {
-    const generatedInputPaths = Array.isArray(config?.paths?.generatedInputs)
-      ? config.paths.generatedInputs
-      : [];
+  function requiredSpecialistPaths(config, semantics) {
     return [
       config?.paths?.rootInstructions,
       config?.paths?.rootContext,
       "identity.md",
       "rules.md",
       config?.paths?.firstRecipe,
-      ...generatedInputPaths,
+      ...semantics.inputs
+        .filter((input) => input.availability === "scaffolded")
+        .map((input) => input.path),
     ];
+  }
+
+  function legacyRouteArrayMatches(config, name, expectedRoutes) {
+    const paths = config?.paths;
+    if (!isRecord(paths) || !Object.hasOwn(paths, name)) return true;
+    const declaredRoutes = paths[name];
+    if (
+      !Array.isArray(declaredRoutes) ||
+      declaredRoutes.some((route) => !isLocalSpecialistRoute(route)) ||
+      new Set(declaredRoutes).size !== declaredRoutes.length ||
+      declaredRoutes.length !== expectedRoutes.length
+    ) return false;
+    const expected = new Set(expectedRoutes);
+    return declaredRoutes.every((route) => expected.has(route));
   }
 
   function specialistGuidanceProposal(workflow) {
@@ -1256,7 +1265,11 @@ export function createRuntimeCoordinator({
 
     let config;
     try {
-      config = JSON.parse(await readApprovedSpecialistFile(workflow, ctx, ".picm/config.json"));
+      const configContent = await readApprovedSpecialistFile(workflow, ctx, ".picm/config.json");
+      if (hasUnresolvedSpecialistPlaceholder(configContent)) {
+        throw new Error("SPECIALIST_GUIDANCE_NOT_APPROVED: final Specialist routes are incomplete");
+      }
+      config = JSON.parse(configContent);
     } catch (error) {
       if (error instanceof SyntaxError) {
         throw new Error("SPECIALIST_GUIDANCE_NOT_APPROVED: persisted Specialist config is invalid");
@@ -1269,18 +1282,38 @@ export function createRuntimeCoordinator({
     if (!isLocalSpecialistRoute(recipePath)) {
       throw new Error("SPECIALIST_GUIDANCE_NOT_APPROVED: complete approved Specialist scaffold writes first");
     }
-    const finalContents = new Map();
-    for (const requiredPath of requiredSpecialistPaths(config)) {
+    const recipe = await readApprovedSpecialistFile(workflow, ctx, recipePath);
+    requireCurrentSpecialistGuidance(workflow, ctx, proposal);
+    const semantics = parseSpecialistFirstRunRecipe(recipePath, recipe);
+    const basePaths = [
+      config?.paths?.rootInstructions,
+      config?.paths?.rootContext,
+      "identity.md",
+      "rules.md",
+      recipePath,
+    ];
+    const basePathSet = new Set(basePaths);
+    if (semantics.inputs.some((input) => basePathSet.has(input.path))) {
+      throw new Error("SPECIALIST_GUIDANCE_NOT_APPROVED: receipt inputs must not reuse scaffold routes");
+    }
+    const finalContents = new Map([[resolve(ctx.cwd, recipePath), recipe]]);
+    for (const requiredPath of basePaths) {
+      if (requiredPath === recipePath) continue;
       const content = await readApprovedSpecialistFile(workflow, ctx, requiredPath);
       requireCurrentSpecialistGuidance(workflow, ctx, proposal);
       finalContents.set(resolve(ctx.cwd, requiredPath), content);
     }
-    const recipe = finalContents.get(resolve(ctx.cwd, recipePath));
-    const semantics = validateSpecialistScaffold(workflow, ctx, config, recipe, finalContents);
-    if (!semantics) {
+    const scaffoldedInputs = semantics.inputs.filter((input) => input.availability === "scaffolded");
+    for (const input of scaffoldedInputs) {
+      const content = await readApprovedSpecialistFile(workflow, ctx, input.path);
+      requireCurrentSpecialistGuidance(workflow, ctx, proposal);
+      finalContents.set(resolve(ctx.cwd, input.path), content);
+    }
+    const validated = validateSpecialistScaffold(workflow, ctx, config, semantics, finalContents);
+    if (!validated) {
       throw new Error("SPECIALIST_GUIDANCE_NOT_APPROVED: final Specialist routes are incomplete");
     }
-    return semantics;
+    return validated;
   }
 
   function settle(ctx) {
@@ -1298,38 +1331,38 @@ export function createRuntimeCoordinator({
     return false;
   }
 
-  function validateSpecialistScaffold(workflow, ctx, config, recipe, scaffoldContents) {
+  function validateSpecialistScaffold(workflow, ctx, config, semantics, scaffoldContents) {
     const recipePath = config?.paths?.firstRecipe;
     const specialistConfig = config?.generatedBy === "picm-factory" && config?.profile === "specialist-folder";
-    if (!specialistConfig || !isLocalSpecialistRoute(recipePath) || typeof recipe !== "string") return undefined;
-    const semantics = parseSpecialistFirstRunRecipe(recipePath, recipe);
-    const generatedInputPaths = Array.isArray(config.paths?.generatedInputs)
-      ? config.paths.generatedInputs
-      : [];
-    const runtimeInputPaths = Array.isArray(config.paths?.runtimeInputs)
-      ? config.paths.runtimeInputs
-      : [];
-    const declaredInputPaths = [...generatedInputPaths, ...runtimeInputPaths];
-    const uniqueDeclarations = new Set(declaredInputPaths);
-    const exhaustiveInputInventory =
-      declaredInputPaths.every(isLocalSpecialistRoute) &&
-      uniqueDeclarations.size === declaredInputPaths.length &&
-      uniqueDeclarations.size === semantics.inputPaths.length &&
-      semantics.inputPaths.every((inputPath) => isLocalSpecialistRoute(inputPath) && uniqueDeclarations.has(inputPath));
+    if (!specialistConfig || !isLocalSpecialistRoute(recipePath)) return undefined;
+    const scaffoldedRoutes = semantics.inputs
+      .filter((input) => input.availability === "scaffolded")
+      .map((input) => input.path);
+    const nonScaffoldedRoutes = semantics.inputs
+      .filter((input) => input.availability !== "scaffolded")
+      .map((input) => input.path);
+    const legacyRoutesMatch =
+      legacyRouteArrayMatches(config, "generatedInputs", scaffoldedRoutes) &&
+      legacyRouteArrayMatches(config, "runtimeInputs", nonScaffoldedRoutes);
+    const requiredPaths = requiredSpecialistPaths(config, semantics);
+    const requiredPathSet = new Set(requiredPaths);
+    const nonScaffoldedInputsDoNotOverlapScaffold = nonScaffoldedRoutes.every(
+      (route) => !requiredPathSet.has(route),
+    );
     const localOutputRoutes =
       isLocalSpecialistRoute(semantics.expectedArtifact) &&
       isLocalSpecialistRoute(semantics.nextActionSource);
-    const runtimeInputsAreNotScaffolded = runtimeInputPaths.every(
+    const nonScaffoldedInputsWereNotWritten = nonScaffoldedRoutes.every(
       (inputPath) => !workflow.specialist.approvedWrites.has(resolve(workflow.scope.workspace, inputPath)),
     );
-    const requiredPaths = requiredSpecialistPaths(config);
     const completeInventory = requiredPaths.every((requiredPath) => {
       if (!isLocalSpecialistRoute(requiredPath)) return false;
       const content = scaffoldContents.get(resolve(ctx.cwd, requiredPath));
       return typeof content === "string" && content.trim() &&
         !hasUnresolvedSpecialistPlaceholder(content);
     });
-    return exhaustiveInputInventory && localOutputRoutes && runtimeInputsAreNotScaffolded && completeInventory
+    return legacyRoutesMatch && nonScaffoldedInputsDoNotOverlapScaffold && localOutputRoutes &&
+      nonScaffoldedInputsWereNotWritten && completeInventory
       ? semantics
       : undefined;
   }

@@ -1,32 +1,32 @@
-# [Workflow Name] Context
+# {{picm:workflow-name}} Context
 
 ## What this workspace helps with
-[One short paragraph describing the repeatable work.]
+{{picm:repeatable-work-description}}
 
 ## Users / audience
-- Primary operator: [who runs this]
-- Output audience: [who consumes the result]
+- Primary operator: {{picm:primary-operator}}
+- Output audience: {{picm:output-audience}}
 
 ## Inputs
-- [input type]
-- [input type]
+- {{picm:input-type}}
+- {{picm:input-type}}
 
 ## Outputs
-- [final deliverable]
-- [working artifact if any]
+- {{picm:final-deliverable}}
+- {{picm:working-artifact-if-any}}
 
 ## Named scripts / tools
 Include this section only when the user has named a relevant local script, MCP server/tool, or integration. Record its exact path/name, deterministic job, inputs/outputs, side effects, and required human review. Otherwise omit this section; do not invent tools to fill it.
 
-- [User-named script/tool]: [mechanical job and review boundary]
+- {{picm:user-named-script-or-tool}}: {{picm:mechanical-job-and-review-boundary}}
 
 ## Quality bar
-- Good output: [criteria]
-- Avoid: [mistakes/non-goals]
+- Good output: {{picm:quality-criteria}}
+- Avoid: {{picm:mistakes-or-non-goals}}
 
 ## Security / privacy
-- Sensitive material: [yes/no/unknown]
-- Handling rule: [private repo, ignore paths, approval requirement]
+- Sensitive material: {{picm:sensitive-material-status}}
+- Handling rule: {{picm:handling-rule}}
 - Coding scan rule, when applicable: complete PiCM privacy review before scanning; Git-ignored and PiCM-excluded paths are never read and are checked again immediately before inspection.
 
 ## Maintenance notes

@@ -953,7 +953,7 @@ test("late stale config completion cannot contaminate replacement Specialist evi
         runtimeInputs: [],
       },
     }, null, 2);
-    const recipe = `# First\n\n## Inputs\n\n- Approved source at \`source/request.md\`.\n\n## Expected artifact\n\nCreate \`output/result.md\`.\n\n## Review gate\n\nInspect, edit, and approve \`output/result.md\`. Keep open questions visible. The next action reads from \`output/result.md\`.\n`;
+    const recipe = `\`\`\`picm-specialist-first-run\n{\n  "version": 1,\n  "inputs": [\n    {\n      "path": "source/request.md",\n      "availability": "scaffolded",\n      "description": "Approved source"\n    }\n  ],\n  "expectedArtifact": "output/result.md",\n  "review": {\n    "requiresInspectEditApprove": true,\n    "visibleUncertainty": ["open questions"]\n  },\n  "nextAction": {\n    "source": "output/result.md"\n  }\n}\n\`\`\`\n\n# First\n\nThe leading receipt is the route authority.\n`;
     const oldOperation = { tool: "write", input: { path: ".picm/config.json", content: config } };
     const currentOperations = [
       { tool: "write", input: { path: "AGENTS.md", content: "Current instructions.\n" } },

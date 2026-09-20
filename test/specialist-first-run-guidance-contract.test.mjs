@@ -5,37 +5,55 @@ import { join } from "node:path";
 import { extensionHarness } from "./helpers/picm-extension-harness.mjs";
 import { git, withFixture, write } from "./helpers/git-fixtures.mjs";
 
-function specialistEditFixture(root, { runtimeInput = false } = {}) {
-  const runtimeInputs = runtimeInput ? ["runtime/request.md"] : [];
+function specialistReceipt(inputs, expectedArtifact = "output/result.md", visibleUncertainty = ["open questions"]) {
+  return [
+    "```picm-specialist-first-run",
+    JSON.stringify({
+      version: 1,
+      inputs,
+      expectedArtifact,
+      review: {
+        requiresInspectEditApprove: true,
+        visibleUncertainty,
+      },
+      nextAction: { source: expectedArtifact },
+    }, null, 2),
+    "```",
+  ].join("\n");
+}
+
+function specialistEditFixture(root, { runtimeInput = false, includeLegacyArrays = true } = {}) {
+  const inputs = [
+    { path: "source/request.md", availability: "scaffolded", description: "Approved source" },
+    ...(runtimeInput
+      ? [{ path: "runtime/request.md", availability: "per-run", description: "Runtime request" }]
+      : []),
+  ];
   const recipe = [
+    specialistReceipt(inputs),
+    "",
     "# First specialist run",
     "",
-    "## Inputs",
+    "## This prose may change",
     "",
-    "- Approved source at `source/request.md`.",
-    ...(runtimeInput ? ["- Runtime request at `runtime/request.md`."] : []),
-    "",
-    "## Expected artifact",
-    "",
-    "Create `output/result.md`.",
-    "",
-    "## Review gate and next action",
-    "",
-    "Inspect, edit, and approve `output/result.md`. Keep open questions visible. The next action reads from `output/result.md`.",
+    "The leading receipt is authoritative.",
     "",
   ].join("\n");
+  const paths = {
+    rootInstructions: "AGENTS.md",
+    rootContext: "CONTEXT.md",
+    firstRecipe: "workflows/first.md",
+    ...(includeLegacyArrays ? {
+      generatedInputs: ["source/request.md"],
+      runtimeInputs: runtimeInput ? ["runtime/request.md"] : [],
+    } : {}),
+  };
   const config = JSON.stringify({
     version: 1,
     generatedBy: "picm-factory",
     profile: "specialist-folder",
     createdAt: "2026-08-26T00:00:00.000Z",
-    paths: {
-      rootInstructions: "AGENTS.md",
-      rootContext: "CONTEXT.md",
-      firstRecipe: "workflows/first.md",
-      generatedInputs: ["source/request.md"],
-      runtimeInputs,
-    },
+    paths,
   }, null, 2) + "\n";
   const finalContents = {
     "AGENTS.md": "Specialist instructions.\n",
@@ -74,26 +92,50 @@ function createSpecialistEditFixture(root, finalContents, { scaffoldedPaths = Ob
   };
 }
 
+function faqRecipe({ generatedInputs, runtimeInputs }) {
+  const referencePath = "reference/faq-style.md";
+  const sourcePath = "source/rough-faq.md";
+  const referenceAvailability = generatedInputs.includes(referencePath)
+    ? "scaffolded"
+    : runtimeInputs.includes(referencePath)
+      ? "pre-existing"
+      : "per-run";
+  return [
+    specialistReceipt([
+      { path: sourcePath, availability: "per-run", description: "Rough FAQ answer supplied for this run" },
+      { path: referencePath, availability: referenceAvailability, description: "Reusable style guidance" },
+    ], "review/polished-faq.md", ["unsupported claims", "unresolved questions"]),
+    "",
+    "# Polish FAQ Workflow",
+    "",
+    "## Inputs",
+    "",
+    "This prose is intentionally not route data.",
+    "",
+  ].join("\n");
+}
+
 function faqSpecialistEditFixture(root, {
   generatedInputs = ["reference/faq-style.md"],
-  runtimeInputs = [],
+  runtimeInputs = ["source/rough-faq.md"],
+  includeLegacyArrays = true,
   recipe,
   contentOverrides = {},
 } = {}) {
   const source = join(process.cwd(), "test/fixtures/layout-profiles/specialist-folder/faq-polisher");
   const recipePath = "workflows/polish-faq.md";
+  const paths = {
+    rootInstructions: "AGENTS.md",
+    rootContext: "CONTEXT.md",
+    firstRecipe: recipePath,
+    ...(includeLegacyArrays ? { generatedInputs, runtimeInputs } : {}),
+  };
   const config = JSON.stringify({
     version: 1,
     generatedBy: "picm-factory",
     profile: "specialist-folder",
     createdAt: "2026-08-26T00:00:00.000Z",
-    paths: {
-      rootInstructions: "AGENTS.md",
-      rootContext: "CONTEXT.md",
-      firstRecipe: recipePath,
-      generatedInputs,
-      runtimeInputs,
-    },
+    paths,
   }, null, 2) + "\n";
   const readSource = (path) => readFileSync(join(source, path), "utf8");
   const finalContents = {
@@ -101,7 +143,7 @@ function faqSpecialistEditFixture(root, {
     "CONTEXT.md": readSource("CONTEXT.md"),
     "identity.md": readSource("identity.md"),
     "rules.md": readSource("rules.md"),
-    [recipePath]: recipe ?? readSource(recipePath),
+    [recipePath]: recipe ?? faqRecipe({ generatedInputs, runtimeInputs }),
     "reference/faq-style.md": readSource("reference/faq-style.md"),
     ".picm/config.json": config,
     ...contentOverrides,
@@ -216,8 +258,8 @@ test("picm-new emits final guidance from a completed exact Specialist fixture", 
 
     const guidance = await renderSpecialistGuidance(h, ctx, "faq-guidance-render");
     assert.match(guidance, /Start with `workflows\/polish-faq\.md`/);
-    assert.match(guidance, /rough FAQ answer supplied for this run/);
-    assert.match(guidance, /`reference\/faq-style\.md` for reusable style guidance/);
+    assert.match(guidance, /Rough FAQ answer supplied for this run/);
+    assert.match(guidance, /`reference\/faq-style\.md` \(scaffolded\): Reusable style guidance/);
     assert.match(guidance, /Expected artifact: `review\/polished-faq\.md`/);
     assert.match(guidance, /Inspect, edit, and explicitly approve `review\/polished-faq\.md`/);
     assert.match(guidance, /unsupported claims and unresolved questions visible/);
@@ -238,6 +280,7 @@ test("completed exact Specialist edits preserve persisted recipe, config, and Ma
           "Use [the reference guide][api-guide] and [API guide] shortcuts.",
           "",
           "[api-guide]: reference/api.md",
+          "[API guide]: reference/api.md",
           "",
         ].join("\n"),
       },
@@ -265,12 +308,12 @@ test("Specialist guidance rejects incomplete, omitted, and non-local persisted r
     },
     {
       name: "non-local runtime input",
-      fixture: (root) => faqSpecialistEditFixture(root, { runtimeInputs: ["../private.md"] }),
+      fixture: (root) => faqSpecialistEditFixture(root, { runtimeInputs: ["source/rough-faq.md", "../private.md"] }),
     },
     {
       name: "incomplete required input",
       fixture: (root) => faqSpecialistEditFixture(root, {
-        contentOverrides: { "reference/faq-style.md": "[quality rule]\n" },
+        contentOverrides: { "reference/faq-style.md": "{{picm:quality-rule}}\n" },
       }),
     },
   ];
@@ -289,18 +332,75 @@ test("Specialist guidance rejects incomplete, omitted, and non-local persisted r
   }
 });
 
-test("pre-existing runtime inputs stay outside approved-write classification", async () => {
+test("reserved PiCM tokens in required Specialist scaffold files prevent guidance", async () => {
+  for (const path of [
+    "AGENTS.md",
+    "CONTEXT.md",
+    "identity.md",
+    "rules.md",
+    "reference/faq-style.md",
+    ".picm/config.json",
+  ]) {
+    await withFixture(async ({ root }) => {
+      const fixture = faqSpecialistEditFixture(root);
+      const operation = fixture.operations.find((candidate) => candidate.input.path === path);
+      assert.ok(operation, path);
+      operation.input.edits[0].newText = path === ".picm/config.json"
+        ? operation.input.edits[0].newText.replace(
+          /\n}\n$/,
+          ",\n  \"note\": \"{{picm:config-note}}\"\n}\n",
+        )
+        : "{{picm:required-scaffold-file}}\n";
+      const h = extensionHarness();
+      const ctx = h.context(realpathSync(root), `specialist-unresolved-${path}`);
+      await completeApprovedSpecialistOperations(h, ctx, fixture.operations, `unresolved-${path}`);
+      await assert.rejects(
+        renderSpecialistGuidance(h, ctx, `unresolved-${path}-render`),
+        /SPECIALIST_GUIDANCE_NOT_APPROVED: final Specialist routes are incomplete/,
+      );
+    });
+  }
+});
+
+test("receipt supports omitted legacy arrays and does not read pre-existing inputs", async () => {
+  await withFixture(async ({ root }) => {
+    const fixture = faqSpecialistEditFixture(root, { includeLegacyArrays: false });
+    const h = extensionHarness();
+    const ctx = h.context(realpathSync(root), "specialist-legacy-omitted");
+    await completeApprovedSpecialistOperations(h, ctx, fixture.operations, "legacy-omitted");
+
+    assert.match(
+      await renderSpecialistGuidance(h, ctx, "legacy-omitted-render"),
+      /Expected artifact: `review\/polished-faq\.md`/,
+    );
+  });
+
   await withFixture(async ({ root }) => {
     const fixture = faqSpecialistEditFixture(root, {
       generatedInputs: [],
-      runtimeInputs: ["reference/faq-style.md"],
+      runtimeInputs: ["source/rough-faq.md", "reference/faq-style.md"],
     });
     const h = extensionHarness();
     const ctx = h.context(realpathSync(root), "specialist-runtime-reclassification");
     await completeApprovedSpecialistOperations(h, ctx, fixture.operations, "runtime-reclassification");
 
     const guidance = await renderSpecialistGuidance(h, ctx, "runtime-reclassification-render");
-    assert.match(guidance, /`reference\/faq-style\.md` for reusable style guidance/);
+    assert.match(guidance, /`reference\/faq-style\.md` \(pre-existing\): Reusable style guidance/);
+  });
+});
+
+test("approved writes to non-scaffolded receipt routes fail closed while approved edits remain supported", async () => {
+  await withFixture(async ({ root }) => {
+    const fixture = specialistEditFixture(root, { runtimeInput: true });
+    const h = extensionHarness();
+    const ctx = h.context(realpathSync(root), "specialist-runtime-write");
+    const operations = writeOperations(fixture);
+    await completeApprovedSpecialistOperations(h, ctx, operations, "runtime-write");
+
+    await assert.rejects(
+      renderSpecialistGuidance(h, ctx, "runtime-write-render"),
+      /SPECIALIST_GUIDANCE_NOT_APPROVED: final Specialist routes are incomplete/,
+    );
   });
 });
 

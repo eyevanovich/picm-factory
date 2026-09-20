@@ -1,12 +1,12 @@
 # Project Instructions
 
 ## Identity
-You are helping with [WORKFLOW NAME], a PiCM folder-agent workspace for [AUDIENCE / USER].
+You are helping with {{picm:workflow-name}}, a PiCM folder-agent workspace for {{picm:audience-or-user}}.
 
 ## Folder Structure
 - `CONTEXT.md` — project/workflow context and constraints.
 - `REFERENCES.md` or `reference/` — reusable background material.
-- `[LAYOUT FOLDERS]` — stages, specialists, roles, or workflows.
+- `{{picm:layout-folders}}` — stages, specialists, roles, or workflows.
 - `.picm/` — PiCM metadata/reports; read only for maintenance/adoption tasks.
 
 ## Routing
@@ -17,7 +17,7 @@ You are helping with [WORKFLOW NAME], a PiCM folder-agent workspace for [AUDIENC
 | Add or update reusable context | `CONTEXT.md`, relevant references/examples | final outputs unless needed |
 | Coding task, only for Coding Repository/codebase-map workspaces | `CONTEXT-MAP.md` or the reused architecture map, then the relevant local context/entry point | unrelated components, Git-ignored paths |
 | PiCM maintenance | `.picm/config.json` if present, root routing file, relevant context files | large source/output files unless relevant |
-| [User-named mechanical task, only if applicable] | [Exact local script path or MCP/tool name supplied by the user] | [AI recreation of deterministic mechanics] |
+| {{picm:user-named-mechanical-task-if-applicable}} | {{picm:exact-local-script-path-or-mcp-tool-name}} | {{picm:ai-recreation-of-deterministic-mechanics}} |
 
 Omit the coding-task row unless coding mapping is enabled. If the map is small and embedded here or an existing architecture document is reused, replace `CONTEXT-MAP.md` with that authoritative location. Omit the mechanical-task row unless the user has named the relevant script or tool. State required human approval for file moves, sends, or external side effects.
 

@@ -1,3 +1,29 @@
+```picm-specialist-first-run
+{
+  "version": 1,
+  "inputs": [
+    {
+      "path": "source/rough-faq.md",
+      "availability": "per-run",
+      "description": "Rough FAQ answer supplied for this run"
+    },
+    {
+      "path": "reference/faq-style.md",
+      "availability": "scaffolded",
+      "description": "Reusable style guidance"
+    }
+  ],
+  "expectedArtifact": "review/polished-faq.md",
+  "review": {
+    "requiresInspectEditApprove": true,
+    "visibleUncertainty": ["unsupported claims", "unresolved questions"]
+  },
+  "nextAction": {
+    "source": "review/polished-faq.md"
+  }
+}
+```
+
 # Polish FAQ Workflow
 
 ## Inputs

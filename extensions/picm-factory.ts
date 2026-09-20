@@ -105,7 +105,7 @@ function buildStagePlacementContext(command: CommandName): string {
 
 function buildSpecialistFirstRunContext(command: CommandName): string {
   if (command !== "picm-new") return "";
-  return "\n\nSpecialist Folder final guidance: if the approved scaffold uses this profile, record its exact first recipe path as `paths.firstRecipe`. Exhaustively classify every backticked recipe input route as either a planned generated reusable file in `paths.generatedInputs` or a future per-run route in `paths.runtimeInputs`; neither list may omit or duplicate a route. Write the config after the completed visible scaffold, then call `picm_specialist_first_run_guidance`. Use its returned text as the final first-run guidance. The runtime parses every guidance field from the approved generated recipe and validates the classified input inventory against approved writes; do not invent optional folders, recipes, or operations.";
+  return "\n\nSpecialist Folder final guidance: follow the authoritative visible-recipe receipt contract in `references/layout-profiles.md`; do not infer route semantics from recipe prose. Keep the local `paths.firstRecipe` hint and any applicable legacy input hints aligned with that receipt. Write the config after the completed visible scaffold, then call `picm_specialist_first_run_guidance` and use its returned text as the final first-run guidance. Do not invent optional folders, recipes, or operations.";
 }
 
 function buildPrompt(

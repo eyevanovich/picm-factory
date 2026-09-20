@@ -1,129 +1,148 @@
-function section(markdown, headings) {
-  const escaped = headings.map((heading) => heading.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|");
-  const match = markdown.match(new RegExp(`^#{1,6}\\s+(?:${escaped})\\s*$\\n([\\s\\S]*?)(?=^#{1,6}\\s+|(?![\\s\\S]))`, "im"));
-  return match?.[1]?.trim() ?? "";
+const RECEIPT_LANGUAGE = "picm-specialist-first-run";
+const RECEIPT_OPENING = "```picm-specialist-first-run";
+const RECEIPT_CLOSING = "```";
+const RECEIPT_VERSION = 1;
+const INPUT_AVAILABILITY = new Set(["scaffolded", "pre-existing", "per-run"]);
+
+function receiptError(message) {
+  throw new Error(`SPECIALIST_RECIPE_RECEIPT_INVALID: ${message}`);
 }
 
-function expectedArtifactPath(artifactSection) {
-  const candidates = [...artifactSection.matchAll(
-    /\b(?:create|write|save|produce|return)(?:s|d)?\b[^.!?;\n`]*`([^`]+)`|\bresult(?:ing)?(?:\s+(?:artifact|file|output))?\s+(?:is|at|to|in)\b[^.!?;\n`]*`([^`]+)`/gi,
-  )]
-    .map((match) => match[1] ?? match[2])
-    .filter((path) => !path.endsWith("/"));
-  const uniqueCandidates = [...new Set(candidates)];
-  return uniqueCandidates.length === 1 ? uniqueCandidates[0] : undefined;
+function guidanceError(message) {
+  throw new Error(`SPECIALIST_GUIDANCE_INVALID: ${message}`);
 }
 
-function reviewGateArtifactPath(reviewSection) {
-  const gatePatterns = [
-    /\binspect(?:s|ed|ing)?\b\s*,\s*edit(?:s|ed|ing)?\b\s*,\s*(?:and\s+)?(?:explicitly\s+)?approv(?:e|es|ed|ing)\b\s+`([^`]+)`/gi,
-    /\binspection(?:s)?\b\s*,\s*edits?\b\s*,\s*(?:and\s+)?(?:explicit\s+)?approvals?\b\s+(?:of\s+)?`([^`]+)`/gi,
-    /\binspect(?:s|ed|ing)?\b\s+and\s+edit(?:s|ed|ing)?\b\s+`([^`]+)`\s*,?\s*(?:then\s+)?(?:explicitly\s+)?approv(?:e|es|ed|ing)\b\s+it\b/gi,
-    /\binspect(?:s|ed|ing)?\b\s+`([^`]+)`\s*,\s*edit(?:s|ed|ing)?\b\s+it\s*,\s*(?:and\s+)?(?:explicitly\s+)?approv(?:e|es|ed|ing)\b\s+it\b/gi,
-  ];
-  const candidates = [...new Set(gatePatterns.flatMap((pattern) =>
-    [...reviewSection.matchAll(pattern)].map((match) => match[1]),
-  ))];
-  return candidates.length === 1 ? candidates[0] : undefined;
+function hasOnlyKeys(value, keys) {
+  return Object.keys(value).every((key) => keys.includes(key)) &&
+    keys.every((key) => Object.hasOwn(value, key));
 }
 
-const SPECIALIST_SCAFFOLD_PLACEHOLDERS = [
-  "{{createdAt}}",
-  "[AI recreation of deterministic mechanics]",
-  "[AUDIENCE / USER]",
-  "[Exact local script path or MCP/tool name supplied by the user]",
-  "[High / Medium / Low]",
-  "[LAYOUT FOLDERS]",
-  "[Material to transform for this run.]",
-  "[Name or short description]",
-  "[One sentence: what this stage is responsible for, and what it should not do.]",
-  "[One short paragraph describing the repeatable work.]",
-  "[Optional: check the output against a prior artifact, source constraint, or quality bar before handoff.]",
-  "[Relevant background.]",
-  "[Reusable rules/examples/style/domain constraints to follow.]",
-  "[Specialist Name]",
-  "[Stage Name]",
-  "[User-named mechanical task, only if applicable]",
-  "[User-named script/tool]",
-  "[WORKFLOW NAME]",
-  "[What happened and what the next role needs to know.]",
-  "[What should happen next.]",
-  "[What this specialist is and who it serves.]",
-  "[Workflow Name]",
-  "[YYYY-MM-DD]",
-  "[allowed work]",
-  "[artifact produced by this stage]",
-  "[criteria]",
-  "[detail]",
-  "[domain rule]",
-  "[final deliverable]",
-  "[input type]",
-  "[inspectable output path]",
-  "[mechanical job and review boundary]",
-  "[mistakes/non-goals]",
-  "[next stage/role or final user review]",
-  "[non-goals / approval boundaries]",
-  "[per-run input or prior stage output]",
-  "[private repo, ignore paths, approval requirement]",
-  "[quality rule]",
-  "[reference path, if any]",
-  "[safety rule]",
-  "[stage/role]",
-  "[step]",
-  "[unknown]",
-  "[what must remain visible downstream]",
-  "[what the user should inspect or edit before the next stage consumes this output]",
-  "[when to use it and what must be reviewed]",
-  "[where approved output goes next]",
-  "[who consumes the result]",
-  "[who runs this]",
-  "[working artifact if any]",
-  "[yes/no/unknown]",
-];
+function isRecord(value) {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+function isNonemptyString(value) {
+  return typeof value === "string" && value.trim() === value && value.length > 0;
+}
+
+export function isLocalSpecialistRoute(value) {
+  if (!isNonemptyString(value) || value.includes("\\") || /^(?:\/|[A-Za-z]:)/.test(value)) return false;
+  return value.split("/").every((segment) => segment !== "" && segment !== "." && segment !== "..");
+}
+
+function hasUnresolvedMarker(content) {
+  return typeof content === "string" && content.includes("{{picm:");
+}
 
 export function hasUnresolvedSpecialistPlaceholder(content) {
-  return typeof content === "string" &&
-    SPECIALIST_SCAFFOLD_PLACEHOLDERS.some((placeholder) => content.includes(placeholder));
+  return hasUnresolvedMarker(content);
+}
+
+function receiptBlock(recipe) {
+  const lines = recipe.split(/\r?\n/);
+  const firstContent = lines.findIndex((line) => !/^[ \t]*$/.test(line));
+  if (firstContent === -1 || lines[firstContent] !== RECEIPT_OPENING) {
+    receiptError(`receipt must be the first nonblank content as ${RECEIPT_OPENING}`);
+  }
+  if (lines.filter((line) => line === RECEIPT_OPENING).length !== 1) {
+    receiptError(`exactly one ${RECEIPT_LANGUAGE} receipt opening is required`);
+  }
+  const closing = lines.indexOf(RECEIPT_CLOSING, firstContent + 1);
+  if (closing === -1) {
+    receiptError(`receipt must end with an exact ${RECEIPT_CLOSING} closing line`);
+  }
+  return lines.slice(firstContent + 1, closing).join("\n");
+}
+
+function validateReceipt(receipt, fail) {
+  if (!isRecord(receipt) || !hasOnlyKeys(receipt, ["version", "inputs", "expectedArtifact", "review", "nextAction"])) {
+    fail("receipt must contain only version, inputs, expectedArtifact, review, and nextAction");
+  }
+  if (receipt.version !== RECEIPT_VERSION) fail(`version must be ${RECEIPT_VERSION}`);
+  if (!Array.isArray(receipt.inputs) || receipt.inputs.length === 0) fail("inputs must be a nonempty array");
+  if (!isNonemptyString(receipt.expectedArtifact) || !isLocalSpecialistRoute(receipt.expectedArtifact)) {
+    fail("expectedArtifact must be a nonempty local route");
+  }
+  if (!isRecord(receipt.review) || !hasOnlyKeys(receipt.review, ["requiresInspectEditApprove", "visibleUncertainty"])) {
+    fail("review must contain only requiresInspectEditApprove and visibleUncertainty");
+  }
+  if (receipt.review.requiresInspectEditApprove !== true) {
+    fail("review.requiresInspectEditApprove must be true");
+  }
+  if (
+    !Array.isArray(receipt.review.visibleUncertainty) ||
+    receipt.review.visibleUncertainty.length === 0 ||
+    receipt.review.visibleUncertainty.some((value) => !isNonemptyString(value))
+  ) {
+    fail("review.visibleUncertainty must be a nonempty string array");
+  }
+  if (!isRecord(receipt.nextAction) || !hasOnlyKeys(receipt.nextAction, ["source"])) {
+    fail("nextAction must contain only source");
+  }
+  if (!isNonemptyString(receipt.nextAction.source) || !isLocalSpecialistRoute(receipt.nextAction.source)) {
+    fail("nextAction.source must be a nonempty local route");
+  }
+  if (receipt.nextAction.source !== receipt.expectedArtifact) {
+    fail("nextAction.source must equal expectedArtifact");
+  }
+  const inputPaths = new Set();
+  for (const input of receipt.inputs) {
+    if (!isRecord(input) || !hasOnlyKeys(input, ["path", "availability", "description"])) {
+      fail("each input must contain only path, availability, and description");
+    }
+    if (!isNonemptyString(input.path) || !isLocalSpecialistRoute(input.path)) {
+      fail("each input path must be a nonempty local route");
+    }
+    if (!INPUT_AVAILABILITY.has(input.availability)) {
+      fail("each input availability must be scaffolded, pre-existing, or per-run");
+    }
+    if (!isNonemptyString(input.description)) {
+      fail("each input description must be a nonempty string");
+    }
+    if (inputPaths.has(input.path)) fail("input routes must be unique");
+    inputPaths.add(input.path);
+  }
+  const routes = [receipt.expectedArtifact, receipt.nextAction.source, ...inputPaths];
+  const descriptions = [...receipt.inputs.map((input) => input.description), ...receipt.review.visibleUncertainty];
+  if (routes.some(hasUnresolvedMarker) || descriptions.some(hasUnresolvedSpecialistPlaceholder)) {
+    fail("receipt fields must not contain unresolved template markers");
+  }
+}
+
+function parsedReceipt(recipe) {
+  const block = receiptBlock(recipe);
+  let receipt;
+  try {
+    receipt = JSON.parse(block);
+  } catch {
+    receiptError("receipt must contain valid JSON");
+  }
+  validateReceipt(receipt, receiptError);
+  return receipt;
 }
 
 export function parseSpecialistFirstRunRecipe(recipePath, recipe) {
-  if (typeof recipePath !== "string" || !recipePath.trim() || typeof recipe !== "string" || !recipe.trim()) {
+  if (!isNonemptyString(recipePath) || !isLocalSpecialistRoute(recipePath) || typeof recipe !== "string" || !recipe.trim()) {
     throw new Error("SPECIALIST_RECIPE_INCOMPLETE: approved recipe path and content are required");
   }
-  if (hasUnresolvedSpecialistPlaceholder(recipe)) {
+  if (hasUnresolvedMarker(recipePath) || hasUnresolvedSpecialistPlaceholder(recipe)) {
     throw new Error("SPECIALIST_RECIPE_UNFINISHED: approved recipe contains unresolved template markers");
   }
-  const inputsSection = section(recipe, ["Inputs", "Sources", "What it reads"]);
-  const artifactSection = section(recipe, ["Expected artifact", "Output", "Expected output", "Result"]);
-  const reviewSection = section(recipe, ["Review gate and next action", "Review gate", "Review and next action", "Approval and handoff"]);
-  const inputs = inputsSection
-    .split(/\n+/)
-    .flatMap((line) => line.replace(/^[-*]\s+/, "").split(/(?<=[.!?])\s+/))
-    .map((value) => value.trim())
-    .filter(Boolean);
-  const inputPaths = [...new Set(inputs.flatMap((input) =>
-    [...input.matchAll(/`([^`]+)`/g)].map((match) => match[1]),
-  ))];
-  const expectedArtifact = expectedArtifactPath(artifactSection);
-  const reviewGateArtifact = reviewGateArtifactPath(reviewSection);
-  const requiresInspectEditApprove = reviewGateArtifact === expectedArtifact;
-  const nextActionSource = reviewSection.match(/\bnext\b[^.]*?\b(?:reads? from|uses?|consumes?)\b[^`]*`([^`]+)`/i)?.[1];
-  const visibleUncertainty = [...reviewSection.matchAll(/\b(?:Keep|Leave|Preserve|Flag)\s+([^.!?\n]+)/gi)]
-    .flatMap((match) => match[1].split(/\s+and\s+|,\s*/))
-    .map((value) => value
-      .replace(/^(?:and|or)\s+/i, "")
-      .replace(/\s+(?:visible(?:\s+(?:there|in (?:the )?(?:artifact|output|result|review notes)))?|in (?:the )?review notes)$/i, "")
-      .trim())
-    .filter(Boolean);
+  const receipt = parsedReceipt(recipe);
   const semantics = {
     recipePath,
-    inputs,
-    inputPaths,
-    expectedArtifact,
-    reviewGateArtifact,
-    requiresInspectEditApprove,
-    nextActionSource,
-    visibleUncertainty,
+    version: receipt.version,
+    inputs: receipt.inputs.map((input) => ({ ...input })),
+    inputPaths: receipt.inputs.map((input) => input.path),
+    expectedArtifact: receipt.expectedArtifact,
+    review: {
+      requiresInspectEditApprove: receipt.review.requiresInspectEditApprove,
+      visibleUncertainty: [...receipt.review.visibleUncertainty],
+    },
+    requiresInspectEditApprove: receipt.review.requiresInspectEditApprove,
+    nextAction: { source: receipt.nextAction.source },
+    nextActionSource: receipt.nextAction.source,
+    visibleUncertainty: [...receipt.review.visibleUncertainty],
   };
   renderSpecialistFirstRunGuidance(semantics);
   return semantics;
@@ -131,32 +150,38 @@ export function parseSpecialistFirstRunRecipe(recipePath, recipe) {
 
 export function renderSpecialistFirstRunGuidance({
   recipePath,
+  version = RECEIPT_VERSION,
   inputs,
   expectedArtifact,
+  review,
   requiresInspectEditApprove,
+  nextAction,
   nextActionSource,
   visibleUncertainty,
 }) {
-  const requiredStrings = [recipePath, expectedArtifact, nextActionSource];
-  if (requiredStrings.some((value) => typeof value !== "string" || !value.trim())) {
-    throw new Error("SPECIALIST_GUIDANCE_INVALID: recipe path, expected artifact, and next-action source are required");
-  }
-  if (!Array.isArray(inputs) || inputs.length === 0 || inputs.some((value) => typeof value !== "string" || !value.trim())) {
-    throw new Error("SPECIALIST_GUIDANCE_INVALID: at least one named input is required");
-  }
-  if (!Array.isArray(visibleUncertainty) || visibleUncertainty.length === 0 || visibleUncertainty.some((value) => typeof value !== "string" || !value.trim())) {
-    throw new Error("SPECIALIST_GUIDANCE_INVALID: at least one visible uncertainty category is required");
-  }
-  if (requiresInspectEditApprove !== true) {
-    throw new Error("SPECIALIST_GUIDANCE_INVALID: the approved recipe must require inspect, edit, and approve");
+  const normalizedReview = review ?? {
+    requiresInspectEditApprove,
+    visibleUncertainty,
+  };
+  const normalizedNextAction = nextAction ?? { source: nextActionSource };
+  const receipt = {
+    version,
+    inputs,
+    expectedArtifact,
+    review: normalizedReview,
+    nextAction: normalizedNextAction,
+  };
+  validateReceipt(receipt, guidanceError);
+  if (!isNonemptyString(recipePath) || !isLocalSpecialistRoute(recipePath) || hasUnresolvedMarker(recipePath)) {
+    guidanceError("recipe path must be a nonempty local route without unresolved template markers");
   }
 
   return [
     `Start with \`${recipePath}\`.`,
-    `Inputs: ${inputs.join("; ")}`,
+    `Inputs: ${inputs.map((input) => `\`${input.path}\` (${input.availability}): ${input.description}`).join("; ")}`,
     `Expected artifact: \`${expectedArtifact}\`.`,
-    `Inspect, edit, and explicitly approve \`${expectedArtifact}\` before another specialist action. Keep ${visibleUncertainty.join(" and ")} visible.`,
-    `The next specialist action reads from the approved \`${nextActionSource}\`, not chat memory.`,
+    `Inspect, edit, and explicitly approve \`${expectedArtifact}\` before another specialist action. Keep ${normalizedReview.visibleUncertainty.join(" and ")} visible.`,
+    `The next specialist action reads from the approved \`${expectedArtifact}\`, not chat memory.`,
     "Run `/picm-maintain` after the first real use or when the specialist workflow, routing, or stable guidance changes.",
   ].join("\n");
 }
