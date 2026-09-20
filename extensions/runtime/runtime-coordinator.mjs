@@ -420,11 +420,14 @@ export function createRuntimeCoordinator({
       requireCurrentWorkflow(sessionId, workflow);
       const candidates = [...inventory.candidates].sort();
       const workspaceCandidates = candidatesRelativeToWorkspace(candidates, inventory.worktree, ctx.cwd);
+      const existingArchitectureCandidates = workspaceCandidates.filter((candidate) =>
+        !workflow.approvedWrites.has(resolve(workflow.scope.workspace, candidate)),
+      );
       let completedPicmSetup = false;
       if (
         workflow.command === "picm-new" &&
         !workflow.newWorkflowIntent &&
-        workspaceCandidates.includes(".picm/config.json")
+        existingArchitectureCandidates.includes(".picm/config.json")
       ) {
         const current = await runtimeFor(ctx).store.read();
         requireCurrentWorkflow(sessionId, workflow);
@@ -434,7 +437,7 @@ export function createRuntimeCoordinator({
       if (
         workflow.command === "picm-new" &&
         !workflow.newWorkflowIntent &&
-        (completedPicmSetup || hasExistingNewWorkflowArchitecture(workspaceCandidates))
+        (completedPicmSetup || hasExistingNewWorkflowArchitecture(existingArchitectureCandidates))
       ) {
         lifecycle.transition(workflow, "require-new-intent");
       }
@@ -1201,13 +1204,21 @@ export function createRuntimeCoordinator({
     }
   }
 
-  function requiredSpecialistPaths(config, semantics) {
+  function specialistBasePaths(workflow, config) {
     return [
       config?.paths?.rootInstructions,
       config?.paths?.rootContext,
-      "identity.md",
-      "rules.md",
       config?.paths?.firstRecipe,
+      ...["identity.md", "rules.md"].filter((route) => {
+        const path = resolve(workflow.scope.workspace, route);
+        return workflow.approvedWrites.has(path) || workflow.approvedEdits.has(path);
+      }),
+    ];
+  }
+
+  function requiredSpecialistPaths(workflow, config, semantics) {
+    return [
+      ...specialistBasePaths(workflow, config),
       ...semantics.inputs
         .filter((input) => input.availability === "scaffolded")
         .map((input) => input.path),
@@ -1292,16 +1303,9 @@ export function createRuntimeCoordinator({
     const recipe = await readApprovedSpecialistFile(workflow, ctx, recipePath);
     requireCurrentSpecialistGuidance(workflow, ctx, proposal);
     const semantics = parseSpecialistFirstRunRecipe(recipePath, recipe);
-    const basePaths = [
-      config?.paths?.rootInstructions,
-      config?.paths?.rootContext,
-      "identity.md",
-      "rules.md",
-      recipePath,
-    ];
-    const basePathSet = new Set(basePaths);
-    if (semantics.inputs.some((input) => basePathSet.has(input.path))) {
-      throw new Error("SPECIALIST_GUIDANCE_NOT_APPROVED: receipt inputs must not reuse scaffold routes");
+    const basePaths = specialistBasePaths(workflow, config);
+    if (semantics.inputs.some((input) => input.path === recipePath || input.path === ".picm/config.json")) {
+      throw new Error("SPECIALIST_GUIDANCE_NOT_APPROVED: receipt inputs must not reuse the recipe or config route");
     }
     const finalContents = new Map([[resolve(ctx.cwd, recipePath), recipe]]);
     for (const requiredPath of basePaths) {
@@ -1312,6 +1316,7 @@ export function createRuntimeCoordinator({
     }
     const scaffoldedInputs = semantics.inputs.filter((input) => input.availability === "scaffolded");
     for (const input of scaffoldedInputs) {
+      if (basePaths.includes(input.path)) continue;
       const content = await readApprovedSpecialistFile(workflow, ctx, input.path);
       requireCurrentSpecialistGuidance(workflow, ctx, proposal);
       finalContents.set(resolve(ctx.cwd, input.path), content);
@@ -1350,7 +1355,7 @@ export function createRuntimeCoordinator({
     const legacyRoutesMatch =
       legacyRouteArrayMatches(config, "generatedInputs", scaffoldedRoutes) &&
       legacyRouteArrayMatches(config, "runtimeInputs", nonScaffoldedRoutes);
-    const requiredPaths = requiredSpecialistPaths(config, semantics);
+    const requiredPaths = requiredSpecialistPaths(workflow, config, semantics);
     const requiredPathSet = new Set(requiredPaths);
     const nonScaffoldedInputsDoNotOverlapScaffold = nonScaffoldedRoutes.every(
       (route) => !requiredPathSet.has(route),

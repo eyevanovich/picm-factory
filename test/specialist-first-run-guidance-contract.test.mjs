@@ -599,7 +599,7 @@ test("failed and unapproved Specialist edits cannot authorize first-run guidance
     const fixture = specialistEditFixture(root);
     const h = extensionHarness();
     const ctx = h.context(realpathSync(root), "specialist-unapproved-edit");
-    const alternateOperation = fixture.operations.find((operation) => operation.input.path === "rules.md");
+    const alternateOperation = fixture.operations.find((operation) => operation.input.path === "CONTEXT.md");
     assert.ok(alternateOperation);
     const approvedOperations = fixture.operations.filter((operation) => operation !== alternateOperation);
     await prepareApprovedSpecialistEdits(h, ctx, approvedOperations);
@@ -622,3 +622,32 @@ test("failed and unapproved Specialist edits cannot authorize first-run guidance
     assert.equal((await specialistGuidanceAdmission(h, ctx, "guidance-after-unapproved-edit"))?.block, true);
   });
 });
+
+for (const includeReusable of [false, true]) {
+  test(`minimal Specialist guidance supports optional reusable scaffold inputs: ${includeReusable}`, async () => {
+    await withFixture(async ({ root }) => {
+      const inputs = [
+        ...(includeReusable ? [
+          { path: "CONTEXT.md", availability: "scaffolded", description: "Stable context" },
+          { path: "rules.md", availability: "scaffolded", description: "Reusable rules" },
+        ] : []),
+        { path: "notes/meeting.md", availability: "per-run", description: "Meeting notes" },
+      ];
+      const finalContents = {
+        "AGENTS.md": "Route work to workflows/action-summary.md.\n",
+        "CONTEXT.md": "Summarize meeting actions.\n",
+        ...(includeReusable ? { "rules.md": "Keep unknowns visible.\n" } : {}),
+        "workflows/action-summary.md": specialistReceipt(inputs),
+        ".picm/config.json": JSON.stringify({
+          version: 1, generatedBy: "picm-factory", profile: "specialist-folder",
+          paths: { rootInstructions: "AGENTS.md", rootContext: "CONTEXT.md", firstRecipe: "workflows/action-summary.md" },
+        }),
+      };
+      const h = extensionHarness();
+      const ctx = h.context(realpathSync(root), `minimal-${includeReusable}`);
+      const operations = Object.entries(finalContents).map(([path, content]) => ({ tool: "write", input: { path, content } }));
+      await completeApprovedSpecialistOperations(h, ctx, operations);
+      assert.match(await renderSpecialistGuidance(h, ctx), /Start with `workflows\/action-summary\.md`/);
+    });
+  });
+}

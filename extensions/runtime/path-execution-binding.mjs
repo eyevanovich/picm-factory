@@ -786,7 +786,8 @@ export function createPathExecutionBinding(plan, limitOverrides) {
                 // Node offers no portable directory-relative mkdir primitive, so an external
                 // filesystem actor can still replace an ancestor after this application gate.
                 try {
-                  return await fsPromises.mkdir(target, { recursive: false, ...options });
+                  // Pi's write adapter omits options; proposal batches request one parent at a time.
+                  return await fsPromises.mkdir(target, { recursive: options === undefined, ...options });
                 } catch (error) {
                   if (options === undefined && error?.code === "EEXIST") {
                     const current = await assertBoundTarget(target, { allowAncestor: true });

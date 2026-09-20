@@ -137,6 +137,64 @@ test("a current-content checkpoint report acknowledges risk but does not approve
   });
 });
 
+for (const [name, path, review] of [
+  ["multi-level parents", "stages/01_extraction/CONTEXT.md", "view all"],
+  ["expanded preview-only review", "AGENTS.md", "preview only. Show the complete exact proposed contents of all seven files."],
+  ["post-write inventory", "AGENTS.md", "view all"],
+]) {
+  test(`scaffold supports ${name} without changing approval`, async () => {
+    await withFixture(async ({ root }) => {
+      const h = extensionHarness();
+      const ctx = h.context(root, name);
+      try {
+        await start(h, ctx, "picm-new");
+        await invoke(h, ctx, "inventory-before", "picm_scan_control", { action: "inventory" });
+        const operation = { tool: "write", input: { path, content: "Reviewed scaffold\n" } };
+        await invoke(h, ctx, "preview", "picm_scaffold_proposal", { action: "preview", operations: [operation] });
+        for (const text of [review, "continue", "."]) {
+          await h.handlers.get("agent_settled")({}, ctx);
+          await reply(h, ctx, text);
+          assert.equal(existsSync(join(root, path)), false);
+          assert.equal((await h.handlers.get("tool_call")({
+            toolCallId: `unapproved-${text}`, toolName: "write", input: operation.input,
+          }, ctx)).block, true);
+        }
+        await h.handlers.get("agent_settled")({}, ctx);
+        await reply(h, ctx, "approve this exact scaffold");
+        await invoke(h, ctx, "write", operation.tool, operation.input);
+        assert.equal(readFileSync(join(root, path), "utf8"), operation.input.content);
+        await h.handlers.get("agent_settled")({}, ctx);
+        const inventory = await invoke(h, ctx, "inventory-after", "picm_scan_control", { action: "inventory" });
+        assert.equal(inventory.details.newWorkflowIntentRequired, false);
+        await invoke(h, ctx, "end", "picm_scan_control", { action: "end" });
+        assert.equal((await invoke(h, ctx, "complete", "picm_scan_control", { action: "complete" })).details.completed, true);
+      } finally {
+        await h.handlers.get("session_shutdown")({}, ctx);
+      }
+    });
+  });
+}
+
+for (const response of [
+  "preview only. Show the files, then change the root instructions.",
+  "preview only. Show the proposal. Cancel.",
+]) {
+  test(`expanded preview never hides revision or cancellation: ${response}`, async () => {
+    await withFixture(async ({ root }) => {
+      const h = extensionHarness();
+      const ctx = h.context(root);
+      await start(h, ctx, "picm-new");
+      const operation = { tool: "write", input: { path: "AGENTS.md", content: "Reviewed\n" } };
+      await invoke(h, ctx, "preview", "picm_scaffold_proposal", { action: "preview", operations: [operation] });
+      await reply(h, ctx, response);
+      await reply(h, ctx, "approve this exact scaffold");
+      assert.equal((await h.handlers.get("tool_call")({ toolCallId: "stale", toolName: "write", input: operation.input }, ctx)).block, true);
+      assert.equal(existsSync(join(root, "AGENTS.md")), false);
+      await h.handlers.get("session_shutdown")({}, ctx);
+    });
+  });
+}
+
 test("workflow cancellation revokes issued scaffold authority and preserves completed files", async () => {
   await withFixture(async ({ root }) => {
     const h = extensionHarness();

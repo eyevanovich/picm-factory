@@ -169,6 +169,7 @@ export function createScaffoldApprovalRuntime() {
     }
     if (isPlausibleCheckpointReport(reply)) return authorityChanged();
     const navigation = NAVIGATION_REPLIES.has(reply) ||
+      /^preview only[.!]\s+show\b[^?!]*[.!]?$/.test(reply) ||
       /^(?:show (?:the )?diff for|inspect (?:the )?file) [\w./-]+$/.test(reply);
     if (!VAGUE_REPLIES.has(reply) && !navigation) invalidate(current);
     return authorityChanged();
