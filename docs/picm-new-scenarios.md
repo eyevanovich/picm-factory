@@ -58,7 +58,8 @@ Expected behavior:
 - classifies the folder as source-material-only, not existing architecture
 - asks whether to build the PiCM scaffold around existing material without moving or rewriting it
 - recommends `/picm-adopt` only if the current structure appears to encode an existing workspace architecture
-- when root `.gitignore` is absent, offers exact `.gitignore` entries for commit protection only when sensitive/private/local-only material is identified
+- when sensitive/private/local-only material is identified, offers exact optional `.gitignore` entries for commit protection even when root `.gitignore` is absent
+- for a named local-only session exclusion such as `notes/local-only.md`, explains that the exclusion protects PiCM reads but not future Git commits; separately offers `/notes/local-only.md` as an optional root `/.gitignore` entry without writing it or treating the choice as scaffold approval
 - persists approved PiCM scan exclusions in `.picm/config.json` or keeps them session-only when the user declines a config write
 
 ## Scenario 3: existing architecture folder
