@@ -2,7 +2,9 @@
 
 Use these fixtures for manual smoke testing of PiCM layout guidance, `/picm-maintain`, `/picm-adopt`, and `/picm-optimize`.
 
-Interactive command tests should run in a visible Zellij pane. Do not rely on a headless `bash` run for `/picm-maintain`, `/picm-adopt`, or `/picm-optimize` because the flows may ask clarifying or approval questions.
+Interactive command tests should run in a visible Herdr pane. Do not rely on a headless `bash` run for `/picm-maintain`, `/picm-adopt`, or `/picm-optimize` because the flows may ask clarifying or approval questions. Follow [`qa-runner/CONTEXT.md`](../qa-runner/CONTEXT.md) for the current Herdr input procedure.
+
+Dated observations below retain the multiplexer used when they were recorded; use the current Herdr procedure for new QA.
 
 ## Setup pattern
 

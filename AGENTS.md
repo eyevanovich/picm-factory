@@ -23,7 +23,7 @@ You are working on PiCM Factory, a project-local Pi package for creating, adopti
 - `skills/picm-factory/templates/` — scaffold templates.
 - `test/fixtures/` — synthetic QA fixtures; repository-only and excluded from releases.
 - `docs/` — QA scenarios and public methodology references.
-- `qa-runner/CONTEXT.md` — interactive Pi/Zellij QA guidance.
+- `qa-runner/CONTEXT.md` — interactive Pi/Herdr QA guidance.
 
 ## Task routing
 

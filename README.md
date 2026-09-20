@@ -180,7 +180,7 @@ picm-factory/
 ├── skills/picm-factory/     # Runtime skill, workflow/coding references, and templates
 ├── test/fixtures/           # Repository-only synthetic QA fixtures
 ├── docs/                    # QA scenarios and public methodology references
-├── qa-runner/               # Interactive Pi/Zellij QA specialist context
+├── qa-runner/               # Interactive Pi/Herdr QA specialist context
 └── scripts/                 # Development checks
 ```
 
