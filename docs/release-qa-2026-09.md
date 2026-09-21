@@ -1,11 +1,37 @@
 # Release-candidate fixture QA — September 2026
 
-## Status: focused campaign complete, not release approval
+## Status: historical focused campaign complete; current disposition below
 
 Resume checkpoint: [release-qa-handoff.md](release-qa-handoff.md).
 Durable task: `picm-x6c.21`. The paused-controller checkpoint was consumed by
 six fresh, bounded lower-cost sessions; no automatic full-matrix rerun started.
-New findings remain tracked separately, so this is not release approval.
+The campaign's originally named functional blockers are reconciled in the
+current disposition; this document alone is still not release approval.
+
+## Current disposition — `fba8b1f`
+
+The `picm-x6c` epic is closed. Its release-QA blockers are now resolved with
+recorded focused validation:
+
+- `picm-x6c.22` — exact local-only Git protection guidance: closed after
+  `a33d8cf`; focused contract coverage passed and recorded disposable Specialist
+  Folder QA observed the optional entry without automatic `.gitignore` writes.
+- `picm-x6c.23` — submodule re-entry lifecycle: closed after `d791766`; focused
+  integration coverage passed and recorded disposable coding-adoption QA
+  observed fresh inclusion, `begin`, then scoped inventory without a second
+  privacy action.
+- `picm-2oi` — nested worktree inspection before explicit inclusion: closed
+  after `fba8b1f`; 353 automated tests and package validation passed, with
+  independent review of the read-only, phase-bound admission repair and
+  recorded disposable write-free QA of the repaired flow.
+
+This addendum records current validation at that head; it does not promote the
+historical campaign into a full `main...HEAD` merge or release sign-off. Before
+a release, review the current branch delta, explicitly dispose of the remaining
+coverage questions, and assess open QA Beads `picm-2pv`, `picm-kpw`,
+`picm-83c`, and `picm-xw8`. Merge through the normal PR path, then use the
+manual `Create release` workflow from `main`; do not tag or publish from this
+branch.
 
 Scope: current `feature/x6c-tickets` branch, starting at
 `b692cbce5970f3e460506b66ee76deba07092423`. This is a current-code smoke
@@ -117,7 +143,7 @@ wording was corrected and a completed-maintenance→cancel regression added.
 Real affected-scenario retests are still required; green automated checks alone
 do not close these findings.
 
-## Final current-head checkpoint
+## Historical checkpoint: `f287796`
 
 At `f287796`, adoption-to-maintenance dispatch and early/late cancellation
 passed interactive checks (five scoped ledger rows, not five sessions).
@@ -133,7 +159,7 @@ the exact reproduction and evidence paths; no fix for this variant was attempted
 The last pinned package check still passes 346 tests. The remaining defect
 means that green automated checks do not establish release readiness.
 
-## Focused final-head addendum: `cd4aa07`
+## Historical focused addendum: `cd4aa07`
 
 `cd4aa07c932e49a57a0db42885d00f70b3953fde` fixes the broader unchanged
 inventory-only preview request with an actual extension-hook regression. Its
@@ -167,7 +193,7 @@ The index is `lower-cost-fresh/layout-ledger.md`; individual evidence is in
   ambiguity caused a safely rejected post-`end` privacy-control call before
   recovery; follow-up `picm-x6c.23` tracks the valid re-entry sequence.
 
-## Remaining coverage / release blockers
+## Historical remaining coverage / release blockers (at `cd4aa07`)
 
 - Resolve and independently retest P1 `picm-x6c.22`; do not claim release
   readiness while its local-only commit-protection offer is missing.
@@ -185,5 +211,6 @@ The index is `lower-cost-fresh/layout-ledger.md`; individual evidence is in
 - First-run business artifact production is outside the completed scaffold
   contract/checklist smoke tests so far.
 
-Do not tag or publish while product failures or material unexplained coverage
-gaps remain.
+Historical instruction: do not treat the preceding `cd4aa07` checkpoint as
+release approval. The current disposition above supersedes its ticket-specific
+blocker list while retaining its historical coverage limits.
