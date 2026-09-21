@@ -319,9 +319,55 @@ test("submodule re-entry begins a new phase with retained privacy exclusions", a
     ctx,
   );
   await control.execute("parent-begin", { action: "begin" }, undefined, undefined, ctx);
-  await control.execute("parent-inventory", { action: "inventory" }, undefined, undefined, ctx);
+  const parent = await control.execute("parent-inventory", { action: "inventory" }, undefined, undefined, ctx);
+  assert.equal(parent.details.candidates.includes("vendor/lib/safe.md"), false);
+  const rootScoped = await control.execute(
+    "root-scoped-inventory",
+    { action: "inventory", path: "." },
+    undefined,
+    undefined,
+    ctx,
+  );
+  assert.equal(rootScoped.details.candidates.includes("vendor/lib/safe.md"), false);
+  for (const event of [
+    { toolName: "read", input: { path: "vendor/lib/safe.md" } },
+    { toolName: "grep", input: { path: "vendor/lib/safe.md", pattern: "safe" } },
+    { toolName: "rg", input: { path: "vendor/lib/safe.md", pattern: "safe" } },
+    { toolName: "find", input: { path: "vendor/lib" } },
+    { toolName: "ls", input: { path: "vendor/lib" } },
+  ]) {
+    const blocked = await h.handlers.get("tool_call")(event, ctx);
+    assert.equal(blocked.block, true);
+    assert.match(blocked.reason, /direct Include submodule reply and successful scoped inventory/);
+  }
   await control.execute("parent-end", { action: "end" }, undefined, undefined, ctx);
+  for (const event of [
+    { source: "extension", text: "Include submodule: vendor/lib" },
+    { source: "interactive", text: "Include submodule: vendor/lib/" },
+    { source: "rpc", text: "Please Include submodule: vendor/lib" },
+    { source: "interactive", text: "Include submodule: vendor/lib\nInclude submodule: vendor/other" },
+  ]) {
+    await h.handlers.get("input")(event, ctx);
+  }
 
+  await control.execute("submodule-begin", { action: "begin" }, undefined, undefined, ctx);
+  await assert.rejects(
+    control.execute("unconsented-submodule-inventory", { action: "inventory", path: "vendor/lib" }, undefined, undefined, ctx),
+    /direct Include submodule reply/,
+  );
+  for (const event of [
+    { toolName: "read", input: { path: "vendor/lib/safe.md" } },
+    { toolName: "find", input: { path: "vendor/lib" } },
+  ]) {
+    const blocked = await h.handlers.get("tool_call")(event, ctx);
+    assert.equal(blocked.block, true);
+    assert.match(blocked.reason, /direct Include submodule reply and successful scoped inventory/);
+  }
+  await control.execute("unconsented-submodule-end", { action: "end" }, undefined, undefined, ctx);
+  await h.handlers.get("input")(
+    { source: "rpc", text: "Include submodule: vendor/lib" },
+    ctx,
+  );
   await control.execute("submodule-begin", { action: "begin" }, undefined, undefined, ctx);
   const submodule = await control.execute(
     "submodule-inventory",
@@ -340,6 +386,39 @@ test("submodule re-entry begins a new phase with retained privacy exclusions", a
     { toolName: "read", input: { path: "vendor/lib/safe.md" } },
     ctx,
   ), undefined);
+  for (const event of [
+    { toolName: "edit", input: { path: "vendor/lib/safe.md", edits: [] } },
+    { toolName: "write", input: { path: "vendor/lib/new.md", content: "must not write\n" } },
+  ]) {
+    const blocked = await h.handlers.get("tool_call")(event, ctx);
+    assert.equal(blocked.block, true);
+    assert.match(blocked.reason, /Use picm_proposal_batch|direct Include submodule reply and successful scoped inventory/);
+  }
+  await assert.rejects(
+    h.tools.get("picm_proposal_batch").execute(
+      "nested-proposal",
+      { action: "prepare", operations: [{ type: "create", path: "vendor/lib/proposal.md", content: "must not write\n" }] },
+      undefined,
+      undefined,
+      ctx,
+    ),
+    /direct Include submodule reply and successful scoped inventory/,
+  );
+
+  const separateSession = h.context(root, "submodule-reentry-separate-session");
+  await h.commands.get("picm-adopt").handler("coding", separateSession);
+  await control.execute("other-preflight", { action: "preflight" }, undefined, undefined, separateSession);
+  await control.execute("other-privacy", { action: "privacy", excludedPaths: [] }, undefined, undefined, separateSession);
+  await control.execute("other-begin", { action: "begin" }, undefined, undefined, separateSession);
+  const crossSession = await h.handlers.get("tool_call")(
+    { toolName: "read", input: { path: "vendor/lib/safe.md" } },
+    separateSession,
+  );
+  assert.equal(crossSession.block, true);
+  assert.match(crossSession.reason, /direct Include submodule reply and successful scoped inventory/);
+  await control.execute("other-end", { action: "end" }, undefined, undefined, separateSession);
+  await control.execute("other-complete", { action: "complete" }, undefined, undefined, separateSession);
+
   const sessionExcluded = await h.handlers.get("tool_call")(
     { toolName: "read", input: { path: "vendor/lib/session-private.md" } },
     ctx,
@@ -358,6 +437,10 @@ test("submodule re-entry begins a new phase with retained privacy exclusions", a
   );
   assert.equal(nestedIgnored.block, true);
   assert.match(nestedIgnored.reason, /ignored by Git/);
+  assert.equal(await h.handlers.get("tool_call")(
+    { toolCallId: "nested-read-before-end", toolName: "read", input: { path: "vendor/lib/safe.md" } },
+    ctx,
+  ), undefined);
   write(join(root, ".gitignore"), "vendor/lib\n");
   const parentIgnored = await h.handlers.get("tool_call")(
     { toolName: "read", input: { path: "vendor/lib/safe.md" } },
@@ -367,9 +450,80 @@ test("submodule re-entry begins a new phase with retained privacy exclusions", a
   assert.match(parentIgnored.reason, /submodule boundary is ignored by parent Git worktree/);
 
   await control.execute("submodule-end", { action: "end" }, undefined, undefined, ctx);
+  await assert.rejects(
+    h.tools.get("read").execute(
+      "nested-read-before-end",
+      { path: "vendor/lib/safe.md" },
+      undefined,
+      undefined,
+      ctx,
+    ),
+    /PICM_PATH_BINDING_STALE/,
+  );
+  await control.execute("reset-begin", { action: "begin" }, undefined, undefined, ctx);
+  const resetRead = await h.handlers.get("tool_call")(
+    { toolName: "read", input: { path: "vendor/lib/safe.md" } },
+    ctx,
+  );
+  assert.equal(resetRead.block, true);
+  assert.match(resetRead.reason, /direct Include submodule reply and successful scoped inventory/);
+  await control.execute("reset-end", { action: "end" }, undefined, undefined, ctx);
   const complete = await control.execute("complete", { action: "complete" }, undefined, undefined, ctx);
   assert.equal(complete.details.completed, true);
   assert.equal(readFileSync(configPath, "utf8"), initialConfig);
+});
+
+test("nested admission rejects scaffold proposal writes", async (t) => {
+  const root = mkdtempSync(join(tmpdir(), "picm-nested-scaffold-"));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  git(root, "init", "-q");
+  const subRoot = join(root, "vendor", "lib");
+  mkdirSync(subRoot, { recursive: true });
+  git(subRoot, "init", "-q");
+  write(join(subRoot, "safe.md"), "safe nested source\n");
+  git(subRoot, "add", "safe.md");
+  git(subRoot, "-c", "user.name=PiCM Test", "-c", "user.email=picm@example.invalid", "commit", "-qm", "submodule");
+  git(root, "add", "vendor/lib");
+  git(root, "-c", "user.name=PiCM Test", "-c", "user.email=picm@example.invalid", "commit", "-qm", "parent");
+
+  const h = extensionHarness();
+  const ctx = h.context(root, "nested-scaffold");
+  const control = h.tools.get("picm_scan_control");
+  await h.commands.get("picm-new").handler("", ctx);
+  await control.execute("preflight", { action: "preflight" }, undefined, undefined, ctx);
+  await control.execute("privacy", { action: "privacy", excludedPaths: [] }, undefined, undefined, ctx);
+  await control.execute("parent-begin", { action: "begin" }, undefined, undefined, ctx);
+  await control.execute("parent-end", { action: "end" }, undefined, undefined, ctx);
+  await h.handlers.get("input")({ source: "rpc", text: "Include submodule: vendor/lib" }, ctx);
+  await control.execute("nested-begin", { action: "begin" }, undefined, undefined, ctx);
+  await control.execute("nested-inventory", { action: "inventory", path: "vendor/lib" }, undefined, undefined, ctx);
+
+  await assert.rejects(
+    h.tools.get("picm_scaffold_proposal").execute(
+      "nested-scaffold-preview",
+      { action: "preview", operations: [{ tool: "write", input: { path: "vendor/lib/scaffold.md", content: "must not write\n" } }] },
+      undefined,
+      undefined,
+      ctx,
+    ),
+    /SCAFFOLD_PROPOSAL_PATH_DENIED: nested Git worktree requires a direct Include submodule reply and successful scoped inventory/,
+  );
+  assert.equal(existsSync(join(subRoot, "scaffold.md")), false);
+  assert.equal(await h.handlers.get("tool_call")(
+    { toolCallId: "nested-read-before-replace", toolName: "read", input: { path: "vendor/lib/safe.md" } },
+    ctx,
+  ), undefined);
+  await h.commands.get("picm-new").handler("replacement", ctx);
+  await assert.rejects(
+    h.tools.get("read").execute(
+      "nested-read-before-replace",
+      { path: "vendor/lib/safe.md" },
+      undefined,
+      undefined,
+      ctx,
+    ),
+    /PICM_PATH_BINDING_STALE/,
+  );
 });
 
 test("privacy-reviewed scan authorization and exclusions survive resuming the same session", async () => {

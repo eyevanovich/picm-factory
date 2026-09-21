@@ -38,6 +38,54 @@ test("workflow lifecycle permits only privacy-reviewed scan transitions and seri
   });
 });
 
+test("submodule inclusion accepts only one exact canonical user reply and expires with its scan phase", () => {
+  const lifecycle = createWorkflowLifecycle();
+  const workflow = lifecycle.authorize(scope(), "picm-adopt");
+  lifecycle.transition(workflow, "preflight-complete");
+  lifecycle.transition(workflow, "privacy-reviewed");
+  lifecycle.transition(workflow, "begin-scan");
+  lifecycle.transition(workflow, "end-scan");
+
+  for (const input of [
+    " Include submodule: vendor/lib",
+    "Include submodule: vendor/lib ",
+    "Include submodule: vendor/lib/",
+    "Say Include submodule: vendor/lib",
+    "Include submodule: vendor/lib\n",
+    "Include submodule: vendor/lib\r\n",
+    "Include submodule: vendor/lib\nInclude submodule: vendor/other",
+    "Include submodule: vendor/lib\nthanks",
+    "Include submodule: vendor/lib.",
+    "Include submodule: vendor/my lib",
+    "Include submodule: vendor/lib!",
+    "Include submodule: vendor/lib?",
+    "Include submodule: vendor/lib,",
+    "Include submodule: vendor/lib;",
+    "Include submodule: \"vendor/lib\"",
+  ]) {
+    assert.equal(lifecycle.observeSubmoduleInclusion(workflow, input), false, input);
+  }
+  assert.equal(lifecycle.observeSubmoduleInclusion(workflow, "Include submodule: vendor/lib"), true);
+
+  lifecycle.transition(workflow, "begin-scan");
+  const admission = lifecycle.submoduleInventoryAdmission(workflow, "vendor/lib");
+  assert.ok(admission);
+  assert.equal(lifecycle.submoduleInventoryAdmission(workflow, "vendor/other"), undefined);
+  assert.throws(
+    () => lifecycle.admitSubmodule(workflow, { ...admission, projectRelativeRoot: "vendor/other" }, "/workspace-a/vendor/other"),
+    /WORKFLOW_TRANSITION_INVALID/,
+  );
+  assert.equal(lifecycle.submoduleAccessAdmission(workflow), undefined);
+
+  lifecycle.admitSubmodule(workflow, admission, "/workspace-a/vendor/lib");
+  assert.equal(lifecycle.submoduleAccessAdmission(workflow)?.canonicalRoot, "/workspace-a/vendor/lib");
+  lifecycle.transition(workflow, "end-scan");
+  assert.equal(lifecycle.submoduleAccessAdmission(workflow), undefined);
+  lifecycle.transition(workflow, "begin-scan");
+  assert.equal(lifecycle.submoduleAccessAdmission(workflow), undefined);
+  assert.equal(lifecycle.submoduleInventoryAdmission(workflow, "vendor/lib"), undefined);
+});
+
 test("workflow lifecycle restores legacy and incomplete state conservatively", () => {
   const lifecycle = createWorkflowLifecycle();
   const restored = lifecycle.restore(scope(), {

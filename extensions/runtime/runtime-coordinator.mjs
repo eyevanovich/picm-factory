@@ -199,6 +199,23 @@ export function createRuntimeCoordinator({
     return lifecycle.serialize(workflow);
   }
 
+  function nestedWorktreeAccessAdmission(workflow) {
+    return workflow ? lifecycle.submoduleAccessAdmission(workflow) : undefined;
+  }
+
+  function workflowGate(ctx, workflow) {
+    const gate = runtimeFor(ctx).gate;
+    return {
+      bindPath: gate.bindPath,
+      checkPath: (toolName, path, excludedPaths) => gate.checkPath(
+        toolName,
+        path,
+        excludedPaths,
+        nestedWorktreeAccessAdmission(workflow),
+      ),
+    };
+  }
+
   function serializeWorkflow(ctx, status) {
     const workflow = workflowFor(ctx);
     return workflow ? { status, ...workflowState(workflow) } : undefined;
@@ -416,8 +433,18 @@ export function createRuntimeCoordinator({
       if (!workflow || !workflow.phase.active) {
         throw new Error("PICM_SCAN_NOT_ACTIVE: begin an explicitly authorized scan before requesting inventory");
       }
-      const inventory = await runtimeFor(ctx).gate.refreshInventory(path, workflow.privacy.excludedPaths);
+      const inventoryAdmission = path === undefined
+        ? undefined
+        : lifecycle.submoduleInventoryAdmission(workflow, path);
+      const inventory = await runtimeFor(ctx).gate.refreshInventory(
+        path,
+        workflow.privacy.excludedPaths,
+        inventoryAdmission,
+      );
       requireCurrentWorkflow(sessionId, workflow);
+      if (inventoryAdmission) {
+        lifecycle.admitSubmodule(workflow, inventoryAdmission, inventory.worktree);
+      }
       const candidates = [...inventory.candidates].sort();
       const workspaceCandidates = candidatesRelativeToWorkspace(candidates, inventory.worktree, ctx.cwd);
       const existingArchitectureCandidates = workspaceCandidates.filter((candidate) =>
@@ -611,6 +638,7 @@ export function createRuntimeCoordinator({
   }
 
   function invalidatePhaseAuthority(scope) {
+    releaseBindings(scope);
     clearCheckpointAcknowledgements(scope);
     scaffoldApproval.invalidate(scope);
     invalidatePhaseProposal(scope);
@@ -736,7 +764,7 @@ export function createRuntimeCoordinator({
     const sessionId = sessionIdFor(ctx);
     if (params.action === "prepare") {
       const batch = await prepareProposalBatch({
-        gate: runtimeFor(ctx).gate,
+        gate: workflowGate(ctx, workflow),
         excludedPaths: workflow.privacy.excludedPaths,
         operations: params.operations,
       });
@@ -914,7 +942,7 @@ export function createRuntimeCoordinator({
         persisted.privacy?.excludedPaths ?? [],
       );
       result = await applyProposalBatch(batchToApply, {
-        gate: runtimeFor(ctx).gate,
+        gate: workflowGate(ctx, workflow),
         excludedPaths: applyExcludedPaths,
         signal: execution.signal,
       });
@@ -1149,7 +1177,7 @@ export function createRuntimeCoordinator({
       throw new Error("SCAFFOLD_PROPOSAL_UNAVAILABLE: invoke /picm-new first");
     }
     const sessionId = sessionIdFor(ctx);
-    const gate = runtimeFor(ctx).gate;
+    const gate = workflowGate(ctx, workflow);
     let existingContentAtRisk = false;
     for (const operation of operations) {
       if (typeof operation?.input?.path !== "string") continue;
@@ -1159,7 +1187,9 @@ export function createRuntimeCoordinator({
         workflow.privacy.excludedPaths,
       );
       requireCurrentWorkflow(sessionId, workflow);
-      if (!decision.allowed || !decision.executionBinding) continue;
+      if (!decision.allowed || !decision.executionBinding) {
+        throw new Error(`SCAFFOLD_PROPOSAL_PATH_DENIED: ${decision.reason ?? "scaffold path is not allowed"}`);
+      }
       const binding = gate.bindPath(decision.executionBinding);
       try {
         if (decision.executionBinding.existingPath === decision.executionBinding.absolutePath) {
@@ -1175,6 +1205,9 @@ export function createRuntimeCoordinator({
   function observeInput(ctx, text) {
     const observedIntent = observeNewWorkflowIntentResponse(ctx, text);
     const workflow = workflowFor(ctx);
+    if (workflow) {
+      lifecycle.observeSubmoduleInclusion(workflow, text);
+    }
     if (workflow && scaffoldApproval.observeInput(workflow.scope, text)) {
       revokeScaffoldMutationBindings(workflow.scope);
     }
@@ -1185,7 +1218,12 @@ export function createRuntimeCoordinator({
     if (!isLocalSpecialistRoute(route)) {
       throw new Error("SPECIALIST_GUIDANCE_NOT_APPROVED: scaffold routes must be local");
     }
-    const decision = await runtimeFor(ctx).gate.checkPath("read", route, workflow.privacy.excludedPaths);
+    const decision = await runtimeFor(ctx).gate.checkPath(
+      "read",
+      route,
+      workflow.privacy.excludedPaths,
+      nestedWorktreeAccessAdmission(workflow),
+    );
     const approvedPath = decision.executionBinding?.canonicalPath;
     if (!decision.allowed || typeof approvedPath !== "string") {
       throw new Error("SPECIALIST_GUIDANCE_NOT_APPROVED: scaffold file must pass the canonical privacy boundary");
@@ -1387,7 +1425,8 @@ export function createRuntimeCoordinator({
     const current =
       (issued.state === "active" || issued.state === "executing") &&
       lifecycle.isCurrent(workflow) &&
-      lifecycle.current(workflowScopeFor(ctx)) === workflow;
+      lifecycle.current(workflowScopeFor(ctx)) === workflow &&
+      (issued.phaseIdentity === undefined || lifecycle.hasActivePhaseIdentity(workflow, issued.phaseIdentity));
     try {
       if (!current) return;
       const completedScaffoldMutation = scaffoldApproval.complete(workflow.scope, event.toolCallId, !event.isError);
@@ -1427,6 +1466,7 @@ export function createRuntimeCoordinator({
       toolCallId,
       scope: workflow.scope,
       workflow,
+      phaseIdentity: lifecycle.activePhaseIdentity(workflow),
       binding,
       scaffoldMutation: false,
       state: "active",
@@ -1446,7 +1486,12 @@ export function createRuntimeCoordinator({
     const workflow = workflowFor(ctx);
     const issued = issuedBindingFor(sessionIdFor(ctx), toolCallId);
     if (issued) {
-      if (issued.state !== "active" || workflow !== issued.workflow) {
+      if (
+        issued.state !== "active" ||
+        workflow !== issued.workflow ||
+        (issued.phaseIdentity !== undefined &&
+          !lifecycle.hasActivePhaseIdentity(workflow, issued.phaseIdentity))
+      ) {
         revokeIssuedBinding(issued);
         throw new Error("PICM_PATH_BINDING_STALE: guarded path execution no longer belongs to the current workflow");
       }
@@ -1465,9 +1510,16 @@ export function createRuntimeCoordinator({
   async function checkToolCallCore(event, ctx) {
     const workflow = workflowFor(ctx);
     const scanActive = workflow?.phase.active === true;
+    const phaseIdentity = lifecycle.activePhaseIdentity(workflow);
     const bindDecision = (decision) => {
       if (!decision.allowed || !decision.executionBinding || typeof event.toolCallId !== "string") return decision;
       requireCurrentWorkflow(sessionIdFor(ctx), workflow);
+      if (phaseIdentity !== undefined && !lifecycle.hasActivePhaseIdentity(workflow, phaseIdentity)) {
+        return {
+          allowed: false,
+          reason: "PICM_PATH_BINDING_STALE: guarded path execution no longer belongs to the current workflow",
+        };
+      }
       const binding = runtimeFor(ctx).gate.bindPath(decision.executionBinding);
       if (retainBinding(workflow, event.toolCallId, binding)) return decision;
       return {
@@ -1557,6 +1609,7 @@ export function createRuntimeCoordinator({
           event.toolName,
           event.input?.path,
           workflow.privacy.excludedPaths,
+          nestedWorktreeAccessAdmission(workflow),
         );
         if (decision.allowed && event.toolName === "read" && typeof decision.canonicalPath === "string") {
           event.input.path = decision.canonicalPath;
@@ -1576,6 +1629,7 @@ export function createRuntimeCoordinator({
           event.toolName,
           event.input?.path,
           workflow.privacy.excludedPaths,
+          nestedWorktreeAccessAdmission(workflow),
         );
         if (decision.allowed && event.toolName === "read" && typeof decision.canonicalPath === "string") {
           event.input.path = decision.canonicalPath;

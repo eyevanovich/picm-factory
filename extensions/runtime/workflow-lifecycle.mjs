@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { resolve } from "node:path";
+import { relative, resolve, sep } from "node:path";
 
 const EXPLICIT_SCAN_COMMANDS = new Set(["picm-new", "picm-adopt", "picm-maintain", "picm-optimize"]);
 const NEW_WORKFLOW_INTENTS = new Set(["add-replace", "adopt-existing", "cancelled"]);
@@ -16,6 +16,23 @@ function directNewWorkflowIntent(text) {
 
 function transitionError(event) {
   return new Error(`WORKFLOW_TRANSITION_INVALID: ${event} is not valid for the current workflow state`);
+}
+
+function directSubmoduleInclusion(text, workspace) {
+  if (typeof text !== "string") return undefined;
+  const match = /^Include submodule: ([^\r\n]+)$/.exec(text);
+  if (!match || match[0] !== text) return undefined;
+  const root = match[1];
+  if (!/^(?:[A-Za-z0-9._-]*[A-Za-z0-9_-])(?:\/(?:[A-Za-z0-9._-]*[A-Za-z0-9_-]))*$/.test(root)) return undefined;
+  const resolved = resolve(workspace, root);
+  const projectRelativeRoot = relative(workspace, resolved).split(sep).join("/");
+  return (
+    projectRelativeRoot &&
+    projectRelativeRoot !== "." &&
+    !projectRelativeRoot.startsWith("../") &&
+    projectRelativeRoot !== ".." &&
+    root === projectRelativeRoot
+  ) ? projectRelativeRoot : undefined;
 }
 
 export function createWorkflowLifecycle({ canonicalizeWorkspace = resolve } = {}) {
@@ -79,6 +96,12 @@ export function createWorkflowLifecycle({ canonicalizeWorkspace = resolve } = {}
         pendingSource: undefined,
       },
       terminal: { completed: false },
+      submodule: {
+        phaseIdentity: 0,
+        pendingInclusion: undefined,
+        requestedInclusion: undefined,
+        admittedRoot: undefined,
+      },
       specialist: {
         approvedWrites: new Map(),
         approvedEdits: new Set(),
@@ -178,12 +201,36 @@ export function createWorkflowLifecycle({ canonicalizeWorkspace = resolve } = {}
       phase.scanSettled = false;
       phase.active = true;
       privacy.excludedPaths = [...(details.excludedPaths ?? privacy.excludedPaths)];
+      record.submodule.phaseIdentity += 1;
+      record.submodule.requestedInclusion = record.submodule.pendingInclusion;
+      record.submodule.pendingInclusion = undefined;
+      record.submodule.admittedRoot = undefined;
       return record;
     }
     if (event === "end-scan") {
       if (!phase.active || terminal.completed) throw transitionError(event);
       phase.active = false;
       phase.scanSettled = true;
+      record.submodule.requestedInclusion = undefined;
+      record.submodule.admittedRoot = undefined;
+      return record;
+    }
+    if (event === "observe-submodule-inclusion") {
+      if (!phase.preflightComplete || !privacy.reviewed || terminal.completed) throw transitionError(event);
+      const root = directSubmoduleInclusion(details.text, record.scope.workspace);
+      if (!root) throw transitionError(event);
+      if (phase.scanSettled && !phase.active) {
+        record.submodule.pendingInclusion = root;
+      } else {
+        throw transitionError(event);
+      }
+      return record;
+    }
+    if (event === "admit-submodule") {
+      if (!phase.active || terminal.completed ||
+        details.projectRelativeRoot !== record.submodule.requestedInclusion ||
+        typeof details.canonicalRoot !== "string") throw transitionError(event);
+      record.submodule.admittedRoot = details.canonicalRoot;
       return record;
     }
     if (event === "deactivate-scan") {
@@ -285,6 +332,9 @@ export function createWorkflowLifecycle({ canonicalizeWorkspace = resolve } = {}
     record.phase.scanStarted = privacyReviewed && state.scanStarted === true;
     record.phase.scanSettled = record.phase.scanStarted && state.scanSettled === true;
     record.phase.active = false;
+    record.submodule.pendingInclusion = undefined;
+    record.submodule.requestedInclusion = undefined;
+    record.submodule.admittedRoot = undefined;
     record.maintenance.resetAttempted = privacyReviewed && state.maintenanceResetAttempted === true;
     const restoredExcludedPaths = Array.isArray(state.normalizedExcludedPaths)
       ? state.normalizedExcludedPaths
@@ -308,6 +358,56 @@ export function createWorkflowLifecycle({ canonicalizeWorkspace = resolve } = {}
     record.terminal.completed = state.status === "completed";
     records.set(scope.sessionId, record);
     return record;
+  }
+
+  function observeSubmoduleInclusion(record, text) {
+    try {
+      transition(record, "observe-submodule-inclusion", { text });
+      return true;
+    } catch (error) {
+      if (String(error?.message).startsWith("WORKFLOW_TRANSITION_INVALID")) return false;
+      throw error;
+    }
+  }
+
+  function submoduleInventoryAdmission(record, projectRelativeRoot) {
+    if (
+      !isCurrent(record) ||
+      !record.phase.active ||
+      record.submodule.requestedInclusion !== projectRelativeRoot
+    ) return undefined;
+    return {
+      workflowIdentity: record.identity,
+      phaseIdentity: record.submodule.phaseIdentity,
+      projectRelativeRoot,
+    };
+  }
+
+  function submoduleAccessAdmission(record) {
+    if (!isCurrent(record) || !record.phase.active || !record.submodule.admittedRoot) return undefined;
+    return {
+      workflowIdentity: record.identity,
+      phaseIdentity: record.submodule.phaseIdentity,
+      canonicalRoot: record.submodule.admittedRoot,
+    };
+  }
+
+  function activePhaseIdentity(record) {
+    return isCurrent(record) && record.phase.active ? record.submodule.phaseIdentity : undefined;
+  }
+
+  function hasActivePhaseIdentity(record, phaseIdentity) {
+    return activePhaseIdentity(record) === phaseIdentity;
+  }
+
+  function admitSubmodule(record, admission, canonicalRoot) {
+    if (!hasActivePhaseIdentity(record, admission?.phaseIdentity)) {
+      throw new Error("WORKFLOW_TRANSITION_STALE: workflow phase changed while nested inventory was running");
+    }
+    transition(record, "admit-submodule", {
+      projectRelativeRoot: admission.projectRelativeRoot,
+      canonicalRoot,
+    });
   }
 
   function serialize(record) {
@@ -340,6 +440,12 @@ export function createWorkflowLifecycle({ canonicalizeWorkspace = resolve } = {}
     current,
     currentForSession,
     isCurrent,
+    observeSubmoduleInclusion,
+    submoduleInventoryAdmission,
+    submoduleAccessAdmission,
+    admitSubmodule,
+    activePhaseIdentity,
+    hasActivePhaseIdentity,
     remove,
     removeForSession,
     restore,

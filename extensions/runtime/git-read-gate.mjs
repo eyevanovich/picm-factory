@@ -18,6 +18,7 @@ const execFileAsync = promisify(execFile);
 const PATH_TOOLS = new Set(["read", "edit", "write", "grep", "rg", "find", "ls"]);
 const READ_LIKE_TOOLS = new Set(["read", "edit", "grep", "rg", "find", "ls"]);
 const TRAVERSAL_TOOLS = new Set(["grep", "rg", "find", "ls"]);
+const NESTED_READ_ONLY_TOOLS = new Set(["read", "grep", "rg", "find", "ls"]);
 const UNREGISTERED_NESTED_GIT_BOUNDARY = "PICM_UNREGISTERED_NESTED_GIT_BOUNDARY";
 
 function unregisteredNestedGitBoundary(message, boundaryRoot) {
@@ -549,7 +550,14 @@ export function createGitReadGate({
     throw new Error(`Git ignore check was unresolved: ${result.stderr.trim() || `exit ${result.code}`}`);
   }
 
-  async function addTraversalEntries(resolvedPath, inventory, exclusions, context) {
+  async function addTraversalEntries(
+    resolvedPath,
+    inventory,
+    exclusions,
+    context,
+    nestedWorktreeAdmission,
+    toolName,
+  ) {
     if (!resolvedPath.stat?.isDirectory()) return;
     const entries = [];
     const entryPaths = new Set();
@@ -589,6 +597,9 @@ export function createGitReadGate({
       if (result.blocked) return { admitted: false, recurse: false };
       if (!result.boundary || result.boundary === canonicalInventoryRoot) {
         return { admitted: true, recurse: true };
+      }
+      if (!nestedWorktreeAccessAllowed(result.boundary, nestedWorktreeAdmission, toolName)) {
+        return { admitted: false, recurse: false };
       }
       const boundaryRoot = stat.isDirectory() && canonicalPath === result.boundary;
       return { admitted: boundaryRoot, recurse: false };
@@ -752,7 +763,35 @@ export function createGitReadGate({
     };
   }
 
-  async function guardedInventoryForPath(resolvedPath, exclusions, context) {
+  function nestedWorktreeAccessAllowed(nestedBoundary, admission, toolName) {
+    return NESTED_READ_ONLY_TOOLS.has(toolName) &&
+      admission?.canonicalRoot === nestedBoundary &&
+      typeof admission.workflowIdentity === "string" &&
+      typeof admission.phaseIdentity === "number";
+  }
+
+  function nestedWorktreeInventoryAllowed(nestedBoundary, inputPath, admission) {
+    return admission?.projectRelativeRoot === inputPath &&
+      typeof admission.workflowIdentity === "string" &&
+      typeof admission.phaseIdentity === "number" &&
+      nestedBoundary !== undefined;
+  }
+
+  function nestedWorktreeAdmissionDenied() {
+    return {
+      allowed: false,
+      protected: true,
+      reason: "nested Git worktree requires a direct Include submodule reply and successful scoped inventory",
+    };
+  }
+
+  async function guardedInventoryForPath(
+    resolvedPath,
+    exclusions,
+    context,
+    nestedWorktreeAdmission,
+    toolName,
+  ) {
     const { canonicalPath } = resolvedPath;
     const primaryGitPath = toGitPath(context.canonicalWorktree, canonicalPath);
     if (
@@ -765,6 +804,9 @@ export function createGitReadGate({
     }
 
     const nestedBoundary = await boundaryForPath(resolvedPath, context);
+    if (nestedBoundary && !nestedWorktreeAccessAllowed(nestedBoundary, nestedWorktreeAdmission, toolName)) {
+      return { decision: nestedWorktreeAdmissionDenied() };
+    }
     const boundaryRoot = nestedBoundary ?? context.canonicalWorktree;
     const gitPath = toGitPath(boundaryRoot, canonicalPath);
     if (gitPath === ".git" || gitPath.startsWith(".git/")) {
@@ -821,7 +863,7 @@ export function createGitReadGate({
   async function checkPathUnchecked(
     toolName,
     inputPath,
-    { stripToolPrefix = true, privacyExcludedPaths = [] } = {},
+    { stripToolPrefix = true, privacyExcludedPaths = [], nestedWorktreeAdmission } = {},
     context,
   ) {
     if (!PATH_TOOLS.has(toolName)) return { allowed: true, protected: false };
@@ -869,7 +911,13 @@ export function createGitReadGate({
     const privatePath = await privacyDecision(resolvedPath.canonicalPath, exclusions);
     if (privatePath) return privatePath;
 
-    const boundary = await guardedInventoryForPath(resolvedPath, exclusions, context);
+    const boundary = await guardedInventoryForPath(
+      resolvedPath,
+      exclusions,
+      context,
+      nestedWorktreeAdmission,
+      toolName,
+    );
     if (boundary.decision) return boundary.decision;
     const { inventory, gitPath } = boundary;
 
@@ -881,7 +929,14 @@ export function createGitReadGate({
           reason: "path is not in the Git-derived candidate inventory",
         };
       }
-      await addTraversalEntries(resolvedPath, inventory, exclusions, context);
+      await addTraversalEntries(
+        resolvedPath,
+        inventory,
+        exclusions,
+        context,
+        nestedWorktreeAdmission,
+        toolName,
+      );
     }
     if (READ_LIKE_TOOLS.has(toolName) && !resolvedPath.stat?.isDirectory() && !inventory.candidates.has(gitPath)) {
       return { allowed: false, protected: true, reason: "path is not in the Git-derived candidate inventory" };
@@ -902,14 +957,19 @@ export function createGitReadGate({
     return createPathExecutionBinding(plan, bindingLimits);
   }
 
-  async function checkPath(toolName, inputPath, privacyExcludedPaths = []) {
+  async function checkPath(toolName, inputPath, privacyExcludedPaths = [], nestedWorktreeAdmission) {
     try {
       return await withOperation(async () => {
         if (!PATH_TOOLS.has(toolName)) {
-          return checkPathUnchecked(toolName, inputPath, { privacyExcludedPaths });
+          return checkPathUnchecked(toolName, inputPath, { privacyExcludedPaths, nestedWorktreeAdmission });
         }
         const context = await discoverWorktreeContext();
-        return checkPathUnchecked(toolName, inputPath, { privacyExcludedPaths }, context);
+        return checkPathUnchecked(
+          toolName,
+          inputPath,
+          { privacyExcludedPaths, nestedWorktreeAdmission },
+          context,
+        );
       });
     } catch (error) {
       return {
@@ -951,7 +1011,7 @@ export function createGitReadGate({
     };
   }
 
-  async function refreshInventory(inputPath, privacyExcludedPaths = []) {
+  async function refreshInventory(inputPath, privacyExcludedPaths = [], nestedWorktreeAdmission) {
     return withOperation(async () => {
       const exclusions = normalizePrivacyExcludedPaths(cwd, privacyExcludedPaths);
       const context = await discoverWorktreeContext();
@@ -973,6 +1033,9 @@ export function createGitReadGate({
       const nestedBoundary = await boundaryForPath(resolved, context);
       if (nestedBoundary !== resolved.canonicalPath) {
         throw new Error("inventory path is not an initialized submodule worktree root");
+      }
+      if (!nestedWorktreeInventoryAllowed(nestedBoundary, stripAtPrefix(inputPath), nestedWorktreeAdmission)) {
+        throw new Error("nested Git worktree requires a direct Include submodule reply before scoped inventory");
       }
       const parentBoundaryPath = toGitPath(context.canonicalWorktree, nestedBoundary);
       const parentIgnore = await context.runWorkspaceGit([

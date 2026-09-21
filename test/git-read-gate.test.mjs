@@ -476,6 +476,13 @@ test("treats present submodules as separate guarded worktrees", async (t) => {
   write(join(subRoot, "safe.txt"), "safe submodule\n");
   write(join(subRoot, "secret.txt"), "secret\n");
   git(subRoot, "add", ".gitignore", "safe.txt");
+  const deeperRoot = join(subRoot, "deps", "deeper");
+  mkdirSync(deeperRoot, { recursive: true });
+  git(deeperRoot, "init", "-q");
+  write(join(deeperRoot, "safe.txt"), "safe deeper worktree\n");
+  git(deeperRoot, "add", "safe.txt");
+  git(deeperRoot, "-c", "user.name=T", "-c", "user.email=t@e.invalid", "commit", "-qm", "deeper");
+  git(subRoot, "add", "deps/deeper");
   git(subRoot, "-c", "user.name=T", "-c", "user.email=t@e.invalid", "commit", "-qm", "sub");
 
   git(root, "add", "vendor/lib");
@@ -484,9 +491,87 @@ test("treats present submodules as separate guarded worktrees", async (t) => {
   const gate = createGitReadGate({ cwd: root, packageRoot: root });
   t.after(() => gate.dispose());
 
-  assert.equal((await gate.checkPath("read", "vendor/lib/safe.txt")).allowed, true);
-  assert.match((await gate.checkPath("read", "vendor/lib/secret.txt")).reason, /ignored by Git/);
-  assert.match((await gate.checkPath("read", "vendor/lib/.git")).reason, /\.git internals/);
+  assert.match(
+    (await gate.checkPath("read", "vendor/lib/safe.txt")).reason,
+    /direct Include submodule reply and successful scoped inventory/,
+  );
+  const inventory = await gate.refreshInventory("vendor/lib", [], {
+    workflowIdentity: "workflow-a",
+    phaseIdentity: 1,
+    projectRelativeRoot: "vendor/lib",
+  });
+  const admission = {
+    workflowIdentity: "workflow-a",
+    phaseIdentity: 1,
+    canonicalRoot: inventory.worktree,
+  };
+  for (const [toolName, path] of [
+    ["read", "vendor/lib/safe.txt"],
+    ["grep", "vendor/lib/safe.txt"],
+    ["rg", "vendor/lib/safe.txt"],
+    ["find", "vendor/lib"],
+    ["ls", "vendor/lib"],
+  ]) {
+    assert.equal((await gate.checkPath(toolName, path, [], admission)).allowed, true, toolName);
+  }
+  for (const [toolName, path] of [
+    ["edit", "vendor/lib/safe.txt"],
+    ["write", "vendor/lib/new.txt"],
+  ]) {
+    assert.match(
+      (await gate.checkPath(toolName, path, [], admission)).reason,
+      /direct Include submodule reply and successful scoped inventory/,
+      toolName,
+    );
+  }
+  assert.match(
+    (await gate.checkPath("read", "vendor/lib/deps/deeper/safe.txt", [], admission)).reason,
+    /direct Include submodule reply and successful scoped inventory|Nested Git worktree discovery/,
+  );
+  assert.match((await gate.checkPath("read", "vendor/lib/secret.txt", [], admission)).reason, /ignored by Git/);
+  assert.match((await gate.checkPath("read", "vendor/lib/.git", [], admission)).reason, /\.git internals/);
+});
+
+test("nested admission does not cross into a deeper Git worktree", async (t) => {
+  const root = mkdtempSync(join(tmpdir(), "picm-nested-submodule-boundary-"));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  git(root, "init", "-q");
+
+  const subRoot = join(root, "vendor", "lib");
+  mkdirSync(subRoot, { recursive: true });
+  git(subRoot, "init", "-q");
+  write(join(subRoot, "safe.txt"), "safe parent nested source\n");
+  git(subRoot, "add", "safe.txt");
+
+  const deepRoot = join(subRoot, "packages", "deep");
+  mkdirSync(deepRoot, { recursive: true });
+  git(deepRoot, "init", "-q");
+  write(join(deepRoot, "safe.txt"), "safe deep nested source\n");
+  git(deepRoot, "add", "safe.txt");
+  git(deepRoot, "-c", "user.name=T", "-c", "user.email=t@e.invalid", "commit", "-qm", "deep");
+  git(subRoot, "add", "packages/deep");
+  git(subRoot, "-c", "user.name=T", "-c", "user.email=t@e.invalid", "commit", "-qm", "sub");
+  git(root, "add", "vendor/lib");
+  git(root, "-c", "user.name=T", "-c", "user.email=t@e.invalid", "commit", "-qm", "parent");
+
+  const gate = createGitReadGate({ cwd: root, packageRoot: root });
+  t.after(() => gate.dispose());
+  const inventory = await gate.refreshInventory("vendor/lib", [], {
+    workflowIdentity: "workflow-a",
+    phaseIdentity: 1,
+    projectRelativeRoot: "vendor/lib",
+  });
+  const parentAdmission = {
+    workflowIdentity: "workflow-a",
+    phaseIdentity: 1,
+    canonicalRoot: inventory.worktree,
+  };
+
+  assert.equal((await gate.checkPath("read", "vendor/lib/safe.txt", [], parentAdmission)).allowed, true);
+  assert.match(
+    (await gate.checkPath("read", "vendor/lib/packages/deep/safe.txt", [], parentAdmission)).reason,
+    /Nested Git worktree discovery did not resolve the parent gitlink boundary/,
+  );
 });
 
 test("uses operation-local Git routing while reducing repeated inventory commands", async (t) => {
@@ -528,12 +613,21 @@ test("uses operation-local Git routing while reducing repeated inventory command
   assert.equal((await gate.checkPath("read", "safe.txt")).allowed, true);
   commandGroups.ordinaryDirectRead = calls.splice(0);
 
-  assert.equal((await gate.checkPath("read", "vendor/lib/safe.txt")).allowed, true);
-  commandGroups.registeredNestedDirectRead = calls.splice(0);
-
-  const inventory = await gate.refreshInventory("vendor/lib");
+  const inventoryAdmission = {
+    workflowIdentity: "workflow-a",
+    phaseIdentity: 1,
+    projectRelativeRoot: "vendor/lib",
+  };
+  const inventory = await gate.refreshInventory("vendor/lib", [], inventoryAdmission);
   assert.equal(inventory.worktree, canonicalNestedRoot);
   commandGroups.nestedInventory = calls.splice(0);
+
+  assert.equal((await gate.checkPath("read", "vendor/lib/safe.txt", [], {
+    workflowIdentity: "workflow-a",
+    phaseIdentity: 1,
+    canonicalRoot: canonicalNestedRoot,
+  })).allowed, true);
+  commandGroups.registeredNestedDirectRead = calls.splice(0);
 
   const inventoryCommands = [
     ["ls-files", "-z", "--cached", "--others", "--exclude-standard"],
