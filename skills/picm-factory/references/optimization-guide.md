@@ -68,7 +68,7 @@ Identify opportunities before drafting edits. A useful opportunity needs visible
 
 ### Agent-document writing lens
 
-Use this optional lens after the preservation ledger to find evidence-backed opportunities, not to impose a house style or create new obligations. Preserve scope, precedence, exceptions, and independently necessary local guidance.
+Apply this lens after the preservation ledger to find evidence-backed opportunities. It is a required diagnostic pass, not a house style or a source of new obligations. Preserve scope, precedence, exceptions, and independently necessary local guidance.
 
 - **Context pointers:** when a document directs an agent elsewhere, make the target and the condition for reading it clear. Do not hide stable prerequisites behind a pointer.
 - **Information hierarchy:** keep instructions and constraints needed for every relevant task near their execution point; progressively disclose only conditional background, reference, or examples behind a reachable pointer.
