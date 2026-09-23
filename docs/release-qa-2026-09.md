@@ -27,9 +27,8 @@ recorded focused validation:
 
 This addendum records current validation at that head; it does not promote the
 historical campaign into a full `main...HEAD` merge or release sign-off. Before
-a release, review the current branch delta, explicitly dispose of the remaining
-coverage questions, and assess open QA Beads `picm-2pv`, `picm-kpw`,
-`picm-83c`, and `picm-xw8`. Merge through the normal PR path, then use the
+a release, review the current branch delta and explicitly dispose of any
+remaining coverage questions. Merge through the normal PR path, then use the
 manual `Create release` workflow from `main`; do not tag or publish from this
 branch.
 

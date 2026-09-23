@@ -1,20 +1,22 @@
-# Release QA handoff — focused continuation completed
+# Release QA handoff — historical campaign
 
-## Outcome
+## Current status
 
-This historical checkpoint was consumed by the bounded lower-cost continuation
-for **`picm-x6c.21`**. Do not resume the old controllers, stale subject panes,
-or their approvals. The tested runtime/source revision is
-`cd4aa07c932e49a57a0db42885d00f70b3953fde`; the focused results and remaining
-coverage are in [release-qa-2026-09.md](release-qa-2026-09.md).
-
-The campaign is **not release approval**: P1 `picm-x6c.22` tracks the missing
-local-only ignore offer, and P2 `picm-x6c.23` tracks submodule privacy re-entry
-guidance. Beads owns their status. Preserve the historical state below only for
-evidence; do not treat it as live execution authority.
+This handoff preserves an earlier QA checkpoint only. Do not resume its old
+controllers, subject panes, or approvals. The current disposition is in
+[release-qa-2026-09.md](release-qa-2026-09.md): the campaign's named blockers
+were resolved and the `picm-x6c` epic is closed. That report is still not a
+full `main...HEAD` merge or release sign-off.
 
 For future QA, read the campaign report, [Practical safety contract](adr/0001-practical-write-safety.md), `qa-runner/CONTEXT.md`, and only the relevant
 sections of `docs/layout-fixture-qa.md` / `docs/picm-new-scenarios.md`.
+
+## Historical outcome
+
+This historical checkpoint was consumed by the bounded lower-cost continuation
+for **`picm-x6c.21`**. The tested runtime/source revision was
+`cd4aa07c932e49a57a0db42885d00f70b3953fde`. Preserve the state below only for
+evidence; do not treat it as live execution authority.
 
 ## Repository and authority
 
