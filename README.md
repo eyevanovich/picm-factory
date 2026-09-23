@@ -25,13 +25,13 @@ Then run:
 /picm-new
 ```
 
-For a global install available in every Pi session, drop the `-l`:
+For a global install stored in your user settings, drop the `-l`:
 
 ```bash
 pi install npm:@eyevanovich/picm-factory@0.4.0 # remove version to always install latest
 ```
 
-Note: An unpinned install follows npm's `latest` and can be refreshed easily with `pi update --extensions`.
+A project-level entry for the same package can override this global install. An unpinned install follows npm's `latest` and can be refreshed easily with `pi update --extensions`.
 
 ---
 
@@ -39,7 +39,7 @@ To add PiCM Factory to an existing project, install it from that project's root 
 
 ## Choose a command
 
-PiCM Factory gives Pi five project-local commands. You do not need to know PiCM or ICM terminology to use them.
+PiCM Factory gives Pi five commands for working on your ICM or coding projects.
 
 | Command | Use it when | What it does |
 | --- | --- | --- |

@@ -165,7 +165,7 @@ test("skill, backing prompt, help, README, and shared review protocol stay synch
       "No worthwhile optimizations found",
     ],
     "prompts/picm-help.md": ["`/picm-optimize`", "semantic equivalence"],
-    "README.md": ["five project-local commands", "Outcome-preserving optimization"],
+    "README.md": ["five commands for working on the current project", "Outcome-preserving optimization"],
     "skills/picm-factory/references/preview-review-protocol.md": ["`/picm-optimize`"],
     "docs/layout-fixture-qa.md": ["## `/picm-optimize` smoke check", "No worthwhile optimizations found"],
   };
