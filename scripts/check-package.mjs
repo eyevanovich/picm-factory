@@ -727,7 +727,7 @@ const commandDecisionSignals = [
   "type a space",
   "/picm-new [workflow description]",
   "/picm-adopt [coding | adoption request]",
-  "/picm-maintain [strict | balanced | coding | routing",
+  "/picm-maintain [strict | balanced",
   "/picm-optimize",
 ];
 for (const file of commandDecisionGuidanceFiles) {
@@ -749,6 +749,10 @@ for (const file of commandDecisionGuidanceFiles) {
 const readme = readFileSync(join(root, "README.md"), "utf8").toLowerCase();
 if (!readme.includes("you do not need to know")) {
   console.error("README command decision guide must avoid requiring PiCM/ICM jargon");
+  process.exit(1);
+}
+if (!readme.includes("/picm-maintain [strict | balanced] [coding | routing | handoffs | stale-context | security | trace")) {
+  console.error("README must distinguish optional maintenance depth from its optional focus");
   process.exit(1);
 }
 

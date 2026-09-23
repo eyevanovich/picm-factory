@@ -45,11 +45,11 @@ PiCM Factory gives Pi five project-local commands. You do not need to know PiCM 
 | --- | --- | --- |
 | `/picm-new [workflow description]` | You are starting a workflow in a new or mostly empty folder. | Interviews you, previews a minimal workspace, and writes only after approval. |
 | `/picm-adopt [coding \| adoption request]` | The folder already contains source code, agent instructions, workflows, stages, or reference material. Add `coding` when you already know it is a coding repository or monorepo. | Inspects first and proposes additive PiCM support without converting the project. `coding` only skips initial classification; regular `/picm-adopt` can offer the same Coding Repository profile. |
-| `/picm-maintain [strict \| balanced \| coding \| routing \| handoffs \| stale-context \| security \| trace "drift symptom"]` | You want a health check, focused routing/context check, or drift investigation. | Reports Pass, Warning, and Suggestion findings; `trace` investigates one concrete symptom heuristically. |
+| `/picm-maintain [strict \| balanced] [coding \| routing \| handoffs \| stale-context \| security \| trace "drift symptom"]` | You want a health check, focused routing/context check, or drift investigation. | Runs a heuristic health check; general reports use Pass, Warning, and Suggestion findings. `trace` investigates one concrete symptom and reports likely causes with confidence. |
 | `/picm-optimize` | Agent-facing instructions or context are repetitive, diffuse, or hard to navigate. | Outcome-preserving optimization of agent-facing documentation only. |
 | `/picm-help` | You want command help. | Explains syntax, examples, installation, and safety behavior. |
 
-Arguments are optional conversational input, not required flags; bare commands remain valid. Full syntax is `/picm-adopt [coding | adoption request]` and `/picm-maintain [strict | balanced | coding | routing | handoffs | stale-context | security | trace "drift symptom"]`. In interactive Pi, type a space after `/picm-adopt` or `/picm-maintain` to see argument completions.
+Arguments are optional conversational input, not required flags; bare commands remain valid. Full syntax is `/picm-adopt [coding | adoption request]` and `/picm-maintain [strict | balanced] [coding | routing | handoffs | stale-context | security | trace "drift symptom"]`. In interactive Pi, type a space after `/picm-adopt` or `/picm-maintain` to see argument completions.
 
 Examples:
 

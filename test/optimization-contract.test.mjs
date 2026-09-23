@@ -117,6 +117,25 @@ test("optimization guide preserves unique constraints and user-controlled writes
   ]) assert.ok(guide.includes(signal), `missing preservation/approval signal: ${signal}`);
 });
 
+test("optimization applies an optional evidence-backed agent-document writing lens", () => {
+  const guide = read("skills/picm-factory/references/optimization-guide.md");
+  for (const signal of [
+    "### Agent-document writing lens",
+    "Use this optional lens after the preservation ledger",
+    "not to impose a house style or create new obligations",
+    "**Context pointers:**",
+    "target and the condition for reading it clear",
+    "Do not hide stable prerequisites behind a pointer",
+    "**Information hierarchy:**",
+    "**Canonical home:**",
+    "visible, reachable, and sufficient for the local task",
+    "**Completion criteria:**",
+    "Do not invent requirements, verification, or human gates",
+    "**Pruning:**",
+    "Keep deliberately repeated safety, review, and local-boundary guidance",
+  ]) assert.ok(guide.includes(signal), `missing agent-document writing lens signal: ${signal}`);
+});
+
 test("optimization avoids unsupported claims and deferred infrastructure", () => {
   const guide = read("skills/picm-factory/references/optimization-guide.md");
   for (const signal of [
@@ -135,6 +154,7 @@ test("skill, backing prompt, help, README, and shared review protocol stay synch
       "references/optimization-guide.md",
       "No worthwhile optimizations found",
       "compare claims across every inspected agent-facing document",
+      "consider the guide's optional agent-document writing lens",
     ],
     "prompts/picm-optimize.md": [
       "Command: /picm-optimize",

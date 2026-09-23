@@ -66,6 +66,16 @@ Identify opportunities before drafting edits. A useful opportunity needs visible
 - reorganizing guidance across files when the expected agent outcome is preserved or improved and every moved constraint remains reachable;
 - separating stable instructions from background reference or examples when this clarifies use.
 
+### Agent-document writing lens
+
+Use this optional lens after the preservation ledger to find evidence-backed opportunities, not to impose a house style or create new obligations. Preserve scope, precedence, exceptions, and independently necessary local guidance.
+
+- **Context pointers:** when a document directs an agent elsewhere, make the target and the condition for reading it clear. Do not hide stable prerequisites behind a pointer.
+- **Information hierarchy:** keep instructions and constraints needed for every relevant task near their execution point; progressively disclose only conditional background, reference, or examples behind a reachable pointer.
+- **Canonical home:** consolidate genuinely equivalent guidance only when a visible authoritative home is supported. Replace copies with thin pointers only when the target is visible, reachable, and sufficient for the local task.
+- **Completion criteria:** clarify how an existing procedure's intended result can be recognized. Do not invent requirements, verification, or human gates that the visible guidance does not support.
+- **Pruning:** remove true duplication, stale caches of easy-to-find facts, and instructions that do not change the expected agent behavior. Keep deliberately repeated safety, review, and local-boundary guidance.
+
 Do not treat repeated safety, approval, command, verification, or local-boundary reminders as redundant merely because wording overlaps. Repetition may be intentional at an independent working-directory or handoff boundary. Do not manufacture edits for short, clear, intentionally local, or already well-routed docs.
 
 Before concluding that no useful opportunity exists, compare the visible source-of-truth claims across every inspected agent-facing document. A contradiction, or a repeated claim with no visible canonical home, is evidence for a proposal: identify the canonical home when supported, or propose a thin pointer or a user decision when it is not. Do not call the flow a no-op merely because the evidence spans multiple documents.
