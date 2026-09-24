@@ -10,7 +10,7 @@ const CONVENTIONAL_SUBJECT_PATTERN =
 const BREAKING_FOOTER_PATTERN = /(?:^|\n)BREAKING(?: |-)CHANGE:\s*\S/im;
 const BUMP_PRIORITY = { patch: 1, minor: 2, major: 3 };
 const PINNED_INSTALL_PATTERN =
-  /(pi install(?: -l)? npm:@eyevanovich\/picm-factory@)(\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?)(?![0-9A-Za-z.+-])/g;
+  /(pi install(?: -l)? npm:@eyevanovich\/picm-factory@)(\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?)(?![0-9A-Za-z.+-])/g;
 
 function git(root, args) {
   return execFileSync("git", args, { cwd: root, encoding: "utf8" }).trim();

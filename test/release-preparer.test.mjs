@@ -181,7 +181,7 @@ test("requires every local and global install pin to match the current version",
     hasCurrentPinnedInstallVersions(
       [
         "pi install -l npm:@eyevanovich/picm-factory@0.3.0",
-        "pi install npm:@eyevanovich/picm-factory@0.3.0-beta.1",
+        "pi install npm:@eyevanovich/picm-factory@0.3.0-beta.1+build.2",
       ].join("\n"),
       current,
     ),
