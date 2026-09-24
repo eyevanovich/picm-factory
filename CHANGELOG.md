@@ -2,28 +2,6 @@
 
 All notable changes to PiCM Factory will be documented here.
 
-## [0.4.0] - 2026-09-23
-
-### Added
-
-- Add `/picm-optimize` for outcome-preserving improvements to agent-facing documentation only, with the same privacy review and exact proposal safeguards as other write flows.
-- Add summary-first proposal review for adoption, maintenance, optimization, and scaffolding: complete exact operation previews, optional per-file diff review, direct approval, and Git-checkpoint guidance for existing content.
-- Add phase-bound, privacy-first workflow controls that preserve exclusions across same-session resumes and require explicit admission before scanning a nested Git worktree.
-- Add Strict and Balanced one-run maintenance depths, interactive reminders, and a post-adoption option to run the initial maintenance pass.
-- Add Stage Pipeline placement guidance and receipt-derived Specialist Folder first-run guidance.
-
-### Changed
-
-- Harden PiCM writes by revalidating approved paths and expected content before mutation, applying batch operations individually, and reporting completed, unattempted, failed, or uncertain effects instead of automatic rollback.
-- Expand protected scan enforcement across Git ignore sources, persisted and session exclusions, symlinks, hard links, Git internals, and paths outside the active worktree.
-- Make scheduled maintenance advisory-only: legacy automatic schedules and Light presets remain readable but no longer dispatch without an interactive choice.
-
-### Fixed
-
-- Keep interactive scan and approval phases active across ordinary questions, preview-only requests, and eligible same-session continuations.
-- Offer exact, optional `.gitignore` guidance for local-only input and sensitive non-Git adoption findings without writing it automatically.
-- Clarify and enforce the fresh-phase re-entry sequence for explicitly admitted submodules and nested worktrees.
-
 ## [0.3.1] - 2026-07-27
 
 ### Fixed
