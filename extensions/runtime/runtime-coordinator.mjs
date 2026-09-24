@@ -1,24 +1,39 @@
 import { randomUUID } from "node:crypto";
 import { realpathSync } from "node:fs";
-import { isAbsolute, relative, resolve, sep } from "node:path";
+import { relative, resolve, sep } from "node:path";
 import { createGitReadGate } from "./git-read-gate.mjs";
 import { createMaintenanceConfigStore } from "./maintenance-config-store.mjs";
 import { createMaintenanceController } from "./maintenance-controller.mjs";
 import { mergePrivacyExcludedPaths } from "./privacy-policy.mjs";
+import {
+  createScaffoldApprovalRuntime,
+  isUnverifiedCheckpointAcknowledgement,
+} from "./scaffold-approval.mjs";
+import { createWorkflowLifecycle } from "./workflow-lifecycle.mjs";
+import {
+  activateContinuation,
+  clearContinuation,
+  hasActiveContinuation,
+  hasEligibleContinuationResults,
+  retainEligibleContinuation,
+  unattemptedOperationIndexes,
+} from "./approval-runtime.mjs";
 import { identifyLayoutProfile } from "./layout-profile.mjs";
 import {
   applyProposalBatch,
   prepareProposalBatch,
   proposalAudit,
+  proposalHasExistingContentRisk,
   proposalSummary,
 } from "./proposal-batch.mjs";
 import {
   hasUnresolvedSpecialistPlaceholder,
+  isLocalSpecialistRoute,
   parseSpecialistFirstRunRecipe,
 } from "./specialist-first-run-guidance.mjs";
 
-const EXPLICIT_SCAN_COMMANDS = new Set(["picm-new", "picm-adopt", "picm-maintain", "picm-optimize"]);
 const GUARDED_PATH_TOOLS = new Set(["read", "edit", "write", "grep", "rg", "find", "ls"]);
+const TERMINAL_PROPOSAL_STATUSES = new Set(["applied", "failed", "aborted", "cancelled", "revision-required"]);
 const NEW_WORKFLOW_ARCHITECTURE_FILES = new Set([
   "AGENTS.md",
   "CLAUDE.md",
@@ -29,17 +44,6 @@ const NEW_WORKFLOW_ARCHITECTURE_FILES = new Set([
   "examples.md",
 ]);
 const NEW_WORKFLOW_ARCHITECTURE_DIRECTORIES = ["workflows", "reference", "stages"];
-const NEW_WORKFLOW_INTENTS = new Set(["add-replace", "adopt-existing", "cancelled"]);
-
-function directNewWorkflowIntent(text) {
-  const reply = typeof text === "string"
-    ? text.trim().toLowerCase().replace(/[.!]+$/g, "")
-    : "";
-  if (reply === "adopt existing" || reply === "adopt-existing") return "adopt-existing";
-  if (reply === "add/replace scaffold" || reply === "add-replace") return "add-replace";
-  if (reply === "cancel") return "cancel";
-  return undefined;
-}
 
 function candidatesRelativeToWorkspace(candidates, worktree, cwd) {
   let canonicalWorktree = worktree;
@@ -83,207 +87,171 @@ function hasCompletedPicmSetup(config) {
   );
 }
 
-function isLocalSpecialistRoute(value) {
-  return typeof value === "string" && value.trim() === value && value !== "" &&
-    !isAbsolute(value) && !value.split(/[\\/]/).includes("..");
-}
-
 export function createRuntimeCoordinator({
   packageRoot,
   canonicalPackageRoot,
   pathBindingLimits,
   createConfigStore = createMaintenanceConfigStore,
+  createGitGate = createGitReadGate,
   policyPreviewTtlMs = 10 * 60 * 1000,
   maxPolicyPreviews = 32,
 } = {}) {
   const runtimes = new Map();
-  const scanWorkflows = new Map();
-  const activeScans = new Map();
   const scanControlQueues = new Map();
   const policyPreviews = new Map();
-  const activeToolBindings = new Map();
+  const issuedPathBindings = new Map();
   const proposalBatches = new Map();
+  const scaffoldApproval = createScaffoldApprovalRuntime();
+  const canonicalWorkspace = (cwd) => {
+    try { return realpathSync(cwd); } catch { return resolve(cwd); }
+  };
+  const lifecycle = createWorkflowLifecycle({ canonicalizeWorkspace: canonicalWorkspace });
 
   const sessionIdFor = (ctx) =>
     ctx.sessionManager?.getSessionId?.() ??
     ctx.sessionManager?.getSessionFile?.() ??
     ctx.sessionManager ??
     ctx;
+  const workflowScopeFor = (ctx) => ({
+    sessionId: sessionIdFor(ctx),
+    workspace: canonicalWorkspace(ctx.cwd),
+    cwd: ctx.cwd,
+  });
 
-  function workflowFor(ctx) {
-    const sessionId = sessionIdFor(ctx);
-    const workflow = scanWorkflows.get(sessionId);
-    const scan = activeScans.get(sessionId);
-    if ((workflow && workflow.cwd !== ctx.cwd) || (scan && scan.cwd !== ctx.cwd)) {
-      scanWorkflows.delete(sessionId);
-      activeScans.delete(sessionId);
-      proposalBatches.delete(sessionId);
-      return undefined;
-    }
-    return workflow;
+  function issuedBindingFor(sessionId, toolCallId) {
+    return issuedPathBindings.get(sessionId)?.get(toolCallId);
   }
 
-  function clearActiveScan(ctx) {
-    const sessionId = sessionIdFor(ctx);
-    if (activeScans.get(sessionId)?.cwd === ctx.cwd) activeScans.delete(sessionId);
+  function revokeIssuedBinding(issued, { afterExecution = false } = {}) {
+    if (!issued || issued.state === "revoked" || (issued.state === "executing" && !afterExecution)) return;
+    issued.state = "revoked";
+    try { issued.binding.release(); } catch {}
+    issued.binding = undefined;
+  }
+
+  function clearIssuedBinding(issued) {
+    const bindings = issuedPathBindings.get(issued.sessionId);
+    if (!bindings || bindings.get(issued.toolCallId) !== issued) return;
+    bindings.delete(issued.toolCallId);
+    if (bindings.size === 0) issuedPathBindings.delete(issued.sessionId);
+  }
+
+  function releaseBinding(scope, toolCallId) {
+    if (typeof toolCallId !== "string") return;
+    const issued = issuedBindingFor(scope.sessionId, toolCallId);
+    if (issued?.scope === scope) revokeIssuedBinding(issued);
+  }
+
+  function releaseBindings(scope) {
+    const bindings = issuedPathBindings.get(scope.sessionId);
+    if (!bindings) return;
+    for (const issued of bindings.values()) {
+      if (issued.scope === scope) revokeIssuedBinding(issued);
+    }
+  }
+
+  function revokeScaffoldMutationBindings(scope) {
+    const bindings = issuedPathBindings.get(scope.sessionId);
+    if (!bindings) return;
+    for (const issued of bindings.values()) {
+      if (issued.scope !== scope || !issued.scaffoldMutation || issued.state !== "active") continue;
+      revokeIssuedBinding(issued);
+      scaffoldApproval.release(scope, issued.toolCallId);
+    }
+  }
+
+  function revokeAuthority(scope) {
+    if (!scope) return;
+    proposalBatches.delete(scope);
+    scaffoldApproval.clear(scope);
+    releaseBindings(scope);
+    for (const [previewId, preview] of policyPreviews) {
+      if (preview.scope === scope) policyPreviews.delete(previewId);
+    }
+  }
+
+  function workflowFor(ctx) {
+    const scope = workflowScopeFor(ctx);
+    const workflow = lifecycle.current(scope);
+    if (workflow) return workflow;
+    const stale = lifecycle.currentForSession(scope.sessionId);
+    if (stale && stale.scope.workspace !== scope.workspace) {
+      lifecycle.removeForSession(scope.sessionId);
+      revokeAuthority(stale.scope);
+    }
+    return undefined;
+  }
+
+  function authorityScopeFor(ctx) {
+    const workflow = workflowFor(ctx);
+    return workflow?.scope ?? lifecycle.scopeFor(workflowScopeFor(ctx));
   }
 
   function clearWorkflow(ctx) {
-    const sessionId = sessionIdFor(ctx);
-    const hadWorkflow = scanWorkflows.delete(sessionId);
-    const hadActiveScan = activeScans.delete(sessionId);
-    proposalBatches.delete(sessionId);
-    return hadWorkflow || hadActiveScan;
+    const scope = workflowScopeFor(ctx);
+    const workflow = lifecycle.removeForSession(scope.sessionId);
+    if (workflow) revokeAuthority(workflow.scope);
+    else revokeAuthority(lifecycle.scopeFor(scope));
+    return Boolean(workflow);
   }
 
   function workflowState(workflow) {
+    return lifecycle.serialize(workflow);
+  }
+
+  function nestedWorktreeAccessAdmission(workflow) {
+    return workflow ? lifecycle.submoduleAccessAdmission(workflow) : undefined;
+  }
+
+  function workflowGate(ctx, workflow) {
+    const gate = runtimeFor(ctx).gate;
     return {
-      cwd: workflow.cwd,
-      command: workflow.command,
-      preflightComplete: workflow.preflightComplete,
-      privacyReviewed: workflow.privacyReviewed,
-      privacyFollowupPending: workflow.privacyFollowupPending,
-      privacyQuestionIsConcise: workflow.privacyQuestionIsConcise,
-      scanStarted: workflow.scanStarted,
-      scanSettled: workflow.scanSettled,
-      maintenanceResetAttempted: workflow.maintenanceResetAttempted,
-      adoptionBaselineCaptured: workflow.adoptionBaselineCaptured,
-      adoptionWasAlreadyAdopted: workflow.adoptionWasAlreadyAdopted,
-      initialMaintenanceOffered: workflow.initialMaintenanceOffered,
-      initialIntent: workflow.initialIntent,
-      newWorkflowIntentRequired: workflow.newWorkflowIntentRequired,
-      newWorkflowIntent: workflow.newWorkflowIntent,
-      pendingNewWorkflowIntent: workflow.pendingNewWorkflowIntent,
-      pendingNewWorkflowIntentSource: workflow.pendingNewWorkflowIntentSource,
-      completed: workflow.completed,
-      excludedPaths: [...workflow.excludedPaths],
+      bindPath: gate.bindPath,
+      checkPath: (toolName, path, excludedPaths) => gate.checkPath(
+        toolName,
+        path,
+        excludedPaths,
+        nestedWorktreeAccessAdmission(workflow),
+      ),
     };
   }
 
+  function serializeWorkflow(ctx, status) {
+    const workflow = workflowFor(ctx);
+    return workflow ? { status, ...workflowState(workflow) } : undefined;
+  }
+
   function authorizeWorkflow(ctx, command, { initialIntent } = {}) {
-    const sessionId = sessionIdFor(ctx);
-    clearActiveScan(ctx);
-    proposalBatches.delete(sessionId);
-    const workflow = {
-      cwd: ctx.cwd,
-      command,
-      preflightComplete: false,
-      privacyReviewed: false,
-      privacyFollowupPending: false,
-      privacyQuestionIsConcise: false,
-      scanStarted: false,
-      scanSettled: false,
-      maintenanceResetAttempted: false,
-      adoptionBaselineCaptured: false,
-      adoptionWasAlreadyAdopted: true,
-      initialMaintenanceOffered: false,
-      initialIntent: command === "picm-new" && typeof initialIntent === "string" && initialIntent.trim()
-        ? initialIntent.trim()
-        : undefined,
-      newWorkflowIntentRequired: false,
-      newWorkflowIntent: undefined,
-      pendingNewWorkflowIntent: undefined,
-      pendingNewWorkflowIntentSource: undefined,
-      completed: false,
-      excludedPaths: [],
-      approvedWrites: new Map(),
-      specialistConfigWritten: false,
-      specialistConfig: undefined,
-      specialistConfigEdited: false,
-      specialistRouteSemantics: undefined,
-      specialistScaffoldApproved: false,
-    };
-    scanWorkflows.set(sessionId, workflow);
-    activeScans.delete(sessionId);
+    const scope = workflowScopeFor(ctx);
+    const previous = lifecycle.removeForSession(scope.sessionId);
+    if (previous) revokeAuthority(previous.scope);
+    revokeAuthority(lifecycle.scopeFor(scope));
+    const workflow = lifecycle.authorize(scope, command, { initialIntent });
     return workflowState(workflow);
   }
 
   function restoreWorkflow(ctx, state) {
+    const scope = workflowScopeFor(ctx);
+    const restoreScaffoldSentinel =
+      state?.status === "authorized" && state?.command === "picm-new";
     clearWorkflow(ctx);
-    if (
-      (state?.status !== "authorized" && state?.status !== "completed") ||
-      state.cwd !== ctx.cwd ||
-      !EXPLICIT_SCAN_COMMANDS.has(state.command)
-    ) {
-      return false;
-    }
-    const completed = state.status === "completed";
+    const completed = state?.status === "completed";
     let excludedPaths;
     try {
-      excludedPaths = mergePrivacyExcludedPaths(ctx.cwd, state.excludedPaths ?? []);
+      excludedPaths = mergePrivacyExcludedPaths(ctx.cwd, state?.excludedPaths ?? []);
     } catch {
       if (!completed) return false;
       excludedPaths = [];
     }
-    const completeState =
-      typeof state.preflightComplete === "boolean" &&
-      typeof state.privacyReviewed === "boolean" &&
-      typeof state.scanStarted === "boolean" &&
-      typeof state.scanSettled === "boolean" &&
-      typeof state.maintenanceResetAttempted === "boolean" &&
-      Array.isArray(state.excludedPaths);
-    const preflightComplete = completeState && state.preflightComplete;
-    const privacyFollowupPending = preflightComplete && state.privacyFollowupPending === true;
-    const privacyReviewed = preflightComplete && state.privacyReviewed && !privacyFollowupPending;
-    const privacyQuestionIsConcise =
-      preflightComplete && !privacyReviewed && state.privacyQuestionIsConcise === true;
-    scanWorkflows.set(sessionIdFor(ctx), {
-      cwd: ctx.cwd,
-      command: state.command,
-      preflightComplete,
-      privacyReviewed,
-      privacyFollowupPending,
-      privacyQuestionIsConcise,
-      scanStarted: privacyReviewed && state.scanStarted === true,
-      scanSettled: privacyReviewed && state.scanStarted === true && state.scanSettled === true,
-      maintenanceResetAttempted:
-        privacyReviewed && state.maintenanceResetAttempted === true,
-      adoptionBaselineCaptured:
-        state.command === "picm-adopt" &&
-        (state.adoptionBaselineCaptured === true ||
-          (state.adoptionBaselineCaptured === undefined &&
-            typeof state.adoptionWasAlreadyAdopted === "boolean")),
-      adoptionWasAlreadyAdopted:
-        state.command === "picm-adopt" ? state.adoptionWasAlreadyAdopted !== false : true,
-      initialMaintenanceOffered:
-        state.command === "picm-adopt" && state.initialMaintenanceOffered === true,
-      initialIntent: typeof state.initialIntent === "string" && state.initialIntent.trim()
-        ? state.initialIntent.trim()
-        : undefined,
-      newWorkflowIntentRequired:
-        state.command === "picm-new" && state.newWorkflowIntentRequired === true,
-      newWorkflowIntent:
-        typeof state.newWorkflowIntent === "string" && NEW_WORKFLOW_INTENTS.has(state.newWorkflowIntent)
-          ? state.newWorkflowIntent
-          : undefined,
-      pendingNewWorkflowIntent:
-        state.command === "picm-new" &&
-        state.newWorkflowIntentRequired === true &&
-        state.pendingNewWorkflowIntentSource === "direct-user-reply" &&
-        directNewWorkflowIntent(state.pendingNewWorkflowIntent) === state.pendingNewWorkflowIntent
-          ? state.pendingNewWorkflowIntent
-          : undefined,
-      pendingNewWorkflowIntentSource:
-        state.command === "picm-new" &&
-        state.newWorkflowIntentRequired === true &&
-        state.pendingNewWorkflowIntentSource === "direct-user-reply" &&
-        directNewWorkflowIntent(state.pendingNewWorkflowIntent) === state.pendingNewWorkflowIntent
-          ? "direct-user-reply"
-          : undefined,
-      completed,
-      excludedPaths,
-      approvedWrites: new Map(),
-      specialistConfigWritten: false,
-      specialistConfig: undefined,
-      specialistConfigEdited: false,
-      specialistRouteSemantics: undefined,
-      specialistScaffoldApproved: false,
-    });
-    return true;
+    const workflow = lifecycle.restore(scope, { ...state, normalizedExcludedPaths: excludedPaths });
+    if (workflow && restoreScaffoldSentinel && workflow.command === "picm-new") {
+      scaffoldApproval.replaceWithInvalidatedSentinel(workflow.scope);
+    }
+    return Boolean(workflow);
   }
 
-  function requireCurrentWorkflow(sessionId, workflow) {
-    if (scanWorkflows.get(sessionId) !== workflow || workflow.completed) {
+  function requireCurrentWorkflow(_sessionId, workflow) {
+    if (!lifecycle.isCurrent(workflow) || workflow.terminal.completed) {
       throw new Error("PICM_SCAN_STALE: workflow changed or completed while the scan action was running");
     }
   }
@@ -300,6 +268,13 @@ export function createRuntimeCoordinator({
     const { action, path, excludedPaths = [], persist = false } = params;
     const sessionId = sessionIdFor(ctx);
     const workflow = workflowFor(ctx);
+    if (action === "cancel") {
+      clearWorkflow(ctx);
+      return {
+        ok: true, action, cancelled: true, authorized: false, active: false, completed: false,
+        message: "Workflow cancelled. Completed changes remain; cancellation does not record maintenance completion.",
+      };
+    }
     if (workflow?.scanSettled && !workflow.completed && action !== "begin" && action !== "complete" && action !== "new-intent") {
       throw new Error("PICM_SCAN_SETTLED: after ending a scan, only begin for the next phase, record a pending new-workflow intent, or complete is allowed");
     }
@@ -312,26 +287,20 @@ export function createRuntimeCoordinator({
       }
       const details = await runtimeFor(ctx).gate.preflight();
       requireCurrentWorkflow(sessionId, workflow);
-      workflow.preflightComplete = true;
-      workflow.privacyReviewed = false;
-      workflow.privacyFollowupPending = false;
-      workflow.privacyQuestionIsConcise = false;
-      workflow.scanStarted = false;
-      workflow.scanSettled = false;
+      lifecycle.transition(workflow, "preflight-complete");
       if (workflow.command === "picm-maintain" || workflow.command === "picm-optimize") {
-        const current = await runtimeFor(ctx).store.readPrivacyForReview();
+        const current = await runtimeFor(ctx).store.privacyBootstrap.read();
         requireCurrentWorkflow(sessionId, workflow);
         if (!current.ok) throw new Error(`${current.code}: ${current.message}`);
-        if (Array.isArray(current.privacy?.excludedPaths)) {
-          workflow.excludedPaths = mergePrivacyExcludedPaths(
-            ctx.cwd,
-            workflow.excludedPaths,
-            current.privacy.excludedPaths,
-          );
-          workflow.privacyFollowupPending = true;
-        }
-        workflow.privacyQuestionIsConcise =
-          workflow.privacyFollowupPending || hasCompletedPicmSetup(current.config);
+        const persistedExcludedPaths = Array.isArray(current.privacy?.excludedPaths)
+          ? mergePrivacyExcludedPaths(ctx.cwd, workflow.privacy.excludedPaths, current.privacy.excludedPaths)
+          : workflow.privacy.excludedPaths;
+        lifecycle.transition(workflow, "preflight-complete", {
+          excludedPaths: persistedExcludedPaths,
+          privacyFollowupPending: Array.isArray(current.privacy?.excludedPaths),
+          privacyQuestionIsConcise:
+            Array.isArray(current.privacy?.excludedPaths) || Boolean(current.completedSetup),
+        });
       }
       return {
         ok: true,
@@ -350,7 +319,7 @@ export function createRuntimeCoordinator({
         throw new Error("PICM_PREFLIGHT_INCOMPLETE: complete picm_scan_control preflight before privacy review");
       }
       const store = runtimeFor(ctx).store;
-      const current = await store.readPrivacyForReview();
+      const current = await store.privacyBootstrap.read();
       requireCurrentWorkflow(sessionId, workflow);
       if (!current.ok) throw new Error(`${current.code}: ${current.message}`);
       const additions = mergePrivacyExcludedPaths(ctx.cwd, excludedPaths);
@@ -384,29 +353,24 @@ export function createRuntimeCoordinator({
             message: "No privacy settings were changed and scan privacy review remains incomplete",
           };
         }
-        const update = await store.compareAndUpdatePrivacyForReview(current.privacy, nextPrivacy);
+        const update = await store.privacyBootstrap.compareAndUpdate(current.privacy, nextPrivacy);
         requireCurrentWorkflow(sessionId, workflow);
         if (!update.ok) throw new Error(`${update.code}: ${update.message}`);
         if (update.conflict) throw new Error(`${update.code}: ${update.message}`);
         persistedPrivacy = nextPrivacy;
         configChanged = update.changed;
       }
-      if (workflow.command === "picm-adopt" && !workflow.adoptionBaselineCaptured) {
-        workflow.adoptionWasAlreadyAdopted = current.config?.adoption?.status === "adopted";
-        workflow.adoptionBaselineCaptured = true;
-      }
-      workflow.excludedPaths = mergePrivacyExcludedPaths(
-        ctx.cwd,
-        workflow.excludedPaths,
-        persistedPrivacy?.excludedPaths ?? [],
-        additions,
-      );
-      workflow.privacyReviewed = true;
-      workflow.privacyFollowupPending = false;
-      workflow.privacyQuestionIsConcise = false;
-      workflow.scanStarted = false;
-      workflow.scanSettled = false;
-      clearActiveScan(ctx);
+      lifecycle.transition(workflow, "privacy-reviewed", {
+        excludedPaths: mergePrivacyExcludedPaths(
+          ctx.cwd,
+          workflow.privacy.excludedPaths,
+          persistedPrivacy?.excludedPaths ?? [],
+          additions,
+        ),
+        captureAdoptionBaseline: workflow.command === "picm-adopt" && !workflow.adoption.baselineCaptured,
+        wasAlreadyAdopted: current.completedSetup === "adopted",
+      });
+      invalidatePhaseAuthority(workflow.scope);
       return {
         ok: true,
         action,
@@ -430,7 +394,7 @@ export function createRuntimeCoordinator({
       if (workflow.pendingNewWorkflowIntent !== params.intent) {
         throw new Error("PICM_NEW_INTENT_NOT_CONFIRMED: record only the directly observed user choice for this existing architecture");
       }
-      if (!workflow.scanStarted || !workflow.scanSettled || activeScans.get(sessionId)?.cwd === ctx.cwd) {
+      if (!workflow.phase.scanStarted || !workflow.phase.scanSettled || workflow.phase.active) {
         throw new Error("PICM_SCAN_NOT_SETTLED: end the existing-architecture discovery scan before recording its intent");
       }
       if (params.intent !== "add-replace" && params.intent !== "adopt-existing" && params.intent !== "cancel") {
@@ -446,16 +410,11 @@ export function createRuntimeCoordinator({
         adoptionWasAlreadyAdopted = current.config?.adoption?.status === "adopted";
       }
 
-      workflow.newWorkflowIntentRequired = false;
-      workflow.newWorkflowIntent = selectedIntent;
-      workflow.pendingNewWorkflowIntent = undefined;
-      workflow.pendingNewWorkflowIntentSource = undefined;
-
-      if (selectedIntent === "adopt-existing") {
-        workflow.command = "picm-adopt";
-        workflow.adoptionBaselineCaptured = true;
-        workflow.adoptionWasAlreadyAdopted = adoptionWasAlreadyAdopted;
-      }
+      lifecycle.transition(workflow, "select-new-intent", {
+        intent: params.intent,
+        wasAlreadyAdopted: adoptionWasAlreadyAdopted,
+      });
+      invalidatePhaseAuthority(workflow.scope);
 
       return {
         ok: true,
@@ -471,19 +430,31 @@ export function createRuntimeCoordinator({
       };
     }
     if (action === "inventory") {
-      const scan = activeScans.get(sessionId);
-      if (!workflow || scan?.cwd !== ctx.cwd) {
+      if (!workflow || !workflow.phase.active) {
         throw new Error("PICM_SCAN_NOT_ACTIVE: begin an explicitly authorized scan before requesting inventory");
       }
-      const inventory = await runtimeFor(ctx).gate.refreshInventory(path, scan.excludedPaths);
+      const inventoryAdmission = path === undefined
+        ? undefined
+        : lifecycle.submoduleInventoryAdmission(workflow, path);
+      const inventory = await runtimeFor(ctx).gate.refreshInventory(
+        path,
+        workflow.privacy.excludedPaths,
+        inventoryAdmission,
+      );
       requireCurrentWorkflow(sessionId, workflow);
+      if (inventoryAdmission) {
+        lifecycle.admitSubmodule(workflow, inventoryAdmission, inventory.worktree);
+      }
       const candidates = [...inventory.candidates].sort();
       const workspaceCandidates = candidatesRelativeToWorkspace(candidates, inventory.worktree, ctx.cwd);
+      const existingArchitectureCandidates = workspaceCandidates.filter((candidate) =>
+        !workflow.approvedWrites.has(resolve(workflow.scope.workspace, candidate)),
+      );
       let completedPicmSetup = false;
       if (
         workflow.command === "picm-new" &&
         !workflow.newWorkflowIntent &&
-        workspaceCandidates.includes(".picm/config.json")
+        existingArchitectureCandidates.includes(".picm/config.json")
       ) {
         const current = await runtimeFor(ctx).store.read();
         requireCurrentWorkflow(sessionId, workflow);
@@ -493,9 +464,9 @@ export function createRuntimeCoordinator({
       if (
         workflow.command === "picm-new" &&
         !workflow.newWorkflowIntent &&
-        (completedPicmSetup || hasExistingNewWorkflowArchitecture(workspaceCandidates))
+        (completedPicmSetup || hasExistingNewWorkflowArchitecture(existingArchitectureCandidates))
       ) {
-        workflow.newWorkflowIntentRequired = true;
+        lifecycle.transition(workflow, "require-new-intent");
       }
       return {
         ok: true,
@@ -508,7 +479,7 @@ export function createRuntimeCoordinator({
         candidates,
         layoutProfile: identifyLayoutProfile(workspaceCandidates),
         ...workflowState(workflow),
-        excludedPaths: [...scan.excludedPaths],
+        excludedPaths: [...workflow.privacy.excludedPaths],
       };
     }
     if (action === "begin") {
@@ -530,24 +501,19 @@ export function createRuntimeCoordinator({
       const config = await runtimeFor(ctx).store.read();
       requireCurrentWorkflow(sessionId, workflow);
       if (!config.ok) throw new Error(`${config.code}: ${config.message}`);
-      workflow.excludedPaths = mergePrivacyExcludedPaths(
-        ctx.cwd,
-        workflow.excludedPaths,
-        config.privacy?.excludedPaths ?? [],
-      );
-      workflow.scanStarted = true;
-      workflow.scanSettled = false;
-      activeScans.set(sessionId, {
-        cwd: ctx.cwd,
-        excludedPaths: [...workflow.excludedPaths],
+      lifecycle.transition(workflow, "begin-scan", {
+        excludedPaths: mergePrivacyExcludedPaths(
+          ctx.cwd,
+          workflow.privacy.excludedPaths,
+          config.privacy?.excludedPaths ?? [],
+        ),
       });
     } else if (action === "end") {
-      const scan = activeScans.get(sessionId);
-      if (!workflow || scan?.cwd !== ctx.cwd) {
+      if (!workflow || !workflow.phase.active) {
         throw new Error("PICM_SCAN_NOT_ACTIVE: begin an explicitly authorized scan before ending it");
       }
-      clearActiveScan(ctx);
-      workflow.scanSettled = true;
+      lifecycle.transition(workflow, "end-scan");
+      invalidatePhaseAuthority(workflow.scope);
     } else if (action === "complete") {
       if (!workflow) {
         throw new Error("PICM_SCAN_NOT_AUTHORIZED: invoke and finish a privacy-reviewed PiCM workflow before completion");
@@ -561,15 +527,12 @@ export function createRuntimeCoordinator({
       if (!workflow.scanStarted) {
         throw new Error("PICM_SCAN_NOT_STARTED: begin the privacy-reviewed scan before completion");
       }
-      if (!workflow.scanSettled || activeScans.get(sessionId)?.cwd === ctx.cwd) {
+      if (!workflow.scanSettled || workflow.phase.active) {
         throw new Error("PICM_SCAN_NOT_SETTLED: end the active privacy-reviewed scan before completion");
       }
       if (workflow.command === "picm-new" && workflow.newWorkflowIntentRequired) {
         if (workflow.pendingNewWorkflowIntent === "cancel") {
-          workflow.newWorkflowIntentRequired = false;
-          workflow.newWorkflowIntent = "cancelled";
-          workflow.pendingNewWorkflowIntent = undefined;
-          workflow.pendingNewWorkflowIntentSource = undefined;
+          lifecycle.transition(workflow, "complete-pending-cancel");
         } else {
           throw new Error("PICM_NEW_INTENT_PENDING: record the user's existing-architecture intent before completing /picm-new");
         }
@@ -598,13 +561,14 @@ export function createRuntimeCoordinator({
               active: false,
             };
           }
-          workflow.maintenanceResetAttempted = true;
+          lifecycle.transition(workflow, "maintenance-reset-committed");
           maintenanceResetCommitted = true;
         }
         if (!maintenanceResetCommitted) throwIfAborted(execution.signal, "PICM_SCAN_ABORTED");
-        workflow.completed = true;
+        lifecycle.transition(workflow, "complete");
+        revokeAuthority(workflow.scope);
       }
-      clearActiveScan(ctx);
+
       return {
         ok: true,
         action,
@@ -616,12 +580,11 @@ export function createRuntimeCoordinator({
       };
     }
     const current = workflowFor(ctx);
-    const active = activeScans.get(sessionIdFor(ctx));
     return {
       ok: true,
       action,
       authorized: Boolean(current) && !current.completed,
-      active: active?.cwd === ctx.cwd,
+      active: current?.phase.active === true,
       ...(current ? workflowState(current) : {}),
     };
   }
@@ -658,31 +621,134 @@ export function createRuntimeCoordinator({
     return "pending";
   }
 
+  function hasProposalAcknowledgement(current) {
+    return current.acknowledgement?.proposalId === current.batch.id &&
+      current.acknowledgement.digest === current.batch.digest;
+  }
+
+  function clearProposalAcknowledgement(scope) {
+    const current = proposalBatches.get(scope);
+    if (current) current.acknowledgement = undefined;
+  }
+
+  function clearCheckpointAcknowledgements(scope) {
+    scaffoldApproval.clearAcknowledgement(scope);
+    revokeScaffoldMutationBindings(scope);
+    clearProposalAcknowledgement(scope);
+  }
+
+  function invalidatePhaseAuthority(scope) {
+    releaseBindings(scope);
+    clearCheckpointAcknowledgements(scope);
+    scaffoldApproval.invalidate(scope);
+    invalidatePhaseProposal(scope);
+  }
+
+  function finaliseProposal(current, status) {
+    current.status = status;
+    current.acknowledgement = undefined;
+    clearContinuation(current);
+  }
+
+  function proposalContinuationOptions(scope, current) {
+    return {
+      proposalIdentity: current.batch.id,
+      proposalDigest: current.batch.digest,
+      scopeIdentity: scope.identity,
+    };
+  }
+
+  function retainProposalContinuation(scope, current, results) {
+    current.results = structuredClone(results);
+    if (hasEligibleContinuationResults(results)) {
+      current.status = "aborted";
+      retainEligibleContinuation(current, results, proposalContinuationOptions(scope, current));
+      return current.continuation?.state === "eligible";
+    }
+    return false;
+  }
+
+  function invalidatePhaseProposal(scope) {
+    const current = proposalBatches.get(scope);
+    if (!current) return;
+    finaliseProposal(current, "revision-required");
+    current.presentation = undefined;
+  }
+
+  function hasCurrentPresentation(current) {
+    return current.presentation?.proposalId === current.batch.id &&
+      current.presentation.digest === current.batch.digest;
+  }
+
+  function isContinuationRequest(prompt) {
+    return typeof prompt === "string" && prompt.trim().toLowerCase() === "continue";
+  }
+
   function observeProposalResponse(ctx, prompt) {
-    const sessionId = sessionIdFor(ctx);
-    const current = proposalBatches.get(sessionId);
-    if (!current || current.cwd !== ctx.cwd || current.status === "applied") return undefined;
+    const workflow = workflowFor(ctx);
+    const current = workflow ? proposalBatches.get(workflow.scope) : undefined;
+    if (!current) return undefined;
     const status = proposalResponseStatus(prompt);
-    if (!current.presentation && status === "approved") {
+    if (status === "cancelled" || status === "revision-required") {
+      if (
+        current.continuation?.state === "eligible" ||
+        current.status === "continuation-active" ||
+        !TERMINAL_PROPOSAL_STATUSES.has(current.status)
+      ) {
+        finaliseProposal(current, status);
+        return proposalAudit(current.batch, "approval-observed", { approval: current.status });
+      }
+      return undefined;
+    }
+    if (isContinuationRequest(prompt)) {
+      const continuation = activateContinuation(
+        current,
+        current.results,
+        proposalContinuationOptions(workflow.scope, current),
+      );
+      if (continuation) {
+        current.status = "continuation-active";
+        return proposalAudit(current.batch, "approval-observed", { approval: "continuation-active" });
+      }
+      if (current.continuation?.state === "active") {
+        finaliseProposal(current, "revision-required");
+        return proposalAudit(current.batch, "approval-observed", { approval: current.status });
+      }
+      return undefined;
+    }
+    if (
+      TERMINAL_PROPOSAL_STATUSES.has(current.status) ||
+      current.status === "continuation-active" ||
+      current.status === "applying"
+    ) return undefined;
+    if (isUnverifiedCheckpointAcknowledgement(prompt)) {
+      if (hasCurrentPresentation(current)) {
+        current.status = "pending";
+        current.acknowledgement = {
+          proposalId: current.batch.id,
+          digest: current.batch.digest,
+        };
+      }
+      return proposalAudit(current.batch, "approval-observed", { approval: current.status });
+    }
+    if (!hasCurrentPresentation(current) && status === "approved") {
       return proposalAudit(current.batch, "approval-observed", { approval: "pending" });
     }
     if (status === "approved" && current.status === "pending") current.status = "approved";
-    else if (status !== "pending") current.status = status;
     else if (current.status !== "revision-required" && current.status !== "cancelled") current.status = "pending";
     return proposalAudit(current.batch, "approval-observed", { approval: current.status });
   }
 
   function activeProposalWorkflow(ctx) {
     const workflow = workflowFor(ctx);
-    const scan = activeScans.get(sessionIdFor(ctx));
     if (
       !workflow ||
-      scan?.cwd !== ctx.cwd ||
+      !workflow.phase.active ||
       (workflow.command !== "picm-adopt" && workflow.command !== "picm-maintain")
     ) {
       return undefined;
     }
-    return { workflow, scan };
+    return workflow;
   }
 
   async function runProposalBatch(ctx, params, execution = {}) {
@@ -694,21 +760,23 @@ export function createRuntimeCoordinator({
         message: "Begin an active /picm-adopt or /picm-maintain scan before preparing or applying a proposal batch",
       };
     }
-    const { workflow, scan } = active;
+    const workflow = active;
     const sessionId = sessionIdFor(ctx);
     if (params.action === "prepare") {
       const batch = await prepareProposalBatch({
-        gate: runtimeFor(ctx).gate,
-        excludedPaths: scan.excludedPaths,
+        gate: workflowGate(ctx, workflow),
+        excludedPaths: workflow.privacy.excludedPaths,
         operations: params.operations,
       });
       requireCurrentWorkflow(sessionId, workflow);
-      proposalBatches.set(sessionId, {
-        cwd: ctx.cwd,
-        command: workflow.command,
+      proposalBatches.set(workflow.scope, {
+        acknowledgement: undefined,
         batch,
-        status: "pending",
+        command: workflow.command,
+        continuation: undefined,
         presentation: undefined,
+        results: undefined,
+        status: "pending",
       });
       return {
         ok: true,
@@ -720,8 +788,8 @@ export function createRuntimeCoordinator({
       };
     }
 
-    const current = proposalBatches.get(sessionId);
-    if (!current || current.cwd !== ctx.cwd || current.command !== workflow.command) {
+    const current = proposalBatches.get(workflow.scope);
+    if (!current || current.command !== workflow.command) {
       return {
         ok: false,
         code: "PICM_PROPOSAL_NOT_PREPARED",
@@ -751,7 +819,9 @@ export function createRuntimeCoordinator({
         };
       }
       const summary = proposalSummary(current.batch);
-      const approvalPrompt = "Reply accept, approve, accept and write, or proceed to apply this exact proposal; otherwise request changes or cancel.";
+      const approvalPrompt = proposalHasExistingContentRisk(current.batch)
+        ? "A user-reported Git checkpoint or risk opt-out is not approval. For existing content, record one before direct approval. Reply accept, approve, accept and write, or proceed to apply this exact proposal; otherwise request changes or cancel."
+        : "Reply accept, approve, accept and write, or proceed to apply this exact proposal; otherwise request changes or cancel.";
       current.presentation = {
         proposalId: current.batch.id,
         digest: current.batch.digest,
@@ -769,7 +839,31 @@ export function createRuntimeCoordinator({
       };
     }
     if (params.action === "cancel") {
-      current.status = "cancelled";
+      if (current.status === "cancelled") {
+        return {
+          ok: true,
+          action: "cancel",
+          proposalId: current.batch.id,
+          audit: proposalAudit(current.batch, "cancelled", { command: workflow.command }),
+        };
+      }
+      if (current.continuation?.state === "eligible") {
+        finaliseProposal(current, "cancelled");
+        return {
+          ok: true,
+          action: "cancel",
+          proposalId: current.batch.id,
+          audit: proposalAudit(current.batch, "cancelled", { command: workflow.command }),
+        };
+      }
+      if (TERMINAL_PROPOSAL_STATUSES.has(current.status)) {
+        return {
+          ok: false,
+          code: "PICM_PROPOSAL_REPLACEMENT_REQUIRED",
+          message: "Prepare a replacement batch after the current proposal was resolved",
+        };
+      }
+      finaliseProposal(current, "cancelled");
       return {
         ok: true,
         action: "cancel",
@@ -780,41 +874,170 @@ export function createRuntimeCoordinator({
     if (params.action !== "apply") {
       throw new Error("PICM_PROPOSAL_INVALID: action must be prepare, present, apply, or cancel");
     }
-    if (current.status !== "approved") {
+    const continuing = current.status === "continuation-active" && hasActiveContinuation(
+      current,
+      proposalContinuationOptions(workflow.scope, current),
+    );
+    if (current.status !== "approved" && !continuing) {
       return {
         ok: false,
         code: "PICM_PROPOSAL_NOT_APPROVED",
-        message: "An unambiguous direct approval of the current exact proposal is required before applying it",
+        message: "An unambiguous direct approval of the current exact proposal or an eligible same-session continuation is required before applying it",
+      };
+    }
+    if (proposalHasExistingContentRisk(current.batch) && !hasProposalAcknowledgement(current)) {
+      return {
+        ok: false,
+        code: "PICM_PROPOSAL_CHECKPOINT_ACKNOWLEDGEMENT_REQUIRED",
+        message: "A user-reported Git checkpoint or the documented risk opt-out is required before applying this exact proposal to existing content",
       };
     }
 
+    const operationIndexes = continuing
+      ? unattemptedOperationIndexes(current.results)
+      : current.batch.operations.map((_operation, index) => index);
+    if (continuing && operationIndexes.length === 0) {
+      finaliseProposal(current, "revision-required");
+      return {
+        ok: false,
+        code: "PICM_PROPOSAL_REPLACEMENT_REQUIRED",
+        message: "The retained proposal has no exact unattempted operations to continue",
+      };
+    }
+    const batchToApply = continuing
+      ? {
+        ...current.batch,
+        operations: operationIndexes.map((index) => current.batch.operations[index]),
+        auditOperations: operationIndexes.map((index) => current.batch.auditOperations[index]),
+      }
+      : current.batch;
+    const mergeResults = (nextResults) => {
+      if (!continuing) return nextResults;
+      const merged = structuredClone(current.results);
+      for (const [index, result] of nextResults.entries()) merged[operationIndexes[index]] = result;
+      return merged;
+    };
+
     current.status = "applying";
+    const continuationIdentity = continuing ? current.continuation.identity : undefined;
+    let result;
     try {
       throwIfAborted(execution.signal, "PICM_PROPOSAL_ABORTED");
-      const persisted = await runtimeFor(ctx).store.readPrivacyForReview();
+      const persisted = await runtimeFor(ctx).store.privacyBootstrap.read();
+      requireCurrentWorkflow(sessionId, workflow);
       throwIfAborted(execution.signal, "PICM_PROPOSAL_ABORTED");
+      if (current.status !== "applying" || (continuing && current.continuation?.identity !== continuationIdentity)) {
+        return {
+          ok: false,
+          code: "PICM_PROPOSAL_REPLACEMENT_REQUIRED",
+          message: "The proposal changed or was cancelled before continuation mutation began",
+          action: "apply",
+          audit: proposalAudit(current.batch, current.status, { command: workflow.command }),
+        };
+      }
       if (!persisted.ok) throw new Error(`${persisted.code}: ${persisted.message}`);
       const applyExcludedPaths = mergePrivacyExcludedPaths(
         ctx.cwd,
-        scan.excludedPaths,
+        workflow.privacy.excludedPaths,
         persisted.privacy?.excludedPaths ?? [],
       );
-      const result = await applyProposalBatch(current.batch, {
-        gate: runtimeFor(ctx).gate,
+      result = await applyProposalBatch(batchToApply, {
+        gate: workflowGate(ctx, workflow),
         excludedPaths: applyExcludedPaths,
         signal: execution.signal,
       });
-      requireCurrentWorkflow(sessionId, workflow);
-      current.status = "applied";
+      const results = mergeResults(result.results);
+      const response = continuing
+        ? { ...result, operations: current.batch.auditOperations, results }
+        : { ...result, results };
+      if (!result.ok) {
+        const aborted = result.code === "PICM_PROPOSAL_ABORTED";
+        const status = aborted ? "aborted" : "failed";
+        if (!lifecycle.isCurrent(workflow)) {
+          return {
+            ...response,
+            action: "apply",
+            code: "PICM_SCAN_STALE",
+            message: "PICM_SCAN_STALE: workflow changed or completed while the scan action was running",
+            audit: proposalAudit(current.batch, status, {
+              command: workflow.command,
+              code: "PICM_SCAN_STALE",
+              results,
+            }),
+          };
+        }
+        if (aborted && !continuing && retainProposalContinuation(workflow.scope, current, results)) {
+          return {
+            ...response,
+            action: "apply",
+            audit: proposalAudit(current.batch, "aborted", {
+              command: workflow.command,
+              code: result.code,
+              results,
+            }),
+          };
+        }
+        finaliseProposal(current, status);
+        current.results = structuredClone(results);
+        return {
+          ...response,
+          action: "apply",
+          audit: proposalAudit(current.batch, current.status, {
+            command: workflow.command,
+            code: result.code,
+            results,
+          }),
+        };
+      }
+      if (!lifecycle.isCurrent(workflow)) {
+        return {
+          ...response,
+          ok: false,
+          code: "PICM_SCAN_STALE",
+          message: "PICM_SCAN_STALE: workflow changed or completed while the scan action was running",
+          action: "apply",
+          audit: proposalAudit(current.batch, "failed", {
+            command: workflow.command,
+            code: "PICM_SCAN_STALE",
+            results,
+          }),
+        };
+      }
+      finaliseProposal(current, "applied");
+      current.results = structuredClone(results);
       return {
-        ...result,
+        ...response,
         action: "apply",
-        audit: proposalAudit(current.batch, "applied", { command: workflow.command }),
+        audit: proposalAudit(current.batch, "applied", {
+          command: workflow.command,
+          results,
+        }),
       };
     } catch (error) {
       const failure = error instanceof Error ? error : new Error(String(error));
       const aborted = failure.code === "PICM_PROPOSAL_ABORTED";
-      current.status = aborted ? "aborted" : "failed";
+      if (!lifecycle.isCurrent(workflow)) {
+        failure.picmProposalAudit = proposalAudit(current.batch, aborted ? "aborted" : "failed", {
+          command: workflow.command,
+          ...(typeof failure.code === "string" ? { code: failure.code } : {}),
+        });
+        throw failure;
+      }
+      finaliseProposal(current, aborted ? "aborted" : "failed");
+      if (result?.ok) {
+        return {
+          ...result,
+          ok: false,
+          code: typeof failure.code === "string" ? failure.code : "PICM_PROPOSAL_APPLY_FAILED",
+          message: failure.message,
+          action: "apply",
+          audit: proposalAudit(current.batch, current.status, {
+            command: workflow.command,
+            ...(typeof failure.code === "string" ? { code: failure.code } : {}),
+            results: result.results,
+          }),
+        };
+      }
       failure.picmProposalAudit = proposalAudit(current.batch, current.status, {
         command: workflow.command,
         ...(typeof failure.code === "string" ? { code: failure.code } : {}),
@@ -830,7 +1053,7 @@ export function createRuntimeCoordinator({
   function runtime(cwd) {
     let value = runtimes.get(cwd);
     if (!value) {
-      const gate = createGitReadGate({
+      const gate = createGitGate({
         cwd,
         packageRoot,
         canonicalPackageRoot,
@@ -856,13 +1079,8 @@ export function createRuntimeCoordinator({
 
   async function dispose(ctx) {
     clearWorkflow(ctx);
+    revokeAuthority(authorityScopeFor(ctx));
     const sessionId = sessionIdFor(ctx);
-    for (const [key, binding] of activeToolBindings) {
-      if (key.startsWith(`${sessionId}:`)) {
-        activeToolBindings.delete(key);
-        try { binding.release(); } catch {}
-      }
-    }
     const value = runtimes.get(ctx.cwd);
     value?.sessions.delete(sessionId);
     if (value?.sessions.size === 0) {
@@ -886,6 +1104,7 @@ export function createRuntimeCoordinator({
       return false;
     }
     const config = await runtimeFor(ctx).store.read();
+    requireCurrentWorkflow(sessionIdFor(ctx), workflow);
     return config.ok && isRecord(config.config) && isRecord(config.config.adoption) && config.config.adoption.status === "adopted";
   }
 
@@ -894,8 +1113,8 @@ export function createRuntimeCoordinator({
     if (!workflow || workflow.initialMaintenanceOffered || !await hasNewlyAdoptedStatus(ctx)) {
       return undefined;
     }
-    if (workflowFor(ctx) !== workflow || workflow.initialMaintenanceOffered) return undefined;
-    workflow.initialMaintenanceOffered = true;
+    if (!lifecycle.isCurrent(workflow) || workflow.initialMaintenanceOffered) return undefined;
+    lifecycle.transition(workflow, "claim-initial-maintenance");
     return workflowState(workflow);
   }
 
@@ -907,16 +1126,15 @@ export function createRuntimeCoordinator({
     if (!workflow.preflightComplete || !workflow.privacyReviewed) {
       throw new Error("PICM_PRIVACY_NOT_REVIEWED: complete adoption privacy review before starting initial maintenance");
     }
-    if (!workflow.scanStarted || !workflow.scanSettled || activeScans.get(sessionIdFor(ctx))?.cwd === ctx.cwd) {
+    if (!workflow.scanStarted || !workflow.scanSettled || workflow.phase.active) {
       throw new Error("PICM_SCAN_NOT_SETTLED: end the adoption scan before starting initial maintenance");
     }
     if (!workflow.initialMaintenanceOffered || !await hasNewlyAdoptedStatus(ctx)) {
       throw new Error("PICM_ADOPTION_CONTINUATION_UNAVAILABLE: finish an adopted workspace before starting initial maintenance");
     }
-    workflow.command = "picm-maintain";
-    workflow.scanStarted = false;
-    workflow.scanSettled = false;
-    workflow.maintenanceResetAttempted = false;
+    requireCurrentWorkflow(sessionIdFor(ctx), workflow);
+    lifecycle.transition(workflow, "continue-as-maintenance");
+    invalidatePhaseAuthority(workflow.scope);
     return workflowState(workflow);
   }
 
@@ -931,10 +1149,12 @@ export function createRuntimeCoordinator({
   function observeNewWorkflowIntentResponse(ctx, text) {
     const workflow = workflowFor(ctx);
     if (!workflow || workflow.command !== "picm-new" || !workflow.newWorkflowIntentRequired) return;
-    const observedIntent = directNewWorkflowIntent(text);
-    if (!observedIntent) return;
-    workflow.pendingNewWorkflowIntent = observedIntent;
-    workflow.pendingNewWorkflowIntentSource = "direct-user-reply";
+    try {
+      lifecycle.transition(workflow, "observe-new-intent", { intent: text });
+    } catch (error) {
+      if (!String(error?.message).includes("WORKFLOW_TRANSITION_INVALID")) throw error;
+      return undefined;
+    }
     return workflowState(workflow);
   }
 
@@ -951,17 +1171,68 @@ export function createRuntimeCoordinator({
 
   const currentWorkflowCommand = workflowCommand;
 
+  async function scaffoldProposal(ctx, operations) {
+    const workflow = workflowFor(ctx);
+    if (!workflow || workflow.command !== "picm-new") {
+      throw new Error("SCAFFOLD_PROPOSAL_UNAVAILABLE: invoke /picm-new first");
+    }
+    const sessionId = sessionIdFor(ctx);
+    const gate = workflowGate(ctx, workflow);
+    let existingContentAtRisk = false;
+    for (const operation of operations) {
+      if (typeof operation?.input?.path !== "string") continue;
+      const decision = await gate.checkPath(
+        operation.tool,
+        operation.input.path,
+        workflow.privacy.excludedPaths,
+      );
+      requireCurrentWorkflow(sessionId, workflow);
+      if (!decision.allowed || !decision.executionBinding) {
+        throw new Error(`SCAFFOLD_PROPOSAL_PATH_DENIED: ${decision.reason ?? "scaffold path is not allowed"}`);
+      }
+      const binding = gate.bindPath(decision.executionBinding);
+      try {
+        if (decision.executionBinding.existingPath === decision.executionBinding.absolutePath) {
+          existingContentAtRisk = true;
+        }
+      } finally {
+        binding.release();
+      }
+    }
+    return scaffoldApproval.register(workflow.scope, operations, { existingContentAtRisk });
+  }
+
+  function observeInput(ctx, text) {
+    const observedIntent = observeNewWorkflowIntentResponse(ctx, text);
+    const workflow = workflowFor(ctx);
+    if (workflow) {
+      lifecycle.observeSubmoduleInclusion(workflow, text);
+    }
+    if (workflow && scaffoldApproval.observeInput(workflow.scope, text)) {
+      revokeScaffoldMutationBindings(workflow.scope);
+    }
+    return observedIntent;
+  }
+
   async function readApprovedSpecialistFile(workflow, ctx, route) {
     if (!isLocalSpecialistRoute(route)) {
       throw new Error("SPECIALIST_GUIDANCE_NOT_APPROVED: scaffold routes must be local");
     }
-    const approvedPath = resolve(ctx.cwd, route);
-    if (!workflow.approvedWrites.has(approvedPath)) {
-      throw new Error("SPECIALIST_GUIDANCE_NOT_APPROVED: scaffold file must be an approved write");
-    }
-    const decision = await runtimeFor(ctx).gate.checkPath("read", route, workflow.excludedPaths);
-    if (!decision.allowed || decision.executionBinding?.canonicalPath !== approvedPath) {
+    const decision = await runtimeFor(ctx).gate.checkPath(
+      "read",
+      route,
+      workflow.privacy.excludedPaths,
+      nestedWorktreeAccessAdmission(workflow),
+    );
+    const approvedPath = decision.executionBinding?.canonicalPath;
+    if (!decision.allowed || typeof approvedPath !== "string") {
       throw new Error("SPECIALIST_GUIDANCE_NOT_APPROVED: scaffold file must pass the canonical privacy boundary");
+    }
+    if (
+      !workflow.specialist.approvedWrites.has(approvedPath) &&
+      !workflow.specialist.approvedEdits.has(approvedPath)
+    ) {
+      throw new Error("SPECIALIST_GUIDANCE_NOT_APPROVED: scaffold file must be an approved write or edit");
     }
     const binding = runtimeFor(ctx).gate.bindPath(decision.executionBinding);
     try {
@@ -971,188 +1242,301 @@ export function createRuntimeCoordinator({
     }
   }
 
-  function requiredSpecialistPaths(config) {
-    const generatedInputPaths = Array.isArray(config?.paths?.generatedInputs)
-      ? config.paths.generatedInputs
-      : [];
+  function specialistBasePaths(workflow, config) {
     return [
       config?.paths?.rootInstructions,
       config?.paths?.rootContext,
-      "identity.md",
-      "rules.md",
       config?.paths?.firstRecipe,
-      ...generatedInputPaths,
+      ...["identity.md", "rules.md"].filter((route) => {
+        const path = resolve(workflow.scope.workspace, route);
+        return workflow.approvedWrites.has(path) || workflow.approvedEdits.has(path);
+      }),
     ];
+  }
+
+  function requiredSpecialistPaths(workflow, config, semantics) {
+    return [
+      ...specialistBasePaths(workflow, config),
+      ...semantics.inputs
+        .filter((input) => input.availability === "scaffolded")
+        .map((input) => input.path),
+    ];
+  }
+
+  function legacyRouteArrayMatches(config, name, expectedRoutes) {
+    const paths = config?.paths;
+    if (!isRecord(paths) || !Object.hasOwn(paths, name)) return true;
+    const declaredRoutes = paths[name];
+    if (
+      !Array.isArray(declaredRoutes) ||
+      declaredRoutes.some((route) => !isLocalSpecialistRoute(route)) ||
+      new Set(declaredRoutes).size !== declaredRoutes.length ||
+      declaredRoutes.length !== expectedRoutes.length
+    ) return false;
+    const expected = new Set(expectedRoutes);
+    return declaredRoutes.every((route) => expected.has(route));
+  }
+
+  function specialistGuidanceProposal(workflow) {
+    const admission = scaffoldApproval.admission(workflow.scope, {});
+    if (!admission.active) return undefined;
+    return {
+      identity: admission.proposalIdentity,
+      digest: admission.proposalDigest,
+    };
+  }
+
+  function requireCurrentSpecialistGuidance(workflow, ctx, proposal) {
+    if (
+      !workflow ||
+      workflowFor(ctx) !== workflow ||
+      !lifecycle.isCurrent(workflow) ||
+      workflow.terminal.completed
+    ) {
+      throw new Error("SPECIALIST_GUIDANCE_NOT_APPROVED: Specialist workflow changed while rendering guidance");
+    }
+    const currentProposal = specialistGuidanceProposal(workflow);
+    if (
+      proposal
+        ? !currentProposal ||
+          currentProposal.identity !== proposal.identity ||
+          currentProposal.digest !== proposal.digest ||
+          !scaffoldApproval.isFullyCompleted(workflow.scope)
+        : currentProposal
+    ) {
+      throw new Error("SPECIALIST_GUIDANCE_NOT_APPROVED: complete the current exact scaffold proposal first");
+    }
   }
 
   async function specialistRouteSemantics(ctx) {
     const workflow = workflowFor(ctx);
-    let config = workflow?.specialistConfig;
-    if (workflow?.specialistConfigEdited) {
-      config = JSON.parse(await readApprovedSpecialistFile(workflow, ctx, ".picm/config.json"));
-    }
-    const recipePath = config?.paths?.firstRecipe;
-    if (!workflow || !isLocalSpecialistRoute(recipePath)) {
+    if (!workflow || workflow.command !== "picm-new") {
       throw new Error("SPECIALIST_GUIDANCE_NOT_APPROVED: complete approved Specialist scaffold writes first");
     }
-    const finalContents = new Map();
-    for (const requiredPath of requiredSpecialistPaths(config)) {
+    const proposal = specialistGuidanceProposal(workflow);
+    if (proposal && !scaffoldApproval.isFullyCompleted(workflow.scope)) {
+      throw new Error("SPECIALIST_GUIDANCE_NOT_APPROVED: complete the current exact scaffold proposal first");
+    }
+    requireCurrentSpecialistGuidance(workflow, ctx, proposal);
+
+    let config;
+    try {
+      const configContent = await readApprovedSpecialistFile(workflow, ctx, ".picm/config.json");
+      if (hasUnresolvedSpecialistPlaceholder(configContent)) {
+        throw new Error("SPECIALIST_GUIDANCE_NOT_APPROVED: final Specialist routes are incomplete");
+      }
+      config = JSON.parse(configContent);
+    } catch (error) {
+      if (error instanceof SyntaxError) {
+        throw new Error("SPECIALIST_GUIDANCE_NOT_APPROVED: persisted Specialist config is invalid");
+      }
+      throw error;
+    }
+    requireCurrentSpecialistGuidance(workflow, ctx, proposal);
+
+    const recipePath = config?.paths?.firstRecipe;
+    if (!isLocalSpecialistRoute(recipePath)) {
+      throw new Error("SPECIALIST_GUIDANCE_NOT_APPROVED: complete approved Specialist scaffold writes first");
+    }
+    const recipe = await readApprovedSpecialistFile(workflow, ctx, recipePath);
+    requireCurrentSpecialistGuidance(workflow, ctx, proposal);
+    const semantics = parseSpecialistFirstRunRecipe(recipePath, recipe);
+    const basePaths = specialistBasePaths(workflow, config);
+    if (semantics.inputs.some((input) => input.path === recipePath || input.path === ".picm/config.json")) {
+      throw new Error("SPECIALIST_GUIDANCE_NOT_APPROVED: receipt inputs must not reuse the recipe or config route");
+    }
+    const finalContents = new Map([[resolve(ctx.cwd, recipePath), recipe]]);
+    for (const requiredPath of basePaths) {
+      if (requiredPath === recipePath) continue;
       const content = await readApprovedSpecialistFile(workflow, ctx, requiredPath);
+      requireCurrentSpecialistGuidance(workflow, ctx, proposal);
       finalContents.set(resolve(ctx.cwd, requiredPath), content);
     }
-    const recipe = finalContents.get(resolve(ctx.cwd, recipePath));
-    const semantics = validateSpecialistScaffold(workflow, ctx, config, recipe, finalContents);
-    if (!semantics) {
+    const scaffoldedInputs = semantics.inputs.filter((input) => input.availability === "scaffolded");
+    for (const input of scaffoldedInputs) {
+      if (basePaths.includes(input.path)) continue;
+      const content = await readApprovedSpecialistFile(workflow, ctx, input.path);
+      requireCurrentSpecialistGuidance(workflow, ctx, proposal);
+      finalContents.set(resolve(ctx.cwd, input.path), content);
+    }
+    const validated = validateSpecialistScaffold(workflow, ctx, config, semantics, finalContents);
+    if (!validated) {
       throw new Error("SPECIALIST_GUIDANCE_NOT_APPROVED: final Specialist routes are incomplete");
     }
-    return semantics;
-  }
-
-  function isAutomatic(_ctx) {
-    return false;
+    return validated;
   }
 
   function settle(ctx) {
-    if (workflowFor(ctx)?.completed) {
+    const workflow = workflowFor(ctx);
+    if (workflow?.completed) {
       clearWorkflow(ctx);
       return true;
     }
-    clearActiveScan(ctx);
+    if (workflow) {
+      revokeScaffoldMutationBindings(workflow.scope);
+      scaffoldApproval.settle(workflow.scope, false);
+      releaseBindings(workflow.scope);
+    }
     return false;
   }
 
-  function startToolExecution(_event, _ctx) {}
-  function admitToolExecution(_event, _ctx) {}
-  function rejectToolExecution(_event, _ctx) {}
-
-  function validateSpecialistScaffold(workflow, ctx, config, recipe, scaffoldContents = workflow.approvedWrites) {
+  function validateSpecialistScaffold(workflow, ctx, config, semantics, scaffoldContents) {
     const recipePath = config?.paths?.firstRecipe;
     const specialistConfig = config?.generatedBy === "picm-factory" && config?.profile === "specialist-folder";
-    if (!specialistConfig || !isLocalSpecialistRoute(recipePath) || typeof recipe !== "string") return undefined;
-    const semantics = parseSpecialistFirstRunRecipe(recipePath, recipe);
-    const generatedInputPaths = Array.isArray(config.paths?.generatedInputs)
-      ? config.paths.generatedInputs
-      : [];
-    const runtimeInputPaths = Array.isArray(config.paths?.runtimeInputs)
-      ? config.paths.runtimeInputs
-      : [];
-    const declaredInputPaths = [...generatedInputPaths, ...runtimeInputPaths];
-    const uniqueDeclarations = new Set(declaredInputPaths);
-    const exhaustiveInputInventory =
-      declaredInputPaths.every(isLocalSpecialistRoute) &&
-      uniqueDeclarations.size === declaredInputPaths.length &&
-      uniqueDeclarations.size === semantics.inputPaths.length &&
-      semantics.inputPaths.every((inputPath) => isLocalSpecialistRoute(inputPath) && uniqueDeclarations.has(inputPath));
+    if (!specialistConfig || !isLocalSpecialistRoute(recipePath)) return undefined;
+    const scaffoldedRoutes = semantics.inputs
+      .filter((input) => input.availability === "scaffolded")
+      .map((input) => input.path);
+    const nonScaffoldedRoutes = semantics.inputs
+      .filter((input) => input.availability !== "scaffolded")
+      .map((input) => input.path);
+    const legacyRoutesMatch =
+      legacyRouteArrayMatches(config, "generatedInputs", scaffoldedRoutes) &&
+      legacyRouteArrayMatches(config, "runtimeInputs", nonScaffoldedRoutes);
+    const requiredPaths = requiredSpecialistPaths(workflow, config, semantics);
+    const requiredPathSet = new Set(requiredPaths);
+    const nonScaffoldedInputsDoNotOverlapScaffold = nonScaffoldedRoutes.every(
+      (route) => !requiredPathSet.has(route),
+    );
     const localOutputRoutes =
       isLocalSpecialistRoute(semantics.expectedArtifact) &&
       isLocalSpecialistRoute(semantics.nextActionSource);
-    const runtimeInputsAreNotScaffolded = runtimeInputPaths.every(
-      (inputPath) => !workflow.approvedWrites.has(resolve(ctx.cwd, inputPath)),
+    const nonScaffoldedInputsWereNotWritten = nonScaffoldedRoutes.every(
+      (inputPath) => !workflow.specialist.approvedWrites.has(resolve(workflow.scope.workspace, inputPath)),
     );
-    const requiredPaths = requiredSpecialistPaths(config);
     const completeInventory = requiredPaths.every((requiredPath) => {
       if (!isLocalSpecialistRoute(requiredPath)) return false;
       const content = scaffoldContents.get(resolve(ctx.cwd, requiredPath));
       return typeof content === "string" && content.trim() &&
         !hasUnresolvedSpecialistPlaceholder(content);
     });
-    return exhaustiveInputInventory && localOutputRoutes && runtimeInputsAreNotScaffolded && completeInventory
+    return legacyRoutesMatch && nonScaffoldedInputsDoNotOverlapScaffold && localOutputRoutes &&
+      nonScaffoldedInputsWereNotWritten && completeInventory
       ? semantics
       : undefined;
   }
 
   function endToolExecution(event, ctx) {
-    const workflow = workflowFor(ctx);
-    if (
-      workflow?.command === "picm-new" &&
-      event.toolName === "edit" &&
-      event.isError !== true &&
-      typeof event.args?.path === "string" &&
-      resolve(ctx.cwd, event.args.path) === resolve(ctx.cwd, ".picm/config.json")
-    ) {
-      workflow.specialistConfigEdited = true;
-      workflow.specialistRouteSemantics = undefined;
-    }
-    if (
-      workflow?.command === "picm-new" &&
-      event.toolName === "write" &&
-      event.isError !== true &&
-      typeof event.args?.path === "string" &&
-      typeof event.args?.content === "string"
-    ) {
-      const path = resolve(ctx.cwd, event.args.path);
-      workflow.specialistScaffoldApproved = false;
-      workflow.specialistRouteSemantics = undefined;
-      workflow.approvedWrites.set(path, event.args.content);
-      if (path === resolve(ctx.cwd, ".picm/config.json")) {
-        try {
-          const config = JSON.parse(event.args.content);
-          workflow.specialistConfigWritten = config?.generatedBy === "picm-factory" && config?.profile === "specialist-folder";
-          workflow.specialistConfig = workflow.specialistConfigWritten ? config : undefined;
-          workflow.specialistConfigEdited = false;
-          const recipePath = config?.paths?.firstRecipe;
-          const recipe = typeof recipePath === "string"
-            ? workflow.approvedWrites.get(resolve(ctx.cwd, recipePath))
-            : undefined;
-          const semantics = validateSpecialistScaffold(workflow, ctx, config, recipe);
-          if (semantics) {
-            workflow.specialistRouteSemantics = semantics;
-            workflow.specialistScaffoldApproved = true;
-          }
-        } catch {
-          workflow.specialistConfigWritten = false;
-          workflow.specialistConfig = undefined;
-          workflow.specialistConfigEdited = false;
-          workflow.specialistRouteSemantics = undefined;
-          workflow.specialistScaffoldApproved = false;
+    if (typeof event.toolCallId !== "string") return;
+    const issued = issuedBindingFor(sessionIdFor(ctx), event.toolCallId);
+    if (!issued) return;
+
+    const workflow = issued.workflow;
+    const current =
+      (issued.state === "active" || issued.state === "executing") &&
+      lifecycle.isCurrent(workflow) &&
+      lifecycle.current(workflowScopeFor(ctx)) === workflow &&
+      (issued.phaseIdentity === undefined || lifecycle.hasActivePhaseIdentity(workflow, issued.phaseIdentity));
+    try {
+      if (!current) return;
+      const completedScaffoldMutation = scaffoldApproval.complete(workflow.scope, event.toolCallId, !event.isError);
+      if (
+        workflow.command === "picm-new" &&
+        completedScaffoldMutation &&
+        issued.scaffoldMutation === true &&
+        typeof issued.binding?.canonicalPath === "string"
+      ) {
+        if (issued.binding.toolName === "write") {
+          workflow.specialist.approvedWrites.set(issued.binding.canonicalPath, true);
+        } else if (issued.binding.toolName === "edit") {
+          workflow.specialist.approvedEdits.add(issued.binding.canonicalPath);
         }
       }
+    } finally {
+      revokeIssuedBinding(issued, { afterExecution: true });
+      clearIssuedBinding(issued);
     }
-    if (typeof event.toolCallId !== "string") return;
-    const sessionId = sessionIdFor(ctx);
-    const key = `${sessionId}:${event.toolCallId}`;
-    const binding = activeToolBindings.get(key);
-    if (binding) {
-      activeToolBindings.delete(key);
+  }
+
+  function retainBinding(workflow, toolCallId, binding) {
+    if (!workflow || typeof toolCallId !== "string") return false;
+    const existing = issuedBindingFor(workflow.scope.sessionId, toolCallId);
+    if (existing) {
+      revokeIssuedBinding(existing);
       try { binding.release(); } catch {}
+      return false;
     }
+    let bindings = issuedPathBindings.get(workflow.scope.sessionId);
+    if (!bindings) {
+      bindings = new Map();
+      issuedPathBindings.set(workflow.scope.sessionId, bindings);
+    }
+    bindings.set(toolCallId, {
+      sessionId: workflow.scope.sessionId,
+      toolCallId,
+      scope: workflow.scope,
+      workflow,
+      phaseIdentity: lifecycle.activePhaseIdentity(workflow),
+      binding,
+      scaffoldMutation: false,
+      state: "active",
+    });
+    return true;
+  }
+
+  function markScaffoldMutationBinding(scope, toolCallId) {
+    const issued = issuedBindingFor(scope.sessionId, toolCallId);
+    if (!issued || issued.scope !== scope || issued.state !== "active") return false;
+    issued.scaffoldMutation = true;
+    return true;
   }
 
   function beginBoundPathExecution(toolCallId, ctx, toolName) {
     if (typeof toolCallId !== "string") return undefined;
-    const sessionId = sessionIdFor(ctx);
-    const key = `${sessionId}:${toolCallId}`;
-    const binding = activeToolBindings.get(key);
-    if (!binding) return undefined;
-    if (binding.toolName !== toolName) {
-      throw new Error("PICM_PATH_BINDING_MISMATCH: guarded path execution changed tool identity");
+    const workflow = workflowFor(ctx);
+    const issued = issuedBindingFor(sessionIdFor(ctx), toolCallId);
+    if (issued) {
+      if (
+        issued.state !== "active" ||
+        workflow !== issued.workflow ||
+        (issued.phaseIdentity !== undefined &&
+          !lifecycle.hasActivePhaseIdentity(workflow, issued.phaseIdentity))
+      ) {
+        revokeIssuedBinding(issued);
+        throw new Error("PICM_PATH_BINDING_STALE: guarded path execution no longer belongs to the current workflow");
+      }
+      if (issued.binding.toolName !== toolName) {
+        throw new Error("PICM_PATH_BINDING_MISMATCH: guarded path execution changed tool identity");
+      }
+      issued.state = "executing";
+      return issued.binding;
     }
-    return binding;
+    if (!workflow?.completed && (workflow?.phase.active || workflow?.privacy.excludedPaths.length)) {
+      throw new Error("PICM_PATH_BINDING_STALE: guarded path execution no longer belongs to the current workflow");
+    }
+    return undefined;
   }
 
-  async function checkToolCall(event, ctx) {
+  async function checkToolCallCore(event, ctx) {
     const workflow = workflowFor(ctx);
-    const sessionId = sessionIdFor(ctx);
-    const scan = activeScans.get(sessionId);
+    const scanActive = workflow?.phase.active === true;
+    const phaseIdentity = lifecycle.activePhaseIdentity(workflow);
+    const bindDecision = (decision) => {
+      if (!decision.allowed || !decision.executionBinding || typeof event.toolCallId !== "string") return decision;
+      requireCurrentWorkflow(sessionIdFor(ctx), workflow);
+      if (phaseIdentity !== undefined && !lifecycle.hasActivePhaseIdentity(workflow, phaseIdentity)) {
+        return {
+          allowed: false,
+          reason: "PICM_PATH_BINDING_STALE: guarded path execution no longer belongs to the current workflow",
+        };
+      }
+      const binding = runtimeFor(ctx).gate.bindPath(decision.executionBinding);
+      if (retainBinding(workflow, event.toolCallId, binding)) return decision;
+      return {
+        allowed: false,
+        reason: "PICM_PATH_BINDING_STALE: guarded path execution no longer belongs to the current workflow",
+      };
+    };
 
-    if (workflow?.completed) {
-      return { allowed: true };
-    }
+    if (workflow?.completed) return { allowed: true };
 
     if (workflow && !workflow.privacyReviewed) {
       if (event.toolName === "picm_scan_control") return { allowed: true };
       if (event.toolName === "read") {
-        const trusted = await runtimeFor(ctx).gate.checkTrustedPackageRead(
-          event.toolName,
-          event.input?.path,
-        );
+        const trusted = await runtimeFor(ctx).gate.checkTrustedPackageRead(event.toolName, event.input?.path);
         if (trusted.allowed) {
           if (typeof trusted.canonicalPath === "string") event.input.path = trusted.canonicalPath;
-          if (trusted.executionBinding && typeof event.toolCallId === "string") {
-            const binding = runtimeFor(ctx).gate.bindPath(trusted.executionBinding);
-            activeToolBindings.set(`${sessionId}:${event.toolCallId}`, binding);
-          }
-          return trusted;
+          return bindDecision(trusted);
         }
       }
       return {
@@ -1162,26 +1546,17 @@ export function createRuntimeCoordinator({
     }
 
     if (workflow && event.toolName === "picm_scan_control") return { allowed: true };
-
-    if (workflow?.command === "picm-new" && event.toolName === "picm_scaffold_proposal" && !scan) {
-      return { allowed: true };
-    }
+    if (workflow?.command === "picm-new" && workflow.scanStarted && event.toolName === "picm_scaffold_proposal") return { allowed: true };
 
     if (workflow && event.toolName === "picm_specialist_first_run_guidance") {
-      if (
-        workflow.command === "picm-new" &&
-        workflow.privacyReviewed &&
-        workflow.scanStarted
-      ) {
+      if (workflow.command === "picm-new" && workflow.privacyReviewed && workflow.scanStarted) {
         try {
           await specialistRouteSemantics(ctx);
           return { allowed: true };
         } catch (error) {
           return {
             allowed: false,
-            reason: error instanceof Error
-              ? error.message
-              : "Final Specialist scaffold state is incomplete",
+            reason: error instanceof Error ? error.message : "Final Specialist scaffold state is incomplete",
           };
         }
       }
@@ -1199,29 +1574,19 @@ export function createRuntimeCoordinator({
       };
     }
 
-    if (workflow && scan?.cwd !== ctx.cwd) {
+    if (workflow && !scanActive) {
       if (event.toolName === "read") {
-        const trusted = await runtimeFor(ctx).gate.checkTrustedPackageRead(
-          event.toolName,
-          event.input?.path,
-        );
+        const trusted = await runtimeFor(ctx).gate.checkTrustedPackageRead(event.toolName, event.input?.path);
         if (trusted.allowed) {
           if (typeof trusted.canonicalPath === "string") event.input.path = trusted.canonicalPath;
-          if (trusted.executionBinding && typeof event.toolCallId === "string") {
-            const binding = runtimeFor(ctx).gate.bindPath(trusted.executionBinding);
-            activeToolBindings.set(`${sessionId}:${event.toolCallId}`, binding);
-          }
-          return trusted;
+          return bindDecision(trusted);
         }
       }
-      return {
-        allowed: false,
-        reason: "Begin the privacy-reviewed PiCM scan before using agent tools",
-      };
+      return { allowed: false, reason: "Begin the privacy-reviewed PiCM scan before using agent tools" };
     }
 
     try {
-      if (scan?.cwd === ctx.cwd) {
+      if (scanActive) {
         if (event.toolName === "bash") return runtimeFor(ctx).gate.checkBash(event.input?.command);
         if (
           (workflow.command === "picm-adopt" || workflow.command === "picm-maintain") &&
@@ -1243,23 +1608,16 @@ export function createRuntimeCoordinator({
         const decision = await runtimeFor(ctx).gate.checkPath(
           event.toolName,
           event.input?.path,
-          scan.excludedPaths,
+          workflow.privacy.excludedPaths,
+          nestedWorktreeAccessAdmission(workflow),
         );
-        if (
-          decision.allowed &&
-          event.toolName === "read" &&
-          typeof decision.canonicalPath === "string"
-        ) {
+        if (decision.allowed && event.toolName === "read" && typeof decision.canonicalPath === "string") {
           event.input.path = decision.canonicalPath;
         }
-        if (decision.allowed && decision.executionBinding && typeof event.toolCallId === "string") {
-          const binding = runtimeFor(ctx).gate.bindPath(decision.executionBinding);
-          activeToolBindings.set(`${sessionId}:${event.toolCallId}`, binding);
-        }
-        return decision;
+        return bindDecision(decision);
       }
 
-      if (workflow?.excludedPaths.length > 0) {
+      if (workflow?.privacy.excludedPaths.length > 0) {
         if (event.toolName === "picm_scan_control") return { allowed: true };
         if (event.toolName === "bash") {
           return { allowed: false, reason: "Agent Bash is blocked while PiCM privacy exclusions are active" };
@@ -1270,25 +1628,82 @@ export function createRuntimeCoordinator({
         const decision = await runtimeFor(ctx).gate.checkPath(
           event.toolName,
           event.input?.path,
-          workflow.excludedPaths,
+          workflow.privacy.excludedPaths,
+          nestedWorktreeAccessAdmission(workflow),
         );
-        if (
-          decision.allowed &&
-          event.toolName === "read" &&
-          typeof decision.canonicalPath === "string"
-        ) {
+        if (decision.allowed && event.toolName === "read" && typeof decision.canonicalPath === "string") {
           event.input.path = decision.canonicalPath;
         }
-        if (decision.allowed && decision.executionBinding && typeof event.toolCallId === "string") {
-          const binding = runtimeFor(ctx).gate.bindPath(decision.executionBinding);
-          activeToolBindings.set(`${sessionId}:${event.toolCallId}`, binding);
-        }
-        return decision;
+        return bindDecision(decision);
       }
       return { allowed: true };
     } catch (error) {
       return { allowed: false, reason: `gate exception: ${error instanceof Error ? error.message : error}` };
     }
+  }
+
+  function blockedScaffoldMutation() {
+    return {
+      allowed: false,
+      reason: "Blocked scaffold mutation: directly approve and apply only the current exact proposal",
+    };
+  }
+
+  async function checkToolCall(event, ctx) {
+    const workflow = workflowFor(ctx);
+    const admission = workflow ? scaffoldApproval.admission(workflow.scope, event) : { active: false };
+    if (admission.active) {
+      const maintenancePreview = event.toolName === "picm_maintenance_policy" && event.input?.action === "preview";
+      const allowedControl = new Set([
+        "read",
+        "grep",
+        "rg",
+        "find",
+        "ls",
+        "picm_scan_control",
+        "picm_specialist_first_run_guidance",
+      ]);
+      if (!allowedControl.has(event.toolName) && event.toolName !== "picm_scaffold_proposal" && !maintenancePreview && !admission.allowed) {
+        return blockedScaffoldMutation();
+      }
+    }
+    const decision = await checkToolCallCore(event, ctx);
+    const matchedScaffoldMutation =
+      decision.allowed &&
+      workflow &&
+      admission.operationIdentity &&
+      (event.toolName === "write" || event.toolName === "edit");
+    if (!matchedScaffoldMutation) return decision;
+
+    const currentWorkflow = workflowFor(ctx);
+    const currentAdmission = currentWorkflow
+      ? scaffoldApproval.admission(currentWorkflow.scope, event, {
+        existingContentAtRisk:
+          decision.executionBinding?.existingPath === decision.executionBinding?.absolutePath,
+      })
+      : { active: false };
+    if (currentAdmission.riskEscalated) revokeScaffoldMutationBindings(workflow.scope);
+    const currentApproval =
+      currentWorkflow === workflow &&
+      lifecycle.isCurrent(workflow) &&
+      currentAdmission.active &&
+      currentAdmission.proposalIdentity === admission.proposalIdentity &&
+      currentAdmission.proposalDigest === admission.proposalDigest &&
+      currentAdmission.directApproved === admission.directApproved &&
+      currentAdmission.approvalIdentity === admission.approvalIdentity &&
+      currentAdmission.acknowledgementIdentity === admission.acknowledgementIdentity &&
+      currentAdmission.acknowledged === admission.acknowledged &&
+      currentAdmission.operationIdentity === admission.operationIdentity &&
+      currentAdmission.allowed;
+    if (
+      !currentApproval ||
+      !scaffoldApproval.reserve(workflow.scope, currentAdmission, event.toolCallId) ||
+      !markScaffoldMutationBinding(workflow.scope, event.toolCallId)
+    ) {
+      releaseBinding(workflow.scope, event.toolCallId);
+      return blockedScaffoldMutation();
+    }
+    return decision;
   }
 
   function prunePreviews(reserveSlot = false, now = Date.now()) {
@@ -1302,12 +1717,13 @@ export function createRuntimeCoordinator({
     }
   }
 
-  function retainPreview(cwd, maintenance) {
+  function retainPreview(ctx, maintenance) {
     prunePreviews(true);
     const previewId = `picm-maintenance-preview:${randomUUID()}`;
     const expiresAt = Date.now() + policyPreviewTtlMs;
     policyPreviews.set(previewId, {
-      cwd,
+      cwd: ctx.cwd,
+      scope: authorityScopeFor(ctx),
       maintenance: structuredClone(maintenance),
       expiresAt,
       inUse: false,
@@ -1315,11 +1731,14 @@ export function createRuntimeCoordinator({
     return { previewId, expiresAt };
   }
 
-  function reservePreview(cwd, previewId) {
+  function reservePreview(ctx, previewId) {
     prunePreviews();
     const preview = policyPreviews.get(previewId);
     if (!preview) throw new Error("MAINTENANCE_PREVIEW_EXPIRED: previewId is unknown or expired; create a new preview");
-    if (preview.cwd !== cwd) throw new Error("MAINTENANCE_PREVIEW_CWD_MISMATCH: previewId belongs to a different working directory");
+    if (preview.cwd !== ctx.cwd) throw new Error("MAINTENANCE_PREVIEW_CWD_MISMATCH: previewId belongs to a different working directory");
+    if (preview.scope !== authorityScopeFor(ctx)) {
+      throw new Error("MAINTENANCE_PREVIEW_SCOPE_MISMATCH: previewId belongs to a different session or workflow");
+    }
     if (preview.inUse) throw new Error("MAINTENANCE_PREVIEW_IN_USE: previewId is already being applied");
     preview.inUse = true;
     return { preview, maintenance: structuredClone(preview.maintenance) };
@@ -1338,11 +1757,12 @@ export function createRuntimeCoordinator({
       if (!params.mode) throw new Error("mode is required for preview");
       const preview = controller.preview(params);
       if (!preview.ok) throw new Error(`${preview.code}: ${preview.message}`);
-      const { previewId, expiresAt } = retainPreview(ctx.cwd, preview.maintenance);
+      const { previewId, expiresAt } = retainPreview(ctx, preview.maintenance);
       return { ...preview, previewId, expiresAt: new Date(expiresAt).toISOString() };
     }
     if (ctx.mode !== "tui") throw new Error("MAINTENANCE_APPLY_TUI_ONLY: apply is available only in interactive TUI mode");
 
+    const scope = authorityScopeFor(ctx);
     let previewId;
     let reservedPreview;
     let maintenance;
@@ -1351,7 +1771,7 @@ export function createRuntimeCoordinator({
         throw new Error("MAINTENANCE_PREVIEW_AMBIGUOUS: apply with previewId must not include policy fields");
       }
       previewId = params.previewId;
-      const reserved = reservePreview(ctx.cwd, previewId);
+      const reserved = reservePreview(ctx, previewId);
       reservedPreview = reserved.preview;
       maintenance = reserved.maintenance;
     } else {
@@ -1370,6 +1790,9 @@ export function createRuntimeCoordinator({
         { signal },
       );
       throwIfAborted(signal, "MAINTENANCE_APPLY_ABORTED");
+      if (authorityScopeFor(ctx) !== scope) {
+        throw new Error("MAINTENANCE_PREVIEW_SCOPE_MISMATCH: workflow changed before policy application");
+      }
       if (!confirmed) {
         return {
           ok: false,
@@ -1381,6 +1804,9 @@ export function createRuntimeCoordinator({
         };
       }
       const result = await controller.applyPolicy(maintenance);
+      if (authorityScopeFor(ctx) !== scope) {
+        throw new Error("MAINTENANCE_PREVIEW_SCOPE_MISMATCH: workflow changed during policy application");
+      }
       if (!result.ok) throw new Error(`${result.code}: ${result.message}`);
       if (previewId && reservedPreview) releasePreview(previewId, reservedPreview, true);
       return result;
@@ -1428,7 +1854,6 @@ export function createRuntimeCoordinator({
   }
 
   return {
-    admitToolExecution,
     authorizeWorkflow,
     beginBoundPathExecution,
     checkToolCall,
@@ -1441,17 +1866,18 @@ export function createRuntimeCoordinator({
     isWorkflowCompleted,
     maintenancePolicy,
     newWorkflowContinuity,
+    observeInput,
     observeNewWorkflowIntentResponse,
     observeProposalResponse,
     proposalBatch,
     workflowCommand,
-    rejectToolExecution,
     resetCycle,
     restoreWorkflow,
     scanControl,
+    serializeWorkflow,
+    scaffoldProposal,
     settle,
     specialistRouteSemantics,
-    startToolExecution,
     startup,
   };
 }

@@ -1,30 +1,30 @@
 # Handoff Card
 
 ## From / To
-- From: [stage/role]
-- To: [stage/role]
+- From: {{picm:from-stage-or-role}}
+- To: {{picm:to-stage-or-role}}
 
 ## Case / Work item
-[Name or short description]
+{{picm:case-or-work-item}}
 
 ## Date
-[YYYY-MM-DD]
+{{picm:date}}
 
 ## Confidence
-[High / Medium / Low]
+{{picm:confidence}}
 
 ## Summary
-[What happened and what the next role needs to know.]
+{{picm:summary-for-next-role}}
 
 ## Key details
-- [detail]
-- [detail]
+- {{picm:key-detail}}
+- {{picm:key-detail}}
 
 ## Context
-[Relevant background.]
+{{picm:relevant-background}}
 
 ## Gaps / unknowns
-- [unknown]
+- {{picm:unknown}}
 
 ## Next action
-[What should happen next.]
+{{picm:next-action}}

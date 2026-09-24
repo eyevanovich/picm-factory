@@ -117,6 +117,102 @@ test("optimization guide preserves unique constraints and user-controlled writes
   ]) assert.ok(guide.includes(signal), `missing preservation/approval signal: ${signal}`);
 });
 
+test("optimization applies a required evidence-backed agent-document writing lens", () => {
+  const guide = read("skills/picm-factory/references/optimization-guide.md");
+  for (const signal of [
+    "### Agent-document writing lens",
+    "Apply this lens after the preservation ledger",
+    "It is a required diagnostic pass",
+    "not a house style or a source of new obligations",
+    "**Context pointers:**",
+    "target and the condition for reading it clear",
+    "Do not hide stable prerequisites behind a pointer",
+    "**Information hierarchy:**",
+    "**Canonical home:**",
+    "visible, reachable, and sufficient for the local task",
+    "**Completion criteria:**",
+    "Do not invent requirements, verification, or human gates",
+    "**Pruning:**",
+    "Keep deliberately repeated safety, review, and local-boundary guidance",
+  ]) assert.ok(guide.includes(signal), `missing agent-document writing lens signal: ${signal}`);
+});
+
+test("optimization retains one source snapshot pass with targeted freshness recovery", () => {
+  const guide = read("skills/picm-factory/references/optimization-guide.md");
+  for (const signal of [
+    "retain its successful read as a session-only source snapshot",
+    "one-pass discovery and drafting work",
+    "do not request another agent-visible `inventory` or `read` merely to draft or select it",
+    "Begin a protected execution phase only for approved writes",
+    "Do not re-read untouched canonical sources",
+    "A successful exact replacement does not prove unrelated text stayed fresh",
+    "not independent verification of the final on-disk document",
+    "Pass**, **Opportunity**, or **Not applicable",
+    "fixture, compatibility test, or transition case",
+  ]) assert.ok(guide.includes(signal), `missing source-snapshot optimization signal: ${signal}`);
+});
+
+test("optimization requires a visible five-row writing-lens audit before proposals", () => {
+  const guide = read("skills/picm-factory/references/optimization-guide.md");
+  const skill = read("skills/picm-factory/SKILL.md");
+  const prompt = read("prompts/picm-optimize.md");
+
+  for (const signal of [
+    "### Required discovery report",
+    "user-visible discovery output, not private scratch work",
+    "first post-discovery findings response must begin with `### Writing-lens audit`",
+    "**Context pointers** — **Pass**, **Opportunity**, or **Not applicable**",
+    "**Information hierarchy** — **Pass**, **Opportunity**, or **Not applicable**",
+    "**Canonical home** — **Pass**, **Opportunity**, or **Not applicable**",
+    "**Completion criteria** — **Pass**, **Opportunity**, or **Not applicable**",
+    "**Pruning** — **Pass**, **Opportunity**, or **Not applicable**",
+    "Do not imply a row through a proposal summary",
+    "show this audit as an interim discovery result before calling `complete`",
+    "Ground every status in an inspected source snapshot",
+  ]) assert.ok(guide.includes(signal), `missing visible writing-lens audit signal: ${signal}`);
+
+  assert.match(skill, /present its required visible five-row audit with document-specific evidence/);
+  assert.match(prompt, /show the optimization guide's required visible five-row writing-lens audit with document-specific evidence/);
+});
+
+test("optimization-writing-lens fixture exposes routed lens evidence and preservation controls", () => {
+  const rootInstructions = read("test/fixtures/coding-repository/optimization-writing-lens/AGENTS.md");
+  const claudeInstructions = read("test/fixtures/coding-repository/optimization-writing-lens/CLAUDE.md");
+  const contextMap = read("test/fixtures/coding-repository/optimization-writing-lens/CONTEXT.md");
+  const billingInstructions = read("test/fixtures/coding-repository/optimization-writing-lens/services/billing/AGENTS.md");
+  const releaseInstructions = read("test/fixtures/coding-repository/optimization-writing-lens/workflows/release/AGENTS.md");
+  const generatedInstructions = read("test/fixtures/coding-repository/optimization-writing-lens/generated/deploy/AGENTS.md");
+
+  assert.match(rootInstructions, /canonical root guide/);
+  assert.match(rootInstructions, /Before choosing task-specific guidance, read `CONTEXT\.md`/);
+  assert.match(rootInstructions, /A code change is complete when `npm test` passes/);
+  assert.match(rootInstructions, /Do not access customer production data/);
+  assert.match(claudeInstructions, /read `AGENTS\.md` and `CONTEXT\.md` first/);
+  assert.match(claudeInstructions, /Start at `src\/main\.js`, run `npm test`/);
+  assert.match(contextMap, /Before modifying billing code, read `services\/billing\/AGENTS\.md`/);
+  assert.match(contextMap, /Before preparing a release, read `workflows\/release\/AGENTS\.md`/);
+  assert.match(contextMap, /Before changing deployment behavior, read `generated\/deploy\/AGENTS\.md` without editing it/);
+  assert.match(billingInstructions, /repeats the root rule intentionally/);
+  assert.match(billingInstructions, /Get human approval before changing production billing behavior/);
+  assert.match(releaseInstructions, /only for a release task/);
+  assert.match(releaseInstructions, /root code-change completion criterion/);
+  assert.match(releaseInstructions, /human approves the release notes/);
+  assert.match(generatedInstructions, /generated during CI/);
+  assert.match(generatedInstructions, /Do not edit it through documentation optimization/);
+  assert.match(generatedInstructions, /human approval before changing production deployment behavior/);
+});
+
+test("optimization preserves declared fixture intent alongside local safety guidance", () => {
+  const guide = read("skills/picm-factory/references/optimization-guide.md");
+  const intentionalConflict = read("test/fixtures/coding-repository/existing-doc-duplication/docs/development.md");
+  const localSafety = read("test/fixtures/coding-repository/optimization-writing-lens/services/billing/AGENTS.md");
+
+  assert.match(intentionalConflict, /intentionally conflicts with the architecture document/);
+  assert.match(guide, /Do not erase it in an outcome-preserving proposal/);
+  assert.match(localSafety, /This repeats the root rule intentionally/);
+  assert.match(guide, /Keep deliberately repeated safety, review, and local-boundary guidance/);
+});
+
 test("optimization avoids unsupported claims and deferred infrastructure", () => {
   const guide = read("skills/picm-factory/references/optimization-guide.md");
   for (const signal of [
@@ -135,6 +231,7 @@ test("skill, backing prompt, help, README, and shared review protocol stay synch
       "references/optimization-guide.md",
       "No worthwhile optimizations found",
       "compare claims across every inspected agent-facing document",
+      "apply the guide's agent-document writing lens",
     ],
     "prompts/picm-optimize.md": [
       "Command: /picm-optimize",
@@ -144,9 +241,13 @@ test("skill, backing prompt, help, README, and shared review protocol stay synch
       "No worthwhile optimizations found",
     ],
     "prompts/picm-help.md": ["`/picm-optimize`", "semantic equivalence"],
-    "README.md": ["five project-local commands", "Outcome-preserving optimization"],
+    "README.md": ["PiCM Factory gives Pi five commands", "Outcome-preserving optimization"],
     "skills/picm-factory/references/preview-review-protocol.md": ["`/picm-optimize`"],
-    "docs/layout-fixture-qa.md": ["## `/picm-optimize` smoke check", "No worthwhile optimizations found"],
+    "docs/layout-fixture-qa.md": [
+      "## `/picm-optimize` smoke check",
+      "optimization-writing-lens",
+      "No worthwhile optimizations found",
+    ],
   };
   for (const [file, signals] of Object.entries(expected)) {
     const text = read(file);

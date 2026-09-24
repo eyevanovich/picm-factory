@@ -9,7 +9,7 @@ For every scenario, `/picm-new` should:
 - load the `picm-factory` skill and relevant references
 - run metadata-only preflight and ask the baseline security/privacy question before inventory or inspection
 - record exact persisted/session exclusions, call `begin`, then inspect the current folder lightly before writing
-- check git state before writes
+- pair every current exact write preview with the Git checkpoint recommendation
 - recommend one primary layout profile and explain alternatives
 - preview exact file/folder actions before writing
 - avoid unresolved bracket placeholders in generated files
@@ -58,7 +58,8 @@ Expected behavior:
 - classifies the folder as source-material-only, not existing architecture
 - asks whether to build the PiCM scaffold around existing material without moving or rewriting it
 - recommends `/picm-adopt` only if the current structure appears to encode an existing workspace architecture
-- when root `.gitignore` is absent, offers exact `.gitignore` entries for commit protection only when sensitive/private/local-only material is identified
+- when sensitive/private/local-only material is identified, offers exact optional `.gitignore` entries for commit protection even when root `.gitignore` is absent
+- for a named local-only session exclusion such as `notes/local-only.md`, explains that the exclusion protects PiCM reads but not future Git commits; separately offers `/notes/local-only.md` as an optional root `/.gitignore` entry without writing it or treating the choice as scaffold approval
 - persists approved PiCM scan exclusions in `.picm/config.json` or keeps them session-only when the user declines a config write
 
 ## Scenario 3: existing architecture folder
@@ -106,9 +107,9 @@ touch changed.md
 
 Expected behavior:
 
-- with no git repo: recommends `git init` and requires explicit confirmation to proceed without git
-- with dirty git state: shows `git status --short` and requires explicit confirmation before writes
-- never runs `git init` or commits automatically
+- strongly recommends a user-created Git commit covering current contents of affected existing files, but does not inspect Git status, history, or file contents to verify coverage
+- keeps non-Git and new/empty workspaces supported; a first post-scaffold commit protects future contents only
+- for a proposal affecting current existing content when coverage is absent or uncertain, requests an explicit risk opt-out or clear checkpoint report that is separate from normal direct approval; new-only scaffolds remain directly approvable and PiCM never initializes, stages, commits, resets, cleans, or restores Git automatically
 
 ## Scenario 5: seeded command arguments
 
@@ -122,7 +123,7 @@ Expected behavior:
 
 - uses the argument text as seed context
 - asks only missing critical questions instead of restarting the whole interview
-- still performs folder safety, git safety, security/privacy, layout confirmation, and scaffold preview
+- still performs folder safety, Git checkpoint guidance, security/privacy, layout confirmation, and scaffold preview
 
 ## Scenario 6: stage pipeline layout choice
 

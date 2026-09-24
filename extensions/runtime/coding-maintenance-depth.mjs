@@ -9,14 +9,6 @@ export const MAINTENANCE_DEPTH_CHOICES = Object.freeze([
   BALANCED_MAINTENANCE_GUIDANCE,
 ]);
 
-const storedPresets = new Set(["light", "balanced", "strict"]);
-
-export function resolveStoredCodingMaintenancePreset(value) {
-  if (value === undefined) return "balanced";
-  if (storedPresets.has(value)) return value;
-  throw new Error(`Unsupported coding maintenance preset: ${value}`);
-}
-
 export function parseMaintenanceDepthArgument(args) {
   const trimmed = args.trim();
   const match = /^(strict|balanced)(?:\s+([\s\S]*))?$/i.exec(trimmed);

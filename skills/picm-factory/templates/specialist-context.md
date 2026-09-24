@@ -1,16 +1,16 @@
-# [Specialist Name]
+# {{picm:specialist-name}}
 
 ## Identity
-[What this specialist is and who it serves.]
+{{picm:specialist-purpose-and-audience}}
 
 ## Boundaries
-- This specialist should: [allowed work]
-- This specialist should not: [non-goals / approval boundaries]
+- This specialist should: {{picm:allowed-work}}
+- This specialist should not: {{picm:non-goals-or-approval-boundaries}}
 
 ## Rules
-- [domain rule]
-- [quality rule]
-- [safety rule]
+- {{picm:domain-rule}}
+- {{picm:quality-rule}}
+- {{picm:safety-rule}}
 
 ## Examples
 See `examples.md` if present.

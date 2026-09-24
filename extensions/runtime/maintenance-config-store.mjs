@@ -19,6 +19,12 @@ function valuesEqual(left, right) {
   return JSON.stringify(left) === JSON.stringify(right);
 }
 
+function projectBootstrapPrivacy(privacy) {
+  return Array.isArray(privacy?.excludedPaths)
+    ? { excludedPaths: privacy.excludedPaths }
+    : undefined;
+}
+
 function delay(milliseconds) {
   return new Promise((resolveDelay) => setTimeout(resolveDelay, milliseconds));
 }
@@ -29,6 +35,22 @@ function throwIfAborted(signal) {
     error.code = "PICM_SCAN_ABORTED";
     throw error;
   }
+}
+
+function isRecord(value) {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+function completedPicmSetup(config) {
+  if (!isRecord(config)) return false;
+  if (config.adoption?.status === "adopted") return "adopted";
+  if (
+    config.generatedBy === "picm-factory" &&
+    typeof config.profile === "string" &&
+    typeof config.createdAt === "string" &&
+    isRecord(config.paths)
+  ) return "generated";
+  return false;
 }
 
 export function createMaintenanceConfigStore({
@@ -93,24 +115,43 @@ export function createMaintenanceConfigStore({
     return { ok: true, exists: true };
   }
 
-  async function read({ authorizeAccess = true } = {}) {
+  async function validateConfigFile() {
+    let stat;
+    try {
+      stat = await fs.lstat(configPath);
+    } catch (error) {
+      if (error?.code === "ENOENT") return { ok: true, exists: false };
+      return errorDecision("CONFIG_STAT_FAILED", messageOf(error));
+    }
+    if (stat.isSymbolicLink()) return errorDecision("CONFIG_SYMLINK_BLOCKED", "PiCM config must not be a symlink");
+    if (!stat.isFile()) return errorDecision("CONFIG_NOT_FILE", "PiCM config must be a regular file");
+    if (stat.nlink !== 1) return errorDecision("CONFIG_HARDLINK_BLOCKED", "PiCM config must have exactly one hard link");
+    try {
+      const [canonicalRoot, canonicalConfig] = await Promise.all([
+        fs.realpath(cwd),
+        fs.realpath(configPath),
+      ]);
+      if (resolve(canonicalConfig) !== resolve(canonicalRoot, ".picm", "config.json")) {
+        return errorDecision("CONFIG_OUTSIDE_WORKTREE", "PiCM config must be the canonical project .picm/config.json");
+      }
+    } catch (error) {
+      return errorDecision("CONFIG_REALPATH_FAILED", messageOf(error));
+    }
+    return { ok: true, exists: true, stat };
+  }
+
+  async function readConfig({ bootstrap = false } = {}) {
     const directoryDecision = await validateDirectory();
     if (!directoryDecision.ok) return directoryDecision;
     if (!directoryDecision.exists) {
       return { ok: true, exists: false, config: undefined, maintenance: undefined };
     }
 
-    let stat;
-    try {
-      stat = await fs.lstat(configPath);
-    } catch (error) {
-      if (error?.code === "ENOENT") return { ok: true, exists: false, config: undefined, maintenance: undefined };
-      return errorDecision("CONFIG_STAT_FAILED", messageOf(error));
-    }
-    if (stat.isSymbolicLink()) return errorDecision("CONFIG_SYMLINK_BLOCKED", "PiCM config must not be a symlink");
-    if (!stat.isFile()) return errorDecision("CONFIG_NOT_FILE", "PiCM config must be a regular file");
+    const fileDecision = await validateConfigFile();
+    if (!fileDecision.ok) return fileDecision;
+    if (!fileDecision.exists) return { ok: true, exists: false, config: undefined, maintenance: undefined };
 
-    if (authorizeAccess) {
+    if (!bootstrap) {
       const access = await authorize("read");
       if (!access.ok) return access;
     }
@@ -124,18 +165,26 @@ export function createMaintenanceConfigStore({
       let maintenance;
       let privacy;
       try {
-        if (Object.hasOwn(config, "maintenance")) maintenance = validatePolicy(config.maintenance);
+        if (!bootstrap && Object.hasOwn(config, "maintenance")) maintenance = validatePolicy(config.maintenance);
         if (Object.hasOwn(config, "privacy")) privacy = validateStoredPrivacyPolicy(config.privacy, cwd);
       } catch (error) {
         return errorDecision(error.code ?? "INVALID_CONFIG", messageOf(error));
       }
-      return { ok: true, exists: true, config, maintenance, privacy, mode: stat.mode };
+      return { ok: true, exists: true, config, maintenance, privacy, mode: fileDecision.stat.mode };
     } catch (error) {
       return errorDecision(
         error instanceof SyntaxError ? "CONFIG_INVALID_JSON" : "CONFIG_READ_FAILED",
         messageOf(error),
       );
     }
+  }
+
+  async function read() {
+    return readConfig();
+  }
+
+  async function readBootstrapConfig() {
+    return readConfig({ bootstrap: true });
   }
 
   async function recoverStaleLock() {
@@ -206,18 +255,20 @@ export function createMaintenanceConfigStore({
     conditional = false,
     conflictCode,
     conflictMessage,
-    authorizeAccess = true,
+    bootstrap = false,
+    selectCurrentValue = (value) => value,
+    mergeCurrentValue = (_current, next) => next,
     signal,
   } = {}) {
     throwIfAborted(signal);
-    const initial = await read({ authorizeAccess });
+    const initial = bootstrap ? await readBootstrapConfig() : await read();
     throwIfAborted(signal);
     if (!initial.ok) return initial;
     if (!conditional && !initial.exists && validValue === undefined) {
       return { ok: true, changed: false, exists: false, [field]: undefined };
     }
 
-    if (authorizeAccess) {
+    if (!bootstrap) {
       const writeAccess = await authorize("write");
       if (!writeAccess.ok) return writeAccess;
     }
@@ -226,43 +277,6 @@ export function createMaintenanceConfigStore({
     let lockToken;
     let tempHandle;
     const tempPath = `${configPath}.tmp-${process.pid}-${randomId()}`;
-    const rollbackPath = `${configPath}.rollback-${process.pid}-${randomId()}`;
-    let rollbackReady = false;
-    let configCommitted = false;
-
-    async function rollbackAbortedCommit() {
-      try {
-        if (rollbackReady) {
-          try {
-            await fs.rename(rollbackPath, configPath);
-          } catch (renameError) {
-            try {
-              await fs.copyFile(rollbackPath, configPath);
-              await fs.unlink(rollbackPath);
-            } catch (copyError) {
-              const error = new Error(
-                `Cancelled config update could not restore the prior config (${messageOf(renameError)}; ${messageOf(copyError)}). Recover ${configPath} from ${rollbackPath}, then retry maintenance completion.`,
-              );
-              error.code = "CONFIG_ABORT_ROLLBACK_FAILED";
-              throw error;
-            }
-          }
-        } else {
-          await fs.unlink(configPath);
-        }
-        configCommitted = false;
-        rollbackReady = false;
-        throwIfAborted(signal);
-      } catch (error) {
-        if (error?.code === "PICM_SCAN_ABORTED" || error?.code === "CONFIG_ABORT_ROLLBACK_FAILED") throw error;
-        const recoveryError = new Error(
-          `Cancelled config update could not restore the prior config (${messageOf(error)}). Recover ${configPath} from ${rollbackPath}, then retry maintenance completion.`,
-        );
-        recoveryError.code = "CONFIG_ABORT_ROLLBACK_FAILED";
-        throw recoveryError;
-      }
-    }
-
     try {
       await fs.mkdir(directory, { recursive: true });
       const beforeLock = await validateDirectory();
@@ -275,29 +289,30 @@ export function createMaintenanceConfigStore({
 
       const underLockDirectory = await validateDirectory();
       if (!underLockDirectory.ok) return underLockDirectory;
-      if (authorizeAccess) {
+      if (!bootstrap) {
         const underLockAccess = await authorize("write");
         if (!underLockAccess.ok) return underLockAccess;
       }
 
-      const current = await read({ authorizeAccess });
+      const current = bootstrap ? await readBootstrapConfig() : await read();
       if (!current.ok) return current;
-      if (conditional && !valuesEqual(current[field], expectedValue)) {
+      if (conditional && !valuesEqual(selectCurrentValue(current[field]), expectedValue)) {
         return {
           ok: true,
           changed: false,
           conflict: true,
           code: conflictCode,
           message: conflictMessage,
-          [field]: current[field],
+          [field]: selectCurrentValue(current[field]),
         };
       }
 
       const nextConfig = current.exists
         ? { ...current.config }
         : { version: 1, generatedBy: "picm-factory" };
-      if (validValue === undefined) delete nextConfig[field];
-      else nextConfig[field] = validValue;
+      const nextValue = mergeCurrentValue(current[field], validValue);
+      if (nextValue === undefined) delete nextConfig[field];
+      else nextConfig[field] = nextValue;
 
       const currentSerialized = current.exists ? `${JSON.stringify(current.config, null, 2)}\n` : undefined;
       const nextSerialized = `${JSON.stringify(nextConfig, null, 2)}\n`;
@@ -307,7 +322,7 @@ export function createMaintenanceConfigStore({
 
       const beforeTempDirectory = await validateDirectory();
       if (!beforeTempDirectory.ok) return beforeTempDirectory;
-      if (authorizeAccess) {
+      if (!bootstrap) {
         const beforeTempAccess = await authorize("write");
         if (!beforeTempAccess.ok) return beforeTempAccess;
       }
@@ -323,18 +338,18 @@ export function createMaintenanceConfigStore({
 
       const beforeRenameDirectory = await validateDirectory();
       if (!beforeRenameDirectory.ok) return beforeRenameDirectory;
-      if (authorizeAccess) {
+      if (!bootstrap) {
         const beforeRenameAccess = await authorize("write");
         if (!beforeRenameAccess.ok) return beforeRenameAccess;
       }
-      throwIfAborted(signal);
-      if (signal && current.exists) {
-        await fs.link(configPath, rollbackPath);
-        rollbackReady = true;
+      const beforeRenameFile = await validateConfigFile();
+      if (!beforeRenameFile.ok) return beforeRenameFile;
+      if (beforeRenameFile.exists !== current.exists) {
+        return errorDecision("CONFIG_CHANGED_BEFORE_WRITE", "PiCM config existence changed before publication");
       }
+      throwIfAborted(signal);
       await fs.rename(tempPath, configPath);
-      configCommitted = true;
-      if (signal?.aborted) await rollbackAbortedCommit();
+      // Publication commits the update; late cancellation cannot undo it.
 
       try {
         const directoryHandle = await fs.open(directory, "r");
@@ -343,16 +358,13 @@ export function createMaintenanceConfigStore({
         } finally {
           await directoryHandle.close();
         }
-        if (signal?.aborted) await rollbackAbortedCommit();
       } catch (error) {
-        if (error?.code === "PICM_SCAN_ABORTED") throw error;
-        if (signal?.aborted) await rollbackAbortedCommit();
         return {
           ok: true,
           changed: true,
           committed: true,
           code: "CONFIG_COMMITTED_SYNC_FAILED",
-          warning: `PiCM config was committed but directory sync failed: ${messageOf(error)}`,
+          warning: `PiCM config was committed but directory sync failed; crash durability is uncertain: ${messageOf(error)}`,
           exists: true,
           config: nextConfig,
           [field]: validValue,
@@ -361,14 +373,10 @@ export function createMaintenanceConfigStore({
       return { ok: true, changed: true, committed: true, exists: true, config: nextConfig, [field]: validValue };
     } catch (error) {
       if (error?.code === "PICM_SCAN_ABORTED") throw error;
-      if (error?.code === "CONFIG_ABORT_ROLLBACK_FAILED") return errorDecision(error.code, messageOf(error));
       return errorDecision("CONFIG_WRITE_FAILED", messageOf(error));
     } finally {
       try { await tempHandle?.close(); } catch {}
       try { await fs.unlink(tempPath); } catch {}
-      if (!configCommitted || !signal?.aborted) {
-        try { await fs.unlink(rollbackPath); } catch {}
-      }
       try { await lockHandle?.close(); } catch {}
       if (lockHandle) {
         try {
@@ -434,27 +442,60 @@ export function createMaintenanceConfigStore({
     });
   }
 
-  async function readPrivacyForReview() {
-    return read({ authorizeAccess: false });
-  }
-
-  async function compareAndUpdatePrivacyForReview(expectedPrivacy, privacy) {
+  async function compareAndUpdateBootstrapPrivacy(expectedPrivacy, privacy) {
     let validExpected;
     let validPrivacy;
     try {
-      validExpected = expectedPrivacy === undefined ? undefined : validateStoredPrivacyPolicy(expectedPrivacy, cwd);
-      validPrivacy = privacy === undefined ? undefined : validatePrivacyPolicy(privacy, cwd);
+      validExpected = expectedPrivacy === undefined
+        ? undefined
+        : { excludedPaths: validatePrivacyPolicy({ excludedPaths: expectedPrivacy.excludedPaths }, cwd).excludedPaths };
+      validPrivacy = { excludedPaths: validatePrivacyPolicy({ excludedPaths: privacy?.excludedPaths }, cwd).excludedPaths };
     } catch (error) {
       return errorDecision(error.code ?? "INVALID_PRIVACY_POLICY", messageOf(error));
     }
-    return mutateConfigField("privacy", validPrivacy, {
+    const result = await mutateConfigField("privacy", validPrivacy, {
       expectedValue: validExpected,
       conditional: true,
       conflictCode: "PRIVACY_POLICY_CONFLICT",
       conflictMessage: "privacy exclusions changed before the conditional update",
-      authorizeAccess: false,
+      bootstrap: true,
+      selectCurrentValue: projectBootstrapPrivacy,
+      mergeCurrentValue: (current, next) => ({ ...(isRecord(current) ? current : {}), ...next }),
     });
+    if (!result.ok || result.conflict) {
+      return {
+        ok: result.ok,
+        changed: result.changed,
+        conflict: result.conflict,
+        code: result.code,
+        message: result.message,
+        privacy: projectBootstrapPrivacy(result.privacy),
+      };
+    }
+    return {
+      ok: true,
+      changed: result.changed,
+      committed: result.committed,
+      code: result.code,
+      warning: result.warning,
+      exists: result.exists,
+      privacy: projectBootstrapPrivacy(result.privacy),
+    };
   }
+
+  const privacyBootstrap = Object.freeze({
+    async read() {
+      const result = await readBootstrapConfig();
+      if (!result.ok) return result;
+      return {
+        ok: true,
+        exists: result.exists,
+        privacy: projectBootstrapPrivacy(result.privacy),
+        completedSetup: result.exists ? completedPicmSetup(result.config) : false,
+      };
+    },
+    compareAndUpdate: compareAndUpdateBootstrapPrivacy,
+  });
 
   return {
     configPath,
@@ -463,7 +504,6 @@ export function createMaintenanceConfigStore({
     compareAndUpdateMaintenance,
     updatePrivacy,
     compareAndUpdatePrivacy,
-    readPrivacyForReview,
-    compareAndUpdatePrivacyForReview,
+    privacyBootstrap,
   };
 }

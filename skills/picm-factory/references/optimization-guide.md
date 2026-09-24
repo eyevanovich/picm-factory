@@ -35,8 +35,8 @@ Do not add strict token counting or numeric savings claims. Do not build a deter
 2. Ask the shipped privacy question and wait. Record every exact additional project-relative exclusion with `privacy`; persist only when the user explicitly requests it and only through the existing control-write summary and confirmation gate.
 3. Call `begin`, then `inventory`. Use only the protected Git-derived candidates and guarded reads. Never use agent Bash, broad directory traversal, a second worktree, symlink following, Git-history reads, or another tool to bypass Git/privacy/submodule/non-Git boundaries.
 4. From candidate paths, identify the complete agent-facing documentation set for the authorized scope. Start with root/local instructions, maps, context contracts, prompt/skill areas, and conventional agent-facing folders; then follow only visible, relevant pointers from those documents. Do not mechanically crawl every reference.
-5. Inspect every identified agent-facing document. If a likely custom agent-doc area cannot be classified from visible evidence, ask the user rather than silently omitting or opening unrelated material.
-6. Record what was inspected and what remained excluded, protected, generated, unrelated, or uncertain. Call `end` when discovery is finished.
+5. Inspect every identified agent-facing document once and retain its successful read as a session-only source snapshot. If a likely custom agent-doc area cannot be classified from visible evidence, ask the user rather than silently omitting or opening unrelated material.
+6. Before `end`, use the source snapshots to record what was inspected and what remained excluded, protected, generated, unrelated, or uncertain; make the preservation ledger, complete the agent-document writing-lens audit, and draft exact candidate edits. Call `end` only after this one-pass discovery and drafting work is finished.
 
 A file may be inspected because it is agent-facing while still being ineligible for edits because it is generated. Excluded/private content remains unreadable and must not be named or summarized beyond a safe generic boundary description.
 
@@ -53,7 +53,9 @@ Before proposing edits, make a qualitative preservation ledger for each inspecte
 - domain terminology, facts, quality bars, and exceptions;
 - source-of-truth and generated/do-not-edit boundaries.
 
-Use the ledger as a review aid, not an automated equivalence proof. Preserve every unique constraint in place or at a clearly reachable authoritative destination. If intent is ambiguous, ask the user or leave the text unchanged.
+Use the ledger as a review aid, not an automated equivalence proof. Build it from the initial source snapshots before ending discovery, and retain those snapshots only in the current session context. Preserve every unique constraint in place or at a clearly reachable authoritative destination. If intent is ambiguous, ask the user or leave the text unchanged.
+
+A visible statement that duplication, a contradiction, a stale-looking instruction, or an example is intentional—such as a fixture, compatibility test, or transition case—is itself a unique constraint. Do not erase it in an outcome-preserving proposal; ask the user for an alternate preservation mechanism or leave the affected text unchanged.
 
 ## Finding useful opportunities
 
@@ -66,7 +68,31 @@ Identify opportunities before drafting edits. A useful opportunity needs visible
 - reorganizing guidance across files when the expected agent outcome is preserved or improved and every moved constraint remains reachable;
 - separating stable instructions from background reference or examples when this clarifies use.
 
+### Agent-document writing lens
+
+Apply this lens after the preservation ledger to find evidence-backed opportunities. It is a required diagnostic pass, not a house style or a source of new obligations. Preserve scope, precedence, exceptions, and independently necessary local guidance.
+
+- **Context pointers:** when a document directs an agent elsewhere, make the target and the condition for reading it clear. Do not hide stable prerequisites behind a pointer.
+- **Information hierarchy:** keep instructions and constraints needed for every relevant task near their execution point; progressively disclose only conditional background, reference, or examples behind a reachable pointer.
+- **Canonical home:** consolidate genuinely equivalent guidance only when a visible authoritative home is supported. Replace copies with thin pointers only when the target is visible, reachable, and sufficient for the local task.
+- **Completion criteria:** clarify how an existing procedure's intended result can be recognized. Do not invent requirements, verification, or human gates that the visible guidance does not support.
+- **Pruning:** remove true duplication, stale caches of easy-to-find facts, and instructions that do not change the expected agent behavior. Keep deliberately repeated safety, review, and local-boundary guidance.
+
 Do not treat repeated safety, approval, command, verification, or local-boundary reminders as redundant merely because wording overlaps. Repetition may be intentional at an independent working-directory or handoff boundary. Do not manufacture edits for short, clear, intentionally local, or already well-routed docs.
+
+Build a compact **Pass**, **Opportunity**, or **Not applicable** result for every writing-lens category from the source snapshots before ending discovery. Each proposal must name the category that supports it and the ledger constraints it preserves.
+
+### Required discovery report
+
+The writing-lens audit is user-visible discovery output, not private scratch work. After calling `end` and before presenting selectable opportunities, an exact preview, or a no-op result, the first post-discovery findings response must begin with `### Writing-lens audit` and include these five ordered rows:
+
+- **Context pointers** — **Pass**, **Opportunity**, or **Not applicable**: inspected path(s) and visible evidence.
+- **Information hierarchy** — **Pass**, **Opportunity**, or **Not applicable**: inspected path(s) and visible evidence.
+- **Canonical home** — **Pass**, **Opportunity**, or **Not applicable**: inspected path(s) and visible evidence.
+- **Completion criteria** — **Pass**, **Opportunity**, or **Not applicable**: inspected path(s) and visible evidence.
+- **Pruning** — **Pass**, **Opportunity**, or **Not applicable**: inspected path(s) and visible evidence.
+
+Do not imply a row through a proposal summary, omit a category because it has no opportunity, or turn every category into a finding. Keep the audit concise, but name the document-specific evidence and any preservation constraint that explains an intentional repetition or local boundary. Ground every status in an inspected source snapshot; do not label missing or uninspected evidence **Pass** or **Not applicable**. If there is no useful opportunity, show this audit as an interim discovery result before calling `complete`; after completion, the separate final report remains exactly `No worthwhile optimizations found`.
 
 Before concluding that no useful opportunity exists, compare the visible source-of-truth claims across every inspected agent-facing document. A contradiction, or a repeated claim with no visible canonical home, is evidence for a proposal: identify the canonical home when supported, or propose a thin pointer or a user decision when it is not. Do not call the flow a no-op merely because the evidence spans multiple documents.
 
@@ -87,12 +113,12 @@ Present useful opportunities as independently selectable proposals or clearly li
 
 For the selected set:
 
-1. Draft the exact current proposal without writing.
+1. Assemble the exact current proposal from the initial source snapshots and candidate edits; do not request another agent-visible `inventory` or `read` merely to draft or select it.
 2. Check it against the preservation ledger and all source/destination pointers. If any unique constraint is lost, unreachable, or uncertain, revise or stop.
 3. Apply `preview-review-protocol.md`: present the complete concise summary, offer `View all`, `Select files`, and `Return to summary` on demand, and accept direct explicit approval of this current summary.
 4. Flag deletions, linked cross-file reorganizations, and material changes to safety, privacy, permissions, approval boundaries, or required commands with their intent and impact. Suggest the most useful linked diff without making review a gate.
 5. If the proposal changes, invalidate prior approval, preserve applicable unchanged-path review state, regenerate the summary, and refresh review suggestions.
-6. Begin a protected scan phase before guarded re-reads or writes, refresh inventory when needed, write only the approved agent-facing documentation changes, re-read the changed docs through the guard, and call `end` afterward.
+6. Begin a protected execution phase only for approved writes. Do not request another agent-visible `inventory` or `read` as routine preparation or verification: guarded edits revalidate their current path eligibility, and exact replacements use the source snapshot's `oldText`. Compare each successful edit's returned patch with the snapshot and ledger; use unchanged snapshots to check related pointers. Do not re-read untouched canonical sources. If a source is known or reasonably suspected to be stale, an exact replacement fails, or an edit result is failed or uncertain, read only the affected documents through the guard, regenerate the proposal, and obtain a refreshed approval. A successful exact replacement does not prove unrelated text stayed fresh. Call `end` afterward.
 
 Never infer approval from proposal selection, a request to preview, review navigation, or vague assent.
 
@@ -100,8 +126,9 @@ Never infer approval from proposal selection, a request to preview, review navig
 
 After an approved write:
 
-- re-check the changed files against the preservation ledger;
-- verify pointers resolve only to visible protected candidates and preserve local routing;
+- compare each successful edit's returned patch against the source snapshot and preservation ledger; this is not independent verification of the final on-disk document;
+- verify pointers from the source snapshots and returned patches resolve only to visible protected candidates and preserve local routing;
+- re-read only affected documents when source freshness is uncertain or an edit result is failed or uncertain;
 - verify no source/build/runtime, `.picm/`, generated, or unrelated files changed;
 - report qualitative results and unresolved uncertainty without claiming proof of equivalence or numeric savings;
 - call `picm_scan_control complete` when the workflow is finished.

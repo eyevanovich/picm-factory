@@ -28,7 +28,17 @@ A match from any source blocks the path. Git's `--exclude-standard` inventory an
 
 Do not follow symlinks during protected scans. A non-excluded symlink can resolve to excluded or out-of-repository content, so the extension blocks direct path-tool access to symlinks. Record only the link path/type; if its content is genuinely needed, ask the user for a non-symlink, non-excluded copy inside the approved workspace.
 
-Treat each submodule as a separate repository boundary. Do not initialize, fetch, or enter it automatically. If the user explicitly includes an already available submodule, apply parent Git rules, session/config privacy exclusions, and that submodule's own Git exclusions before reading anything.
+Treat each submodule as a separate repository boundary. Do not initialize, fetch, or enter it automatically. A present nested Git worktree remains unreadable until the user directly replies on its own line with `Include submodule: vendor/lib`, substituting its exact project-relative root. Apply parent Git rules, session/config privacy exclusions, and that submodule's own Git exclusions before reading anything. Inclusion alone grants no access; never treat an agent tool call as user inclusion.
+
+### Explicit submodule re-entry after a scan end
+
+When the parent scan phase has ended, obtain a fresh direct reply on its own line: `Include submodule: vendor/lib`, substituting the exact project-relative root of the already-present submodule. That reply is not another `picm_scan_control privacy` action: the parent phase retains its confirmed config and session exclusions, and `privacy` is invalid after `end`.
+
+1. Call `picm_scan_control` with `action: "begin"` to start the next protected phase.
+2. Call `picm_scan_control` with `action: "inventory"` and that exact root as `path` (for example, `vendor/lib`). This validates the initialized submodule root, its parent Git boundary, and its own Git rules while retaining the existing PiCM exclusions. The reply alone does not admit reads, listings, or traversal.
+3. Read only the resulting safe candidates, then `end` the phase before continuing or completing the workflow.
+
+If the user needs additional session or persisted exclusions, do not scan the submodule in that settled workflow. Complete it and restart `/picm-adopt` so privacy review can record the full exclusion set before any scan. Never clone, initialize, fetch, or write while handling this re-entry.
 
 When `.git` is absent, the extension creates temporary bare Git metadata only after privacy review, points it at the workspace for candidate and remaining Git-exclude evaluation, and removes it on session shutdown. It never runs `git init` in the user's workspace. If Git, privacy-config validation, or an ignore check is unavailable, stop rather than weakening enforcement.
 
@@ -280,7 +290,7 @@ Record only what maintenance needs. Example coding-primary config:
 
 For a hybrid, preserve the primary workflow profile and use the same optional `capabilities.codebaseMap` object. Roots may overlap `paths.workflowFolders`. If the map lives in the routing file or an existing architecture document, record that path instead of manufacturing `CONTEXT-MAP.md`.
 
-Existing configs remain compatible: explicit `light`, `balanced`, and `strict` values are readable and honored, while a historically missing value falls back to Balanced. Light is compatibility-only and must not appear in new adoption choices or new adoption output.
+Existing configs remain compatible: explicit `light`, `balanced`, and `strict` values are preserved and readable as legacy metadata, but never select a maintenance run depth. A historically missing value has no Balanced fallback. Light has no active or scheduled compatibility dispatch and must not appear in new adoption choices or new adoption output.
 
 When the user approves durable PiCM-only scan exclusions, preserve their normalized project-relative paths in the same config:
 

@@ -5,19 +5,7 @@ import {
   MAINTENANCE_DEPTH_CHOICES,
   STRICT_MAINTENANCE_GUIDANCE,
   parseMaintenanceDepthArgument,
-  resolveStoredCodingMaintenancePreset,
 } from "../extensions/runtime/coding-maintenance-depth.mjs";
-
-test("stored coding maintenance presets preserve historical compatibility", () => {
-  assert.equal(resolveStoredCodingMaintenancePreset("light"), "light");
-  assert.equal(resolveStoredCodingMaintenancePreset("balanced"), "balanced");
-  assert.equal(resolveStoredCodingMaintenancePreset("strict"), "strict");
-  assert.equal(resolveStoredCodingMaintenancePreset(undefined), "balanced");
-  assert.throws(
-    () => resolveStoredCodingMaintenancePreset("fast"),
-    /Unsupported coding maintenance preset/,
-  );
-});
 
 test("new run-depth choices are strict-first and exclude Light", () => {
   assert.deepEqual(MAINTENANCE_DEPTH_CHOICES, [

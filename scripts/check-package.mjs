@@ -12,7 +12,6 @@ import { join } from "node:path";
 import {
   BALANCED_MAINTENANCE_GUIDANCE,
   STRICT_MAINTENANCE_GUIDANCE,
-  resolveStoredCodingMaintenancePreset,
 } from "../extensions/runtime/coding-maintenance-depth.mjs";
 
 const root = process.cwd();
@@ -39,6 +38,7 @@ const required = [
   "test/specialist-folder-maintenance-contract.test.mjs",
   "test/privacy-policy.test.mjs",
   "extensions/picm-factory.ts",
+  "extensions/runtime/approval-runtime.mjs",
   "extensions/runtime/coding-maintenance-depth.mjs",
   "extensions/runtime/git-read-gate.mjs",
   "extensions/runtime/layout-profile.mjs",
@@ -50,6 +50,7 @@ const required = [
   "extensions/runtime/proposal-batch.mjs",
   "extensions/runtime/runtime-coordinator.mjs",
   "extensions/runtime/scaffold-approval.mjs",
+  "extensions/runtime/workflow-lifecycle.mjs",
   "extensions/runtime/specialist-first-run-guidance.mjs",
   "skills/picm-factory/SKILL.md",
   "skills/picm-factory/references/optimization-guide.md",
@@ -127,6 +128,7 @@ const requiredPackageFiles = [
   "README.md",
   "LICENSE",
   "extensions/picm-factory.ts",
+  "extensions/runtime/approval-runtime.mjs",
   "extensions/runtime/coding-maintenance-depth.mjs",
   "extensions/runtime/git-read-gate.mjs",
   "extensions/runtime/layout-profile.mjs",
@@ -138,6 +140,7 @@ const requiredPackageFiles = [
   "extensions/runtime/proposal-batch.mjs",
   "extensions/runtime/runtime-coordinator.mjs",
   "extensions/runtime/scaffold-approval.mjs",
+  "extensions/runtime/workflow-lifecycle.mjs",
   "extensions/runtime/specialist-first-run-guidance.mjs",
   "skills/picm-factory/SKILL.md",
   "skills/picm-factory/references/adoption-guide.md",
@@ -304,7 +307,6 @@ const codingGuidance = {
     "`inventory` for candidate discovery",
   ],
   "skills/picm-factory/references/coding-maintenance-rubric.md": [
-    "### Light (compatibility only)",
     "### Balanced",
     "### Strict",
     "Strict (recommended): broader systematic coverage across declared roots and mapped contexts; higher cost.",
@@ -357,156 +359,49 @@ for (const file of maintenanceDepthGuidanceFiles) {
     }
   }
 }
-for (const [stored, expected] of [
-  ["light", "light"],
-  ["balanced", "balanced"],
-  ["strict", "strict"],
-  [undefined, "balanced"],
-]) {
-  if (resolveStoredCodingMaintenancePreset(stored) !== expected) {
-    console.error(`Stored coding maintenance compatibility failed for: ${stored}`);
-    process.exit(1);
-  }
-}
-
-const adoptionPrivacyQuestionGuidance = {
-  "skills/picm-factory/SKILL.md": [
-    "Ask the security/privacy question before any scan",
-    "Use `persist: true` only when the user requests durable PiCM exclusions",
-    "root/nested `.gitignore`, `.git/info/exclude`, global Git excludes",
-  ],
-  "skills/picm-factory/references/coding-adoption-guide.md": [
-    "PiCM automatically protects:",
-    "sensitive eligible paths PiCM cannot infer",
-  ],
-  "prompts/picm-adopt.md": [
-    "PiCM automatically protects:",
-    "Only after privacy review completes, load the `picm-factory` skill",
-  ],
-  "extensions/picm-factory.ts": [
-    "Privacy-first startup — follow this order exactly",
-    "PiCM automatically protects:",
-    "Git internals",
-    "symlinks and nested repository/submodule boundaries",
-    "Only after privacy review completes, load the \\`picm-factory\\` skill",
-  ],
-  "docs/layout-fixture-qa.md": [
-    "both `/picm-adopt` classified as coding and `/picm-adopt coding` reassure the user",
-    "does not claim every secret is inferred",
-  ],
-};
-for (const [file, signals] of Object.entries(adoptionPrivacyQuestionGuidance)) {
-  const text = readFileSync(join(root, file), "utf8");
-  for (const signal of signals) {
-    if (!text.includes(signal)) {
-      console.error(`Adoption privacy-question guidance ${file} missing signal: ${signal}`);
-      process.exit(1);
-    }
-  }
-}
-
-const conciseExistingWorkspacePrivacyGuidance = {
-  "extensions/picm-factory.ts": ["privacyQuestionIsConcise", "files or directory that should be excluded from reads"],
-  "extensions/runtime/runtime-coordinator.mjs": ["hasCompletedPicmSetup", "privacyQuestionIsConcise"],
-  "skills/picm-factory/SKILL.md": ["privacyQuestionIsConcise", "completed adoption or new-workspace setup"],
-  "skills/picm-factory/references/coding-maintenance-rubric.md": ["privacyQuestionIsConcise", "files or directory that should be excluded from reads"],
-  "prompts/picm-optimize.md": ["privacyQuestionIsConcise", "files or directory that should be excluded from reads"],
-  "README.md": ["completed adopted or newly scaffolded workspaces", "files or directory that should be excluded from reads"],
-  "docs/layout-fixture-qa.md": ["adopted or newly scaffolded workspace", "files or directory that should be excluded from reads"],
-};
-for (const [file, signals] of Object.entries(conciseExistingWorkspacePrivacyGuidance)) {
-  const text = readFileSync(join(root, file), "utf8");
-  for (const signal of signals) {
-    if (!text.includes(signal)) {
-      console.error(`Concise established-workspace privacy guidance ${file} missing signal: ${signal}`);
-      process.exit(1);
-    }
-  }
-}
-
-const previewReviewGuidance = {
-  "skills/picm-factory/references/preview-review-protocol.md": [
-    "Affected files and operations",
-    "Behavior or configuration changes",
-    "Linked cross-file moves",
-    "Preserved behavior",
-    "Known uncertainty",
-    "Review suggestions",
-    "Review suggestions never block approval",
-    "View all",
-    "Select files",
-    "Return to summary",
-    "unified diff",
-    "complete proposed content",
-    "complete removed content",
-    "source and destination together",
-    "not a deterministic plan engine",
-    "custom TUI",
-    "workflow executor",
-  ],
-  "skills/picm-factory/SKILL.md": [
-    "references/preview-review-protocol.md",
-    "Before every proposal batch",
-  ],
-  "skills/picm-factory/references/adoption-guide.md": ["preview-review-protocol.md"],
-  "skills/picm-factory/references/coding-adoption-guide.md": ["preview-review-protocol.md"],
-  "skills/picm-factory/references/maintenance-rubric.md": ["preview-review-protocol.md"],
-  "prompts/picm-adopt.md": ["summary-preview and optional-diff-review protocol"],
-  "prompts/picm-maintain.md": ["summary-preview and optional-diff-review protocol"],
-  "prompts/picm-optimize.md": [
-    "summary-preview and optional-diff-review protocol",
-    "No worthwhile optimizations found",
-  ],
-  "prompts/picm-help.md": ["complete concise summary", "optional exact review"],
-  "README.md": ["complete concise summary", "View all", "Select files", "Return to summary"],
-  "docs/layout-fixture-qa.md": ["both `/picm-adopt` and `/picm-maintain`", "Repeat the no-write check"],
-};
-for (const [file, signals] of Object.entries(previewReviewGuidance)) {
-  const text = readFileSync(join(root, file), "utf8");
-  for (const signal of signals) {
-    if (!text.includes(signal)) {
-      console.error(`Preview/review guidance ${file} missing signal: ${signal}`);
-      process.exit(1);
-    }
-  }
-}
-
-const optimizationGuidance = {
-  "skills/picm-factory/references/optimization-guide.md": [
-    "protected Git-derived candidates and guarded reads",
-    "Inspect every identified agent-facing document",
-    "Preservation ledger",
-    "Do not claim semantic equivalence",
-    "generated artifacts or generated documentation",
-    "Let the user choose, combine, reject, or revise",
-    "No worthwhile optimizations found",
-    "Do not build a deterministic plan engine, semantic-equivalence system, reference crawler, orchestration layer",
-  ],
-  "skills/picm-factory/SKILL.md": [
-    "## Mode: optimize (`/picm-optimize`)",
-    "references/optimization-guide.md",
-  ],
-  "prompts/picm-optimize.md": [
-    "before loading the skill or using any project-reading tool",
-    "Inspect all agent-facing documentation",
-    "No worthwhile optimizations found",
-  ],
-  "README.md": [
-    "Outcome-preserving optimization",
-    "`/picm-optimize`",
-  ],
-};
-for (const [file, signals] of Object.entries(optimizationGuidance)) {
-  const text = readFileSync(join(root, file), "utf8");
-  for (const signal of signals) {
-    if (!text.includes(signal)) {
-      console.error(`Optimization guidance ${file} missing signal: ${signal}`);
-      process.exit(1);
-    }
-  }
-}
-
 const extension = readFileSync(join(root, "extensions/picm-factory.ts"), "utf8");
+const exactAdoptionPrivacyQuestion = [
+  "PiCM automatically protects:",
+  "- paths covered by root, nested, and repository-local Git ignore rules;",
+  "- Git internals;",
+  "- symlinks and nested repository/submodule boundaries; and",
+  "- paths outside this project.",
+  "",
+  "Before scanning any workspace files, does this workspace contain secrets, regulated data, client data, or personal/private material that must be excluded? If so, name each exact project-relative file or directory to exclude. Name any other project-relative exclusions too, or reply \\`none\\` if there are none.",
+].join("\n");
+const exactConcisePrivacyQuestion =
+  "Name any additional project-relative files or directory that should be excluded from reads, or reply `none` to continue.";
+const adoptionPrivacyQuestion = extension.match(
+  /const adoptionPrivacyQuestion = `((?:\\`|[^`])*)`;/,
+)?.[1];
+const concisePrivacyQuestion = extension.match(
+  /const concisePrivacyQuestion\s*=\s*"((?:\\"|[^"])*)";/,
+)?.[1];
+if (adoptionPrivacyQuestion !== exactAdoptionPrivacyQuestion) {
+  console.error("PiCM extension adoption privacy question must retain exact UI copy");
+  process.exit(1);
+}
+if (concisePrivacyQuestion !== exactConcisePrivacyQuestion) {
+  console.error("PiCM extension concise privacy question must retain exact UI copy");
+  process.exit(1);
+}
+const buildPromptSource = extension.match(
+  /function buildPrompt\([\s\S]*?\n}\n\ntype PicmFactoryExtensionOptions/,
+)?.[0];
+const concisePrivacyPromptDispatch = buildPromptSource?.match(
+  /if \(command === "picm-maintain" \|\| command === "picm-optimize"\) \{([\s\S]*?)\n  }\n  if \(privacyBootstrap\)/,
+)?.[1];
+const adoptionPrivacyPromptDispatch = buildPromptSource?.match(
+  /if \(privacyBootstrap\) \{([\s\S]*?)\n  }\n  return `Use the picm-factory skill/,
+)?.[1];
+if (!/ask exactly:\\n\\n\$\{concisePrivacyQuestion\}\\n\\nThen call/.test(concisePrivacyPromptDispatch)) {
+  console.error("PiCM concise privacy question must be used by established-workspace prompt dispatch");
+  process.exit(1);
+}
+if (!/ask the user:\\n\\n\$\{adoptionPrivacyQuestion\}\\n\\n3\. Prepare the privacy call/.test(adoptionPrivacyPromptDispatch)) {
+  console.error("PiCM adoption privacy question must be used by adoption prompt dispatch");
+  process.exit(1);
+}
 const gitReadGate = readFileSync(
   join(root, "extensions/runtime/git-read-gate.mjs"),
   "utf8",
@@ -543,8 +438,7 @@ const runtimeCoordinator = readFileSync(
   "utf8",
 );
 for (const signal of [
-  "scanWorkflows",
-  "isAutomatic",
+  "createWorkflowLifecycle",
   "createGitReadGate",
   "createMaintenanceController",
   "resetCycle",
@@ -833,7 +727,7 @@ const commandDecisionSignals = [
   "type a space",
   "/picm-new [workflow description]",
   "/picm-adopt [coding | adoption request]",
-  "/picm-maintain [strict | balanced | coding | routing",
+  "/picm-maintain [strict | balanced",
   "/picm-optimize",
 ];
 for (const file of commandDecisionGuidanceFiles) {
@@ -855,6 +749,10 @@ for (const file of commandDecisionGuidanceFiles) {
 const readme = readFileSync(join(root, "README.md"), "utf8").toLowerCase();
 if (!readme.includes("you do not need to know")) {
   console.error("README command decision guide must avoid requiring PiCM/ICM jargon");
+  process.exit(1);
+}
+if (!readme.includes("/picm-maintain [strict | balanced] [coding | routing | handoffs | stale-context | security | trace")) {
+  console.error("README must distinguish optional maintenance depth from its optional focus");
   process.exit(1);
 }
 
