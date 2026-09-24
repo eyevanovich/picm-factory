@@ -177,6 +177,16 @@ test("requires every local and global install pin to match the current version",
     ),
     false,
   );
+  assert.equal(
+    hasCurrentPinnedInstallVersions(
+      [
+        "pi install -l npm:@eyevanovich/picm-factory@0.3.0",
+        "pi install npm:@eyevanovich/picm-factory@0.3.0-beta.1",
+      ].join("\n"),
+      current,
+    ),
+    false,
+  );
 });
 
 test("selects the highest bump across unreleased commits", () => {
@@ -405,12 +415,14 @@ test("prepares package, changelog, and release notes from commits after the late
     delete preparedDependencyGraph[""];
     assert.deepEqual(preparedDependencyGraph, lockedDependencyGraph);
     assert.match(readFileSync(join(root, "CHANGELOG.md"), "utf8"), /^## \[0\.2\.0\]/m);
-    assert.equal(
-      hasCurrentPinnedInstallVersions(
-        readFileSync(join(root, "README.md"), "utf8"),
-        "0.2.0",
-      ),
-      true,
+    const preparedReadme = readFileSync(join(root, "README.md"), "utf8");
+    assert.match(
+      preparedReadme,
+      /pi install -l npm:@eyevanovich\/picm-factory@0\.2\.0/,
+    );
+    assert.match(
+      preparedReadme,
+      /pi install npm:@eyevanovich\/picm-factory@0\.2\.0/,
     );
     assert.match(
       readFileSync(join(root, "skills/picm-factory/SKILL.md"), "utf8"),
