@@ -15,7 +15,7 @@ For a project-local install, I highly recommend pinning this version so behavior
 ```bash
 mkdir my-workflow
 cd my-workflow
-pi install -l npm:@eyevanovich/picm-factory@0.4.0 # remove version to always install latest
+pi install -l npm:@eyevanovich/picm-factory@0.3.1 # remove version to always install latest
 pi
 ```
 
@@ -28,7 +28,7 @@ Then run:
 For a global install stored in your user settings, drop the `-l`:
 
 ```bash
-pi install npm:@eyevanovich/picm-factory@0.4.0 # remove version to always install latest
+pi install npm:@eyevanovich/picm-factory@0.3.1 # remove version to always install latest
 ```
 
 A project-level entry for the same package can override this global install. An unpinned install follows npm's `latest` and can be refreshed easily with `pi update --extensions`.
@@ -39,7 +39,7 @@ To add PiCM Factory to an existing project, install it from that project's root 
 
 ## Choose a command
 
-PiCM Factory gives Pi five commands for working on your ICM or coding projects.
+You do not need to know PiCM or ICM terminology. PiCM Factory gives Pi five commands for working on folder-agent and coding projects.
 
 | Command | Use it when | What it does |
 | --- | --- | --- |
