@@ -1,6 +1,6 @@
 {
   "name": "@eyevanovich/picm-factory",
-  "version": "0.3.1",
+  "version": "0.4.0",
   "description": "Project-local Pi package for creating, adopting, maintaining, and optimizing folder-agent workspaces and coding-repository context maps.",
   "type": "module",
   "license": "MIT",

@@ -15,7 +15,7 @@ For a project-local install, I highly recommend pinning this version so behavior
 ```bash
 mkdir my-workflow
 cd my-workflow
-pi install -l npm:@eyevanovich/picm-factory@0.3.1 # remove version to always install latest
+pi install -l npm:@eyevanovich/picm-factory@0.4.0 # remove version to always install latest
 pi
 ```
 
