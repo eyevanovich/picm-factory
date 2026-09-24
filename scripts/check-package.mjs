@@ -13,6 +13,7 @@ import {
   BALANCED_MAINTENANCE_GUIDANCE,
   STRICT_MAINTENANCE_GUIDANCE,
 } from "../extensions/runtime/coding-maintenance-depth.mjs";
+import { hasCurrentPinnedInstallVersions } from "./prepare-release.mjs";
 
 const root = process.cwd();
 const required = [
@@ -495,19 +496,11 @@ for (const listName of codingCompletionLists) {
   }
 }
 
-const pinnedInstallPattern =
-  /pi install -l npm:@eyevanovich\/picm-factory@(\d+\.\d+\.\d+)/g;
 for (const [file, text] of [
   ["README.md", readFileSync(join(root, "README.md"), "utf8")],
   ["skills/picm-factory/SKILL.md", skill],
 ]) {
-  const pinnedVersions = [...text.matchAll(pinnedInstallPattern)].map(
-    ([, version]) => version,
-  );
-  if (
-    pinnedVersions.length === 0 ||
-    pinnedVersions.some((version) => version !== pkg.version)
-  ) {
+  if (!hasCurrentPinnedInstallVersions(text, pkg.version)) {
     console.error(`${file} must pin the current package version ${pkg.version}`);
     process.exit(1);
   }

@@ -16,6 +16,7 @@ import {
   analyzeCommit,
   buildReleaseNotes,
   bumpVersion,
+  hasCurrentPinnedInstallVersions,
   prepareRelease,
   selectBump,
   selectMergedPullRequests,
@@ -29,7 +30,11 @@ function git(root, ...args) {
 function writePinnedDocs(root, version) {
   writeFileSync(
     join(root, "README.md"),
-    `Install with pi install -l npm:@eyevanovich/picm-factory@${version}\n`,
+    [
+      `Install with pi install -l npm:@eyevanovich/picm-factory@${version}`,
+      `Install globally with pi install npm:@eyevanovich/picm-factory@${version}`,
+      "",
+    ].join("\n"),
   );
   mkdirSync(join(root, "skills/picm-factory"), { recursive: true });
   writeFileSync(
@@ -119,17 +124,58 @@ test("maps Conventional Commits to literal SemVer bumps", () => {
   assert.equal(bumpVersion("0.1.2", "major"), "1.0.0");
 });
 
-test("updates pinned install commands to the prepared release version", () => {
+test("updates local and global pinned install commands to the prepared release version", () => {
+  const pinnedCommands = [
+    "pi install -l npm:@eyevanovich/picm-factory@0.2.0",
+    "pi install npm:@eyevanovich/picm-factory@0.2.0",
+    "pi install npm:@example/other-package@0.2.0",
+  ].join("\n");
+
   assert.equal(
-    updatePinnedInstallVersion(
-      "pi install -l npm:@eyevanovich/picm-factory@0.2.0\n",
-      "0.3.0",
-    ),
-    "pi install -l npm:@eyevanovich/picm-factory@0.3.0\n",
+    updatePinnedInstallVersion(pinnedCommands, "0.3.0"),
+    [
+      "pi install -l npm:@eyevanovich/picm-factory@0.3.0",
+      "pi install npm:@eyevanovich/picm-factory@0.3.0",
+      "pi install npm:@example/other-package@0.2.0",
+    ].join("\n"),
   );
   assert.throws(
     () => updatePinnedInstallVersion("no install command\n", "0.3.0"),
     /Pinned PiCM Factory install command was not found/,
+  );
+});
+
+test("requires every local and global install pin to match the current version", () => {
+  const current = "0.3.0";
+  assert.equal(
+    hasCurrentPinnedInstallVersions(
+      [
+        "pi install -l npm:@eyevanovich/picm-factory@0.3.0",
+        "pi install npm:@eyevanovich/picm-factory@0.3.0",
+      ].join("\n"),
+      current,
+    ),
+    true,
+  );
+  assert.equal(
+    hasCurrentPinnedInstallVersions(
+      [
+        "pi install -l npm:@eyevanovich/picm-factory@0.3.0",
+        "pi install npm:@eyevanovich/picm-factory@0.2.0",
+      ].join("\n"),
+      current,
+    ),
+    false,
+  );
+  assert.equal(
+    hasCurrentPinnedInstallVersions(
+      [
+        "pi install -l npm:@eyevanovich/picm-factory@0.2.0",
+        "pi install npm:@eyevanovich/picm-factory@0.3.0",
+      ].join("\n"),
+      current,
+    ),
+    false,
   );
 });
 
@@ -359,9 +405,12 @@ test("prepares package, changelog, and release notes from commits after the late
     delete preparedDependencyGraph[""];
     assert.deepEqual(preparedDependencyGraph, lockedDependencyGraph);
     assert.match(readFileSync(join(root, "CHANGELOG.md"), "utf8"), /^## \[0\.2\.0\]/m);
-    assert.match(
-      readFileSync(join(root, "README.md"), "utf8"),
-      /picm-factory@0\.2\.0/,
+    assert.equal(
+      hasCurrentPinnedInstallVersions(
+        readFileSync(join(root, "README.md"), "utf8"),
+        "0.2.0",
+      ),
+      true,
     );
     assert.match(
       readFileSync(join(root, "skills/picm-factory/SKILL.md"), "utf8"),

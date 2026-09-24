@@ -10,7 +10,7 @@ const CONVENTIONAL_SUBJECT_PATTERN =
 const BREAKING_FOOTER_PATTERN = /(?:^|\n)BREAKING(?: |-)CHANGE:\s*\S/im;
 const BUMP_PRIORITY = { patch: 1, minor: 2, major: 3 };
 const PINNED_INSTALL_PATTERN =
-  /(pi install -l npm:@eyevanovich\/picm-factory@)(\d+\.\d+\.\d+)/g;
+  /(pi install(?: -l)? npm:@eyevanovich\/picm-factory@)(\d+\.\d+\.\d+)/g;
 
 function git(root, args) {
   return execFileSync("git", args, { cwd: root, encoding: "utf8" }).trim();
@@ -207,6 +207,13 @@ function latestReleaseTag(root) {
     throw new Error("No reachable v<major>.<minor>.<patch> release tag was found");
   }
   return tag;
+}
+
+export function hasCurrentPinnedInstallVersions(text, version) {
+  const pinnedVersions = [...text.matchAll(PINNED_INSTALL_PATTERN)].map(
+    ([, , pinnedVersion]) => pinnedVersion,
+  );
+  return pinnedVersions.length > 0 && pinnedVersions.every((pinnedVersion) => pinnedVersion === version);
 }
 
 export function updatePinnedInstallVersion(text, version) {
