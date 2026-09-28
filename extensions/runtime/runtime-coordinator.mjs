@@ -275,8 +275,9 @@ export function createRuntimeCoordinator({
         message: "Workflow cancelled. Completed changes remain; cancellation does not record maintenance completion.",
       };
     }
-    if (workflow?.scanSettled && !workflow.completed && action !== "begin" && action !== "complete" && action !== "new-intent") {
-      throw new Error("PICM_SCAN_SETTLED: after ending a scan, only begin for the next phase, record a pending new-workflow intent, or complete is allowed");
+    if (workflow?.scanSettled && !workflow.completed &&
+      !["begin", "complete", "new-intent", "discovery-choice"].includes(action)) {
+      throw new Error("PICM_SCAN_SETTLED: after ending a scan, only begin, discovery-choice, new-intent, or complete is allowed");
     }
     if (workflow?.completed && action !== "status" && action !== "complete") {
       throw new Error("PICM_SCAN_COMPLETE: wait for the completed workflow to settle before starting another scan action");
@@ -456,6 +457,38 @@ export function createRuntimeCoordinator({
         ...workflowState(workflow),
       };
     }
+    if (action === "discovery-choice") {
+      if (!workflow || workflow.command !== "picm-maintain" || !workflow.scanSettled || workflow.phase.active ||
+        workflow.maintenanceDiscoveryChoice !== "unresolved") {
+        throw new Error("PICM_MAINTENANCE_CHOICE_UNAVAILABLE: end maintenance discovery before requesting a decision");
+      }
+      if (!ctx.hasUI) return {
+        ok: false, action, code: "PICM_MAINTENANCE_UI_UNAVAILABLE",
+        message: "Dialog unavailable; use the existing direct-reply maintenance path instead",
+      };
+      const phaseIdentity = workflow.submodule.phaseIdentity;
+      const choice = await ctx.ui.select(
+        "After reviewing the maintenance findings, what would you like to do?",
+        ["Draft a repair for exact review", "Finish inspection without changes"],
+        { signal: execution.signal },
+      );
+      requireCurrentWorkflow(sessionId, workflow);
+      throwIfAborted(execution.signal, "PICM_SCAN_ABORTED");
+      if (workflow.phase.active || !workflow.scanSettled || workflow.submodule.phaseIdentity !== phaseIdentity ||
+        workflow.maintenanceDiscoveryChoice !== "unresolved") {
+        throw new Error("PICM_MAINTENANCE_CHOICE_STALE: maintenance phase or decision changed while the dialog was open");
+      }
+      if (choice !== "Draft a repair for exact review" && choice !== "Finish inspection without changes") {
+        return { ok: false, action, code: "PICM_MAINTENANCE_CHOICE_UNRESOLVED", message: "Decision dismissed; maintenance reminder remains due" };
+      }
+      const decision = choice === "Draft a repair for exact review" ? "draft" : "inspection";
+      lifecycle.transition(workflow, "maintenance-discovery-choice", { choice: decision });
+      return { ok: true, action, choice: decision,
+        message: decision === "draft"
+          ? "Begin a new protected phase to prepare and present the selected repair. This is not write approval."
+          : "Inspection-only choice recorded; complete may now reset the reminder if no repair is pending.",
+        ...workflowState(workflow) };
+    }
     if (action === "inventory") {
       if (!workflow || !workflow.phase.active) {
         throw new Error("PICM_SCAN_NOT_ACTIVE: begin an explicitly authorized scan before requesting inventory");
@@ -522,6 +555,24 @@ export function createRuntimeCoordinator({
       if (workflow.command === "picm-new" && workflow.newWorkflowIntentRequired) {
         throw new Error("PICM_NEW_INTENT_PENDING: record the user's existing-architecture intent before starting another scan");
       }
+      if (workflow.command === "picm-maintain" && !workflow.scanStarted && !workflow.maintenanceOptimization && ctx.hasUI) {
+        const choice = await ctx.ui.select(
+          "Include agent-document optimization in this maintenance pass?",
+          ["Standard maintenance", "Include agent-document optimization"],
+          { signal: execution.signal },
+        );
+        requireCurrentWorkflow(sessionId, workflow);
+        throwIfAborted(execution.signal, "PICM_SCAN_ABORTED");
+        if (workflow.phase.active || workflow.scanStarted || !workflow.privacyReviewed) {
+          throw new Error("PICM_MAINTENANCE_CHOICE_STALE: maintenance state changed while the dialog was open");
+        }
+        if (choice !== "Standard maintenance" && choice !== "Include agent-document optimization") {
+          return { ok: false, action, code: "PICM_MAINTENANCE_CHOICE_UNRESOLVED", message: "Optimization choice dismissed; no scan was started" };
+        }
+        lifecycle.transition(workflow, "maintenance-optimization", {
+          choice: choice === "Standard maintenance" ? "standard" : "include",
+        });
+      }
       if (workflow.command === "picm-new" && workflow.newWorkflowIntent === "cancelled") {
         throw new Error("PICM_NEW_INTENT_CANCELLED: complete the cancelled /picm-new workflow without starting another scan");
       }
@@ -540,6 +591,10 @@ export function createRuntimeCoordinator({
         throw new Error("PICM_SCAN_NOT_ACTIVE: begin an explicitly authorized scan before ending it");
       }
       lifecycle.transition(workflow, "end-scan");
+      if (workflow.command === "picm-maintain" && ctx.hasUI &&
+        workflow.maintenanceRepairStatus === "none" && workflow.maintenanceDiscoveryChoice === "none") {
+        lifecycle.transition(workflow, "maintenance-offer-discovery");
+      }
       invalidatePhaseAuthority(workflow.scope);
     } else if (action === "complete") {
       if (!workflow) {
@@ -565,6 +620,14 @@ export function createRuntimeCoordinator({
         }
       }
       let maintenanceReset;
+      if (workflow.command === "picm-maintain" && workflow.maintenanceDiscoveryChoice === "unresolved" && workflow.maintenanceRepairStatus === "none") {
+        return {
+          ok: false, action, code: "PICM_MAINTENANCE_CHOICE_UNRESOLVED",
+          message: "Present the maintenance findings, then call picm_scan_control discovery-choice to let the user draft a repair or finish inspection. The reminder remains due.",
+          maintenanceReset: { ok: false, changed: false, reason: "unresolved-choice" },
+          ...workflowState(workflow), authorized: true, active: false, completed: false,
+        };
+      }
       if (
         workflow.command === "picm-maintain" &&
         workflow.maintenanceRepairStatus === "pending"
@@ -929,6 +992,43 @@ export function createRuntimeCoordinator({
         audit: proposalAudit(current.batch, "presented", { command: workflow.command }),
       };
     }
+    if (params.action === "authorize") {
+      if (!ctx.hasUI) return {
+        ok: false, code: "PICM_PROPOSAL_UI_UNAVAILABLE",
+        message: "Use direct textual approval of the presented proposal when a selection dialog is unavailable",
+      };
+      if (current.status !== "pending" || !hasCurrentPresentation(current) || params.digest !== current.batch.digest) {
+        return { ok: false, code: "PICM_PROPOSAL_STALE", message: "Present the current exact proposal before opening its approval dialog" };
+      }
+      if (proposalHasExistingContentRisk(current.batch) && !hasProposalAcknowledgement(current)) {
+        return { ok: false, code: "PICM_PROPOSAL_CHECKPOINT_ACKNOWLEDGEMENT_REQUIRED",
+          message: "Record the user's checkpoint report or explicit risk opt-out before opening the write authorization dialog" };
+      }
+      const phaseIdentity = lifecycle.activePhaseIdentity(workflow);
+      const identity = { proposalId: current.batch.id, digest: current.batch.digest };
+      const choice = await ctx.ui.select(
+        `Review the exact proposal summary above before authorizing these writes.\n${current.presentation.summary}\nAuthorize this exact proposal?`,
+        ["Authorize this exact proposal", "Not now"],
+        { signal: execution.signal },
+      );
+      requireCurrentWorkflow(sessionId, workflow);
+      throwIfAborted(execution.signal, "PICM_PROPOSAL_ABORTED");
+      if (!lifecycle.hasActivePhaseIdentity(workflow, phaseIdentity) ||
+        proposalBatches.get(workflow.scope) !== current || !hasCurrentPresentation(current) ||
+        current.batch.id !== identity.proposalId || current.batch.digest !== identity.digest ||
+        current.status !== "pending" ||
+        (proposalHasExistingContentRisk(current.batch) && !hasProposalAcknowledgement(current))) {
+        return { ok: false, code: "PICM_PROPOSAL_STALE", message: "Proposal or protected phase changed while the dialog was open" };
+      }
+      if (choice !== "Authorize this exact proposal") {
+        return { ok: false, action: "authorize", code: "PICM_PROPOSAL_NOT_APPROVED", message: "No write authorization was granted" };
+      }
+      current.status = "approved";
+      return {
+        ok: true, action: "authorize", proposalId: identity.proposalId, digest: identity.digest,
+        audit: proposalAudit(current.batch, "approval-observed", { approval: "approved" }),
+      };
+    }
     if (params.action === "cancel") {
       if (current.status === "cancelled") {
         setMaintenanceRepairState(workflow, "pending");
@@ -966,7 +1066,7 @@ export function createRuntimeCoordinator({
       };
     }
     if (params.action !== "apply") {
-      throw new Error("PICM_PROPOSAL_INVALID: action must be prepare, present, apply, or cancel");
+      throw new Error("PICM_PROPOSAL_INVALID: action must be prepare, present, authorize, apply, or cancel");
     }
     const continuing = current.status === "continuation-active" && hasActiveContinuation(
       current,

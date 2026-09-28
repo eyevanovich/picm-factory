@@ -80,7 +80,7 @@ export function createWorkflowLifecycle({ canonicalizeWorkspace = resolve } = {}
         questionIsConcise: false,
         excludedPaths: [],
       },
-      maintenance: { resetAttempted: false, repairStatus: "none", reportOnlyRequested: false, partialEffects: undefined },
+      maintenance: { resetAttempted: false, repairStatus: "none", reportOnlyRequested: false, partialEffects: undefined, optimization: undefined, discoveryChoice: "none" },
       adoption: {
         baselineCaptured: false,
         wasAlreadyAdopted: true,
@@ -118,6 +118,8 @@ export function createWorkflowLifecycle({ canonicalizeWorkspace = resolve } = {}
       maintenanceResetAttempted: alias(() => record.maintenance.resetAttempted),
       maintenanceRepairStatus: alias(() => record.maintenance.repairStatus),
       maintenancePartialEffects: alias(() => record.maintenance.partialEffects),
+      maintenanceOptimization: alias(() => record.maintenance.optimization),
+      maintenanceDiscoveryChoice: alias(() => record.maintenance.discoveryChoice),
       adoptionBaselineCaptured: alias(() => record.adoption.baselineCaptured),
       adoptionWasAlreadyAdopted: alias(() => record.adoption.wasAlreadyAdopted),
       initialMaintenanceOffered: alias(() => record.adoption.initialMaintenanceOffered),
@@ -277,11 +279,33 @@ export function createWorkflowLifecycle({ canonicalizeWorkspace = resolve } = {}
       intent.pendingSource = undefined;
       return record;
     }
+    if (event === "maintenance-optimization") {
+      if (record.command !== "picm-maintain" || !privacy.reviewed || phase.scanStarted ||
+        terminal.completed || !["include", "standard"].includes(details.choice)) throw transitionError(event);
+      maintenance.optimization = details.choice;
+      return record;
+    }
+    if (event === "maintenance-offer-discovery") {
+      if (record.command !== "picm-maintain" || !phase.scanSettled || phase.active || terminal.completed ||
+        maintenance.repairStatus !== "none") throw transitionError(event);
+      maintenance.discoveryChoice = "unresolved";
+      return record;
+    }
+    if (event === "maintenance-discovery-choice") {
+      if (record.command !== "picm-maintain" || !phase.scanSettled || phase.active || terminal.completed ||
+        maintenance.discoveryChoice !== "unresolved" || !["draft", "inspection"].includes(details.choice)) {
+        throw transitionError(event);
+      }
+      maintenance.discoveryChoice = details.choice;
+      if (details.choice === "draft") maintenance.repairStatus = "pending";
+      return record;
+    }
     if (event === "maintenance-selection-reply") {
       if (record.command !== "picm-maintain" || !phase.scanSettled || phase.active || terminal.completed) {
         throw transitionError(event);
       }
       maintenance.repairStatus = "pending";
+      maintenance.discoveryChoice = "draft";
       maintenance.reportOnlyRequested = false;
       return record;
     }
@@ -298,6 +322,7 @@ export function createWorkflowLifecycle({ canonicalizeWorkspace = resolve } = {}
         (details.status === "report-only" && (!phase.active || !maintenance.reportOnlyRequested))
       ) throw transitionError(event);
       maintenance.repairStatus = details.status;
+      maintenance.discoveryChoice = details.status === "report-only" ? "inspection" : "draft";
       maintenance.reportOnlyRequested = false;
       return record;
     }
@@ -320,7 +345,7 @@ export function createWorkflowLifecycle({ canonicalizeWorkspace = resolve } = {}
         !phase.scanStarted ||
         !phase.scanSettled ||
         phase.active ||
-        (record.command === "picm-maintain" && maintenance.repairStatus === "pending")
+        (record.command === "picm-maintain" && (maintenance.repairStatus === "pending" || maintenance.discoveryChoice === "unresolved"))
       ) {
         throw transitionError(event);
       }
@@ -345,6 +370,8 @@ export function createWorkflowLifecycle({ canonicalizeWorkspace = resolve } = {}
       maintenance.repairStatus = "none";
       maintenance.reportOnlyRequested = false;
       maintenance.partialEffects = undefined;
+      maintenance.optimization = undefined;
+      maintenance.discoveryChoice = "none";
       return record;
     }
     throw transitionError(event);
@@ -380,6 +407,10 @@ export function createWorkflowLifecycle({ canonicalizeWorkspace = resolve } = {}
     record.submodule.requestedInclusion = undefined;
     record.submodule.admittedRoot = undefined;
     record.maintenance.resetAttempted = privacyReviewed && state.maintenanceResetAttempted === true;
+    record.maintenance.optimization = privacyReviewed && ["include", "standard"].includes(state.maintenanceOptimization)
+      ? state.maintenanceOptimization : undefined;
+    record.maintenance.discoveryChoice = privacyReviewed && ["none", "unresolved", "draft", "inspection"].includes(state.maintenanceDiscoveryChoice)
+      ? state.maintenanceDiscoveryChoice : "none";
     record.maintenance.repairStatus = privacyReviewed &&
       ["pending", "applied", "report-only"].includes(state.maintenanceRepairStatus)
       ? state.maintenanceRepairStatus
@@ -482,6 +513,8 @@ export function createWorkflowLifecycle({ canonicalizeWorkspace = resolve } = {}
       maintenanceResetAttempted: record.maintenance.resetAttempted,
       maintenanceRepairStatus: record.maintenance.repairStatus,
       maintenancePartialEffects: record.maintenance.partialEffects && { ...record.maintenance.partialEffects },
+      maintenanceOptimization: record.maintenance.optimization,
+      maintenanceDiscoveryChoice: record.maintenance.discoveryChoice,
       adoptionBaselineCaptured: record.adoption.baselineCaptured,
       adoptionWasAlreadyAdopted: record.adoption.wasAlreadyAdopted,
       initialMaintenanceOffered: record.adoption.initialMaintenanceOffered,

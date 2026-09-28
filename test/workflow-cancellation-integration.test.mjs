@@ -50,7 +50,10 @@ test("cancellation after completed maintenance preserves and accurately describe
   const h = harness();
   const ctx = h.context(cwd);
   await h.commands.get("picm-maintain").handler("strict", ctx);
-  for (const action of ["preflight", "privacy", "begin", "end", "complete"]) await control(h, ctx, action);
+  for (const action of ["preflight", "privacy", "begin", "end"]) await control(h, ctx, action);
+  h.setSelection("Finish inspection without changes");
+  await control(h, ctx, "discovery-choice");
+  await control(h, ctx, "complete");
   const completedConfig = readFileSync(join(cwd, ".picm/config.json"), "utf8");
   assert.notEqual(JSON.parse(completedConfig).maintenance.lastCycleAt, "2020-01-01T00:00:00.000Z");
   const cancelled = await control(h, ctx, "cancel");

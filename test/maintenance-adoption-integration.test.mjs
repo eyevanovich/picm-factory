@@ -199,8 +199,12 @@ test("initial maintenance reuses adoption exclusions, selects strict first, and 
         assert.equal(title, "Would you like to run an initial maintenance pass now (recommended)?");
         return "Run maintenance now";
       }
-      assert.equal(title, "Choose maintenance depth for this run (stored preset will not change)");
-      return items[0];
+      if (selection === 2) {
+        assert.equal(title, "Choose maintenance depth for this run (stored preset will not change)");
+        return items[0];
+      }
+      if (title.includes("optimization")) return "Standard maintenance";
+      return "Finish inspection without changes";
     },
   });
   const ctx = h.context(cwd, "tui", "post-adoption-run");
@@ -222,11 +226,13 @@ test("initial maintenance reuses adoption exclusions, selects strict first, and 
   assert.deepEqual(started.details.excludedPaths, ["private"]);
   assert.match(h.sent.at(-1), /Do not repeat preflight or the privacy question/);
   assert.match(h.sent.at(-1), /Initial maintenance run depth: strict/);
-  assert.match(h.sent.at(-1), /agent-document optimization.*Default to No/i);
+  assert.match(h.sent.at(-1), /optimization selector/i);
   assert.equal(readFileSync(join(cwd, ".picm/config.json"), "utf8"), afterAdoption);
 
   await h.scanControl.execute("id", { action: "begin" }, undefined, undefined, ctx);
   await h.scanControl.execute("id", { action: "end" }, undefined, undefined, ctx);
+  h.setSelection("Finish inspection without changes");
+  await h.scanControl.execute("choice", { action: "discovery-choice" }, undefined, undefined, ctx);
   await h.scanControl.execute("id", { action: "complete" }, undefined, undefined, ctx);
   assert.notEqual(JSON.parse(readFileSync(join(cwd, ".picm/config.json"), "utf8")).maintenance.lastCycleAt, "2020-01-01T00:00:00.000Z");
 });

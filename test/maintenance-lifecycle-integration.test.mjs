@@ -9,6 +9,15 @@ import { createRuntimeCoordinator } from "../extensions/runtime/runtime-coordina
 
 import { fixture, harness, nonGitFixture, oldDue } from "./helpers/maintenance-extension-harness.mjs";
 
+async function chooseInspection(h, ctx) {
+  const state = h.entries.at(-1)?.data;
+  if (state?.command !== "picm-maintain" || state.maintenanceDiscoveryChoice !== "unresolved") return;
+  h.setSelection("Finish inspection without changes");
+  await h.scanControl.execute("choice", { action: "discovery-choice" }, undefined, undefined, ctx);
+  h.setSelection("Standard maintenance");
+}
+
+
 test("when maintenance is due in TUI, renders persistent reminder widget and presents Run Now and Defer selector", async (t) => {
   const cwd = fixture(t, oldDue("nudge"));
   const h = harness({ selectResult: undefined });
@@ -79,7 +88,7 @@ test("Run Now without waitForIdle prompts depth selection, starts maintenance fl
         assert.equal(title, "Choose maintenance depth for this run (stored preset will not change)");
         return items[0]; // Strict
       }
-      return items[0];
+      return items.at(-1);
     },
   });
   const ctx = h.context(cwd);
@@ -102,6 +111,7 @@ test("Run Now without waitForIdle prompts depth selection, starts maintenance fl
 
   await h.scanControl.execute("id", { action: "begin" }, undefined, undefined, ctx);
   await h.scanControl.execute("id", { action: "end" }, undefined, undefined, ctx);
+  await chooseInspection(h, ctx);
 
   // Complete advances timestamps and clears due reminder widget
   const complete = await h.scanControl.execute("id", { action: "complete" }, undefined, undefined, ctx);
@@ -197,6 +207,7 @@ test("a maintenance reset conflict leaves the losing workflow incomplete with re
     await h.scanControl.execute("id", { action: "privacy", excludedPaths: [], persist: false }, undefined, undefined, ctx);
     await h.scanControl.execute("id", { action: "begin" }, undefined, undefined, ctx);
     await h.scanControl.execute("id", { action: "end" }, undefined, undefined, ctx);
+  await chooseInspection(h, ctx);
   }
 
   const results = await Promise.all([
@@ -229,6 +240,7 @@ test("an already-aborted maintenance completion leaves the scheduled cycle and w
   await h.scanControl.execute("id", { action: "privacy", excludedPaths: [], persist: false }, undefined, undefined, ctx);
   await h.scanControl.execute("id", { action: "begin" }, undefined, undefined, ctx);
   await h.scanControl.execute("id", { action: "end" }, undefined, undefined, ctx);
+  await chooseInspection(h, ctx);
 
   const abort = new AbortController();
   abort.abort();
@@ -286,6 +298,7 @@ for (const failDirectorySync of [false, true]) {
     await h.scanControl.execute("id", { action: "privacy", excludedPaths: [], persist: false }, undefined, undefined, ctx);
     await h.scanControl.execute("id", { action: "begin" }, undefined, undefined, ctx);
     await h.scanControl.execute("id", { action: "end" }, undefined, undefined, ctx);
+  await chooseInspection(h, ctx);
 
     const result = await h.scanControl.execute("id", { action: "complete" }, abort.signal, undefined, ctx);
     assert.equal(abort.signal.aborted, true);
@@ -346,6 +359,7 @@ test("a committed reset cannot complete a replacement workflow", async (t) => {
     const params = action === "privacy" ? { action, excludedPaths: [] } : { action };
     await h.scanControl.execute(action, params, undefined, undefined, ctx);
   }
+  await chooseInspection(h, ctx);
 
   await assert.rejects(
     h.scanControl.execute("complete", { action: "complete" }, abort.signal, undefined, ctx),
@@ -425,6 +439,7 @@ test("only completed maintenance resets scheduled cycles", async (t) => {
     assert.equal(readFileSync(join(cwd, ".picm/config.json"), "utf8"), before);
     await h.scanControl.execute("id", { action: "begin" }, undefined, undefined, ctx);
     await h.scanControl.execute("id", { action: "end" }, undefined, undefined, ctx);
+  await chooseInspection(h, ctx);
     const complete = await h.scanControl.execute("id", { action: "complete" }, undefined, undefined, ctx);
     assert.equal(complete.details.completed, true);
     const config = JSON.parse(readFileSync(join(cwd, ".picm/config.json"), "utf8"));
@@ -461,6 +476,7 @@ test("optimization privacy review and complete do not reset maintenance cadence"
 
   await h.scanControl.execute("id", { action: "begin" }, undefined, undefined, ctx);
   await h.scanControl.execute("id", { action: "end" }, undefined, undefined, ctx);
+  await chooseInspection(h, ctx);
   const complete = await h.scanControl.execute("id", { action: "complete" }, undefined, undefined, ctx);
   assert.equal(complete.details.completed, true);
   assert.equal(complete.details.maintenanceReset, undefined);
@@ -555,6 +571,7 @@ test("non-Git command startup and preflight do not read maintenance config or cr
   assert.equal(existsSync(join(cwd, ".git")), false);
 
   await h.scanControl.execute("id", { action: "end" }, undefined, undefined, ctx);
+  await chooseInspection(h, ctx);
   await h.scanControl.execute("id", { action: "complete" }, undefined, undefined, ctx);
   const reset = JSON.parse(readFileSync(join(cwd, ".picm/config.json"), "utf8"));
   assert.notEqual(reset.maintenance.lastCycleAt, "2020-01-01T00:00:00.000Z");
