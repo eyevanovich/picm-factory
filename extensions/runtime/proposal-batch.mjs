@@ -155,10 +155,13 @@ async function requireAllowedBinding(gate, toolName, path, excludedPaths) {
   return gate.bindPath(decision.executionBinding);
 }
 
-async function requireExpectedContent(binding, path, expectedContent) {
+async function requireExpectedContent(binding, path, expectedContent, { preparing = false } = {}) {
   const content = await binding.operations.readFile(binding.absolutePath);
   if (!matchesExpected(content, expectedContent)) {
-    throw proposalError("PICM_PROPOSAL_STALE", `${path} changed after the proposal was prepared`);
+    const message = preparing
+      ? `${path} does not match expectedContent while preparing; expectedContent must be the complete current file content`
+      : `${path} changed after the proposal was prepared`;
+    throw proposalError("PICM_PROPOSAL_STALE", message);
   }
   return content;
 }
@@ -249,7 +252,7 @@ export async function prepareProposalBatch({ gate, excludedPaths = [], operation
 
     const sourcePath = operation.type === "move" ? operation.from : operation.path;
     const source = await requireAllowedBinding(gate, "edit", sourcePath, excludedPaths);
-    await requireExpectedContent(source, sourcePath, operation.expectedContent);
+    await requireExpectedContent(source, sourcePath, operation.expectedContent, { preparing: true });
 
     if (operation.type === "move") {
       const destination = await requireAllowedBinding(gate, "write", operation.path, excludedPaths);

@@ -80,7 +80,7 @@ export function createWorkflowLifecycle({ canonicalizeWorkspace = resolve } = {}
         questionIsConcise: false,
         excludedPaths: [],
       },
-      maintenance: { resetAttempted: false },
+      maintenance: { resetAttempted: false, repairStatus: "none", reportOnlyRequested: false, partialEffects: undefined },
       adoption: {
         baselineCaptured: false,
         wasAlreadyAdopted: true,
@@ -116,6 +116,8 @@ export function createWorkflowLifecycle({ canonicalizeWorkspace = resolve } = {}
       scanStarted: alias(() => record.phase.scanStarted),
       scanSettled: alias(() => record.phase.scanSettled),
       maintenanceResetAttempted: alias(() => record.maintenance.resetAttempted),
+      maintenanceRepairStatus: alias(() => record.maintenance.repairStatus),
+      maintenancePartialEffects: alias(() => record.maintenance.partialEffects),
       adoptionBaselineCaptured: alias(() => record.adoption.baselineCaptured),
       adoptionWasAlreadyAdopted: alias(() => record.adoption.wasAlreadyAdopted),
       initialMaintenanceOffered: alias(() => record.adoption.initialMaintenanceOffered),
@@ -201,6 +203,7 @@ export function createWorkflowLifecycle({ canonicalizeWorkspace = resolve } = {}
       phase.scanSettled = false;
       phase.active = true;
       privacy.excludedPaths = [...(details.excludedPaths ?? privacy.excludedPaths)];
+      maintenance.reportOnlyRequested = false;
       record.submodule.phaseIdentity += 1;
       record.submodule.requestedInclusion = record.submodule.pendingInclusion;
       record.submodule.pendingInclusion = undefined;
@@ -211,6 +214,7 @@ export function createWorkflowLifecycle({ canonicalizeWorkspace = resolve } = {}
       if (!phase.active || terminal.completed) throw transitionError(event);
       phase.active = false;
       phase.scanSettled = true;
+      maintenance.reportOnlyRequested = false;
       record.submodule.requestedInclusion = undefined;
       record.submodule.admittedRoot = undefined;
       return record;
@@ -273,6 +277,36 @@ export function createWorkflowLifecycle({ canonicalizeWorkspace = resolve } = {}
       intent.pendingSource = undefined;
       return record;
     }
+    if (event === "maintenance-selection-reply") {
+      if (record.command !== "picm-maintain" || !phase.scanSettled || phase.active || terminal.completed) {
+        throw transitionError(event);
+      }
+      maintenance.repairStatus = "pending";
+      maintenance.reportOnlyRequested = false;
+      return record;
+    }
+    if (event === "maintenance-report-only-request") {
+      if (record.command !== "picm-maintain" || terminal.completed) throw transitionError(event);
+      maintenance.reportOnlyRequested = details.text === "Report only";
+      return record;
+    }
+    if (event === "maintenance-repair-state") {
+      if (
+        record.command !== "picm-maintain" ||
+        terminal.completed ||
+        !["pending", "applied", "report-only"].includes(details.status) ||
+        (details.status === "report-only" && (!phase.active || !maintenance.reportOnlyRequested))
+      ) throw transitionError(event);
+      maintenance.repairStatus = details.status;
+      maintenance.reportOnlyRequested = false;
+      return record;
+    }
+    if (event === "maintenance-partial-effects") {
+      if (record.command !== "picm-maintain" || terminal.completed) throw transitionError(event);
+      const prior = maintenance.partialEffects ?? { completed: 0, failed: 0, uncertain: 0, publishedDestinations: 0, createdParents: 0 };
+      maintenance.partialEffects = Object.fromEntries(Object.keys(prior).map((key) => [key, prior[key] + (details[key] ?? 0)]));
+      return record;
+    }
     if (event === "maintenance-reset-committed") {
       if (record.command !== "picm-maintain" || terminal.completed) throw transitionError(event);
       maintenance.resetAttempted = true;
@@ -280,7 +314,14 @@ export function createWorkflowLifecycle({ canonicalizeWorkspace = resolve } = {}
     }
     if (event === "complete") {
       if (terminal.completed) return record;
-      if (!phase.preflightComplete || !privacy.reviewed || !phase.scanStarted || !phase.scanSettled || phase.active) {
+      if (
+        !phase.preflightComplete ||
+        !privacy.reviewed ||
+        !phase.scanStarted ||
+        !phase.scanSettled ||
+        phase.active ||
+        (record.command === "picm-maintain" && maintenance.repairStatus === "pending")
+      ) {
         throw transitionError(event);
       }
       terminal.completed = true;
@@ -301,6 +342,9 @@ export function createWorkflowLifecycle({ canonicalizeWorkspace = resolve } = {}
       phase.scanStarted = false;
       phase.scanSettled = false;
       maintenance.resetAttempted = false;
+      maintenance.repairStatus = "none";
+      maintenance.reportOnlyRequested = false;
+      maintenance.partialEffects = undefined;
       return record;
     }
     throw transitionError(event);
@@ -336,6 +380,20 @@ export function createWorkflowLifecycle({ canonicalizeWorkspace = resolve } = {}
     record.submodule.requestedInclusion = undefined;
     record.submodule.admittedRoot = undefined;
     record.maintenance.resetAttempted = privacyReviewed && state.maintenanceResetAttempted === true;
+    record.maintenance.repairStatus = privacyReviewed &&
+      ["pending", "applied", "report-only"].includes(state.maintenanceRepairStatus)
+      ? state.maintenanceRepairStatus
+      : "none";
+    if (privacyReviewed && state.maintenancePartialEffects &&
+      ["completed", "failed", "uncertain", "publishedDestinations", "createdParents"].every((key) =>
+        Number.isSafeInteger(state.maintenancePartialEffects[key]) && state.maintenancePartialEffects[key] >= 0
+      )) {
+      record.maintenance.partialEffects = Object.fromEntries(
+        ["completed", "failed", "uncertain", "publishedDestinations", "createdParents"].map((key) =>
+          [key, state.maintenancePartialEffects[key]]
+        ),
+      );
+    }
     const restoredExcludedPaths = Array.isArray(state.normalizedExcludedPaths)
       ? state.normalizedExcludedPaths
       : Array.isArray(state.excludedPaths) ? state.excludedPaths : [];
@@ -422,6 +480,8 @@ export function createWorkflowLifecycle({ canonicalizeWorkspace = resolve } = {}
       scanStarted: record.phase.scanStarted,
       scanSettled: record.phase.scanSettled,
       maintenanceResetAttempted: record.maintenance.resetAttempted,
+      maintenanceRepairStatus: record.maintenance.repairStatus,
+      maintenancePartialEffects: record.maintenance.partialEffects && { ...record.maintenance.partialEffects },
       adoptionBaselineCaptured: record.adoption.baselineCaptured,
       adoptionWasAlreadyAdopted: record.adoption.wasAlreadyAdopted,
       initialMaintenanceOffered: record.adoption.initialMaintenanceOffered,

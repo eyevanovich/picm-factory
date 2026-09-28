@@ -381,6 +381,33 @@ export function createRuntimeCoordinator({
         ...workflowState(workflow),
       };
     }
+    if (action === "report-only") {
+      if (!workflow || workflow.command !== "picm-maintain" || !workflow.phase.active) {
+        throw new Error("PICM_MAINTENANCE_REPORT_ONLY_UNAVAILABLE: begin an active maintenance scan first");
+      }
+      if (!workflow.maintenance.reportOnlyRequested) {
+        throw new Error("PICM_MAINTENANCE_REPORT_ONLY_NOT_CONFIRMED: a direct user reply of `Report only` is required; this resets the reminder without applying pending repairs");
+      }
+      if (workflow.maintenanceRepairStatus === "applied") {
+        throw new Error("PICM_MAINTENANCE_REPAIR_APPLIED: the approved repair already applied; end and complete the maintenance pass");
+      }
+      const current = proposalBatches.get(workflow.scope);
+      if (current && current.status !== "applied") {
+        finaliseProposal(current, "cancelled");
+        current.presentation = undefined;
+      }
+      lifecycle.transition(workflow, "maintenance-repair-state", { status: "report-only" });
+      return {
+        ok: true,
+        action,
+        authorized: true,
+        active: true,
+        maintenanceOutcome: "report-only",
+        ...(workflow.maintenancePartialEffects ? { maintenancePartialEffects: workflow.maintenancePartialEffects } : {}),
+        message: "Report-only maintenance selected. No pending repair will be applied; completing this inspection will reset the scheduled reminder. Any prior partial batch effects remain and must be reported separately.",
+        ...workflowState(workflow),
+      };
+    }
     if (action === "new-intent") {
       if (!workflow || workflow.command !== "picm-new") {
         throw new Error("PICM_NEW_INTENT_UNAVAILABLE: detect existing architecture through /picm-new before recording its intent");
@@ -538,6 +565,24 @@ export function createRuntimeCoordinator({
         }
       }
       let maintenanceReset;
+      if (
+        workflow.command === "picm-maintain" &&
+        workflow.maintenanceRepairStatus === "pending"
+      ) {
+        const message = "Maintenance cycle was not reset because a selected repair remains unresolved. Keep the cadence due: begin a new protected phase to prepare and resolve a replacement, or cancel the maintenance workflow. To complete the inspection without applying that repair, ask the user to reply `Report only`, begin a protected phase, and record report-only before ending it. Selection is not write approval.";
+        return {
+          ok: false,
+          action,
+          code: "PICM_MAINTENANCE_REPAIR_UNRESOLVED",
+          message,
+          warning: message,
+          maintenanceReset: { ok: false, changed: false, reason: "unresolved-repair" },
+          ...workflowState(workflow),
+          authorized: true,
+          active: false,
+          completed: false,
+        };
+      }
       if (!workflow.completed) {
         let maintenanceResetCommitted = false;
         requireCurrentWorkflow(sessionId, workflow);
@@ -577,6 +622,12 @@ export function createRuntimeCoordinator({
         active: false,
         completed: true,
         maintenanceReset,
+        ...(workflow.maintenancePartialEffects ? { maintenancePartialEffects: workflow.maintenancePartialEffects } : {}),
+        ...(workflow.command === "picm-maintain" ? {
+          maintenanceOutcome: workflow.maintenanceRepairStatus === "applied"
+            ? "repairs-applied"
+            : workflow.maintenanceRepairStatus === "report-only" ? "report-only" : "inspection-only",
+        } : {}),
       };
     }
     const current = workflowFor(ctx);
@@ -650,6 +701,28 @@ export function createRuntimeCoordinator({
     clearContinuation(current);
   }
 
+  function setMaintenanceRepairState(workflow, status) {
+    if (
+      workflow?.command === "picm-maintain" &&
+      lifecycle.isCurrent(workflow) &&
+      !workflow.completed
+    ) {
+      lifecycle.transition(workflow, "maintenance-repair-state", { status });
+    }
+  }
+
+  function recordMaintenancePartialEffects(workflow, results) {
+    if (workflow?.command !== "picm-maintain" || !lifecycle.isCurrent(workflow) || !Array.isArray(results)) return;
+    const effects = {
+      completed: results.filter((result) => result.status === "completed").length,
+      failed: results.filter((result) => result.status === "failed").length,
+      uncertain: results.filter((result) => result.status === "uncertain").length,
+      publishedDestinations: results.filter((result) => result.destinationPublished).length,
+      createdParents: results.reduce((count, result) => count + (result.createdParents?.length ?? 0), 0),
+    };
+    if (Object.values(effects).some(Boolean)) lifecycle.transition(workflow, "maintenance-partial-effects", effects);
+  }
+
   function proposalContinuationOptions(scope, current) {
     return {
       proposalIdentity: current.batch.id,
@@ -684,6 +757,21 @@ export function createRuntimeCoordinator({
     return typeof prompt === "string" && prompt.trim().toLowerCase() === "continue";
   }
 
+  function observeMaintenanceSelection(ctx, text) {
+    const workflow = workflowFor(ctx);
+    if (
+      !workflow || workflow.command !== "picm-maintain" || !workflow.scanSettled ||
+      workflow.phase.active || workflow.completed || typeof text !== "string"
+    ) return false;
+    const reply = text.trim().toLowerCase().replace(/[.!]+$/g, "").replace(/\s+/g, " ");
+    if (!/^(?:yes|yes,? (?:draft|prepare)(?: (?:it|the (?:proposal|edit|change)))?|(?:please )?(?:draft|prepare)(?: (?:it|the (?:proposal|edit|change)))?)$/.test(reply)) {
+      return false;
+    }
+    if (workflow.maintenanceRepairStatus === "pending") return false;
+    lifecycle.transition(workflow, "maintenance-selection-reply");
+    return true;
+  }
+
   function observeProposalResponse(ctx, prompt) {
     const workflow = workflowFor(ctx);
     const current = workflow ? proposalBatches.get(workflow.scope) : undefined;
@@ -696,6 +784,7 @@ export function createRuntimeCoordinator({
         !TERMINAL_PROPOSAL_STATUSES.has(current.status)
       ) {
         finaliseProposal(current, status);
+        setMaintenanceRepairState(workflow, "pending");
         return proposalAudit(current.batch, "approval-observed", { approval: current.status });
       }
       return undefined;
@@ -712,6 +801,7 @@ export function createRuntimeCoordinator({
       }
       if (current.continuation?.state === "active") {
         finaliseProposal(current, "revision-required");
+        setMaintenanceRepairState(workflow, "pending");
         return proposalAudit(current.batch, "approval-observed", { approval: current.status });
       }
       return undefined;
@@ -763,6 +853,7 @@ export function createRuntimeCoordinator({
     const workflow = active;
     const sessionId = sessionIdFor(ctx);
     if (params.action === "prepare") {
+      setMaintenanceRepairState(workflow, "pending");
       const batch = await prepareProposalBatch({
         gate: workflowGate(ctx, workflow),
         excludedPaths: workflow.privacy.excludedPaths,
@@ -840,6 +931,7 @@ export function createRuntimeCoordinator({
     }
     if (params.action === "cancel") {
       if (current.status === "cancelled") {
+        setMaintenanceRepairState(workflow, "pending");
         return {
           ok: true,
           action: "cancel",
@@ -849,6 +941,7 @@ export function createRuntimeCoordinator({
       }
       if (current.continuation?.state === "eligible") {
         finaliseProposal(current, "cancelled");
+        setMaintenanceRepairState(workflow, "pending");
         return {
           ok: true,
           action: "cancel",
@@ -864,6 +957,7 @@ export function createRuntimeCoordinator({
         };
       }
       finaliseProposal(current, "cancelled");
+      setMaintenanceRepairState(workflow, "pending");
       return {
         ok: true,
         action: "cancel",
@@ -898,6 +992,7 @@ export function createRuntimeCoordinator({
       : current.batch.operations.map((_operation, index) => index);
     if (continuing && operationIndexes.length === 0) {
       finaliseProposal(current, "revision-required");
+      setMaintenanceRepairState(workflow, "pending");
       return {
         ok: false,
         code: "PICM_PROPOSAL_REPLACEMENT_REQUIRED",
@@ -966,6 +1061,7 @@ export function createRuntimeCoordinator({
             }),
           };
         }
+        recordMaintenancePartialEffects(workflow, continuing ? result.results : results);
         if (aborted && !continuing && retainProposalContinuation(workflow.scope, current, results)) {
           return {
             ...response,
@@ -978,6 +1074,7 @@ export function createRuntimeCoordinator({
           };
         }
         finaliseProposal(current, status);
+        setMaintenanceRepairState(workflow, "pending");
         current.results = structuredClone(results);
         return {
           ...response,
@@ -1004,6 +1101,7 @@ export function createRuntimeCoordinator({
         };
       }
       finaliseProposal(current, "applied");
+      setMaintenanceRepairState(workflow, "applied");
       current.results = structuredClone(results);
       return {
         ...response,
@@ -1024,6 +1122,8 @@ export function createRuntimeCoordinator({
         throw failure;
       }
       finaliseProposal(current, aborted ? "aborted" : "failed");
+      setMaintenanceRepairState(workflow, "pending");
+      recordMaintenancePartialEffects(workflow, result?.results);
       if (result?.ok) {
         return {
           ...result,
@@ -1207,11 +1307,14 @@ export function createRuntimeCoordinator({
     const workflow = workflowFor(ctx);
     if (workflow) {
       lifecycle.observeSubmoduleInclusion(workflow, text);
+      if (workflow.command === "picm-maintain" && workflow.phase.active) {
+        lifecycle.transition(workflow, "maintenance-report-only-request", { text });
+      }
     }
     if (workflow && scaffoldApproval.observeInput(workflow.scope, text)) {
       revokeScaffoldMutationBindings(workflow.scope);
     }
-    return observedIntent;
+    return observedIntent || observeMaintenanceSelection(ctx, text);
   }
 
   async function readApprovedSpecialistFile(workflow, ctx, route) {
@@ -1867,6 +1970,7 @@ export function createRuntimeCoordinator({
     maintenancePolicy,
     newWorkflowContinuity,
     observeInput,
+    observeMaintenanceSelection,
     observeNewWorkflowIntentResponse,
     observeProposalResponse,
     proposalBatch,

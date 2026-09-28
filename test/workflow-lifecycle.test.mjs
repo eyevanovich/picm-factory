@@ -25,6 +25,8 @@ test("workflow lifecycle permits only privacy-reviewed scan transitions and seri
     scanStarted: true,
     scanSettled: true,
     maintenanceResetAttempted: false,
+    maintenanceRepairStatus: "none",
+    maintenancePartialEffects: undefined,
     adoptionBaselineCaptured: false,
     adoptionWasAlreadyAdopted: true,
     initialMaintenanceOffered: false,
