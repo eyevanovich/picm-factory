@@ -811,6 +811,31 @@ export function createRuntimeCoordinator({
     current.presentation = undefined;
   }
 
+  function approvalDialogTitle(current) {
+    const operations = current.batch.auditOperations;
+    const safePath = (path) => {
+      const clean = path.replace(/[\x00-\x1f\x7f]/g, "?");
+      return clean.length > 72 ? `${clean.slice(0, 71)}…` : clean;
+    };
+    const lines = operations.slice(0, 4).map(({ type, path, from }) =>
+      type === "move" ? `- Move ${safePath(from)} → ${safePath(path)}` :
+        `- ${type[0].toUpperCase()}${type.slice(1)} ${safePath(path)}`
+    );
+    if (operations.length > 4) lines.push(`- … and ${operations.length - 4} more operation(s)`);
+    if (operations.some(({ type }) => type === "delete" || type === "move")) {
+      lines.push("Includes deletion or moves; review exact changes before authorizing.");
+    }
+    return [
+      `Authorize ${operations.length} exact file operation(s)?`,
+      ...lines,
+      `Proposal digest: ${current.batch.digest.slice(0, 12)}…`,
+      proposalHasExistingContentRisk(current.batch)
+        ? "Checkpoint report or risk opt-out recorded (not verified)."
+        : "Creates new files only; no checkpoint acknowledgment required.",
+      "Review exact changes opens the full frozen proposal; edits are ignored and grant no approval.",
+    ].join("\n");
+  }
+
   function hasCurrentPresentation(current) {
     return current.presentation?.proposalId === current.batch.id &&
       current.presentation.digest === current.batch.digest;
@@ -1007,18 +1032,31 @@ export function createRuntimeCoordinator({
       const phaseIdentity = lifecycle.activePhaseIdentity(workflow);
       const identity = { proposalId: current.batch.id, digest: current.batch.digest };
       const choice = await ctx.ui.select(
-        `Review the exact proposal summary above before authorizing these writes.\n${current.presentation.summary}\nAuthorize this exact proposal?`,
-        ["Authorize this exact proposal", "Not now"],
+        approvalDialogTitle(current),
+        ["Review exact changes", "Authorize this exact proposal", "Not now"],
         { signal: execution.signal },
       );
       requireCurrentWorkflow(sessionId, workflow);
       throwIfAborted(execution.signal, "PICM_PROPOSAL_ABORTED");
-      if (!lifecycle.hasActivePhaseIdentity(workflow, phaseIdentity) ||
-        proposalBatches.get(workflow.scope) !== current || !hasCurrentPresentation(current) ||
-        current.batch.id !== identity.proposalId || current.batch.digest !== identity.digest ||
-        current.status !== "pending" ||
-        (proposalHasExistingContentRisk(current.batch) && !hasProposalAcknowledgement(current))) {
+      const stillCurrent = () => lifecycle.hasActivePhaseIdentity(workflow, phaseIdentity) &&
+        proposalBatches.get(workflow.scope) === current && hasCurrentPresentation(current) &&
+        current.batch.id === identity.proposalId && current.batch.digest === identity.digest &&
+        current.status === "pending" &&
+        (!proposalHasExistingContentRisk(current.batch) || hasProposalAcknowledgement(current));
+      if (!stillCurrent()) {
         return { ok: false, code: "PICM_PROPOSAL_STALE", message: "Proposal or protected phase changed while the dialog was open" };
+      }
+      if (choice === "Review exact changes") {
+        await ctx.ui.editor("Review only — edits are ignored and do not change this proposal", current.presentation.summary);
+        requireCurrentWorkflow(sessionId, workflow);
+        throwIfAborted(execution.signal, "PICM_PROPOSAL_ABORTED");
+        if (!stillCurrent()) {
+          return { ok: false, code: "PICM_PROPOSAL_STALE", message: "Proposal or protected phase changed during review" };
+        }
+        return {
+          ok: false, action: "authorize", code: "PICM_PROPOSAL_REVIEWED",
+          message: "Exact proposal shown without write approval. Invite any changes or reopen authorize with the current proposal ID and digest.",
+        };
       }
       if (choice !== "Authorize this exact proposal") {
         return { ok: false, action: "authorize", code: "PICM_PROPOSAL_NOT_APPROVED", message: "No write authorization was granted" };
