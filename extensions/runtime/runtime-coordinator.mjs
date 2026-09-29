@@ -24,6 +24,7 @@ import {
   prepareProposalBatch,
   proposalAudit,
   proposalHasExistingContentRisk,
+  proposalReviewText,
   proposalSummary,
 } from "./proposal-batch.mjs";
 import {
@@ -1047,7 +1048,7 @@ export function createRuntimeCoordinator({
         return { ok: false, code: "PICM_PROPOSAL_STALE", message: "Proposal or protected phase changed while the dialog was open" };
       }
       if (choice === "Review exact changes") {
-        await ctx.ui.editor("Review only — edits are ignored and do not change this proposal", current.presentation.summary);
+        await ctx.ui.editor("Review only — edits are ignored and do not change this proposal", proposalReviewText(current.batch));
         requireCurrentWorkflow(sessionId, workflow);
         throwIfAborted(execution.signal, "PICM_PROPOSAL_ABORTED");
         if (!stillCurrent()) {

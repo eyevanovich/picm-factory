@@ -136,6 +136,49 @@ export function proposalSummary(batch) {
   ].join("\n");
 }
 
+function visibleReviewText(text) {
+  return text.replace(/\[U\+|[\x00-\x09\x0b-\x1f\x7f-\x9f]/g, (match) =>
+    match === "[U+" ? "[[U+" :
+      `[U+${match.codePointAt(0).toString(16).toUpperCase().padStart(4, "0")}]`);
+}
+
+function reviewContent(label, content) {
+  if (content === "") return [`${label}:`, "  (empty file)"];
+  const lines = content.split("\n");
+  const finalNewline = content.endsWith("\n");
+  if (finalNewline) lines.pop();
+  return [
+    `${label}:`,
+    ...lines.map((line, index) => `  ${index + 1} | ${visibleReviewText(line)}`),
+    finalNewline ? "  (final newline present)" : "  (no final newline)",
+  ];
+}
+
+export function proposalReviewText(batch) {
+  const sections = batch.operations.map(({ type, path, from, expectedContent, content }, index) => {
+    const source = visibleReviewText(from ?? path);
+    const destination = visibleReviewText(path);
+    const title = `${index + 1}. ${type.toUpperCase()} ${from === undefined ? destination : `${source} → ${destination}`}`;
+    if (type === "create") return [title, ...reviewContent("Proposed new file", content)].join("\n");
+    if (type === "delete") return [title, ...reviewContent("Current file (will be deleted)", expectedContent)].join("\n");
+    return [
+      title,
+      ...reviewContent(`Current file (${source})`, expectedContent),
+      ...reviewContent(`Proposed file (${destination})`, content),
+    ].join("\n");
+  });
+  return [
+    "Review only — closing or editing this view does not approve or change the proposal.",
+    "Full before/after contents, not a diff. Line numbers and final-newline markers are display-only.",
+    "Control characters appear as [U+XXXX]; literal [U+ in files appears as [[U+.",
+    `Exact proposal: ${batch.id}`,
+    `Digest: ${batch.digest}`,
+    `Operations (${batch.operations.length}):`,
+    ...sections,
+    "Checkpoint recommendation and acknowledgment are in the presented proposal summary; review is not approval.",
+  ].join("\n\n");
+}
+
 function matchesExpected(buffer, expectedContent) {
   return Buffer.compare(buffer, Buffer.from(expectedContent, "utf8")) === 0;
 }

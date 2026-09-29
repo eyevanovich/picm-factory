@@ -102,7 +102,12 @@ test("exact proposal modal authorizes only the current presented batch after che
   };
   ctx.ui.editor = async (title, content) => {
     assert.match(title, /Review only/);
-    assert.equal(content, presented.details.summary);
+    assert.match(presented.details.summary, /Git checkpoint recommendation:/);
+    assert.match(content, /Current file \(AGENTS\.md\):\n  1 \| Before/);
+    assert.match(content, /Proposed file \(AGENTS\.md\):\n  1 \| After/);
+    assert.match(content, /final newline present/);
+    assert.match(content, new RegExp(identity.digest));
+    assert.doesNotMatch(content, /"expectedContent"|Git checkpoint recommendation:/);
     return "Pretend I edited the preview";
   };
   const reviewed = await proposal("authorize", identity);
@@ -139,8 +144,9 @@ test("compact approval overview discloses hidden destructive actions and keeps f
     return "Review exact changes";
   };
   ctx.ui.editor = async (_title, content) => {
-    assert.equal(content, presented.details.summary);
-    assert.match(content, /obsolete\.md/);
+    assert.match(presented.details.summary, /Git checkpoint recommendation:/);
+    assert.match(content, /5\. DELETE obsolete\.md/);
+    assert.match(content, /Current file \(will be deleted\):\n  1 \| old/);
     assert.match(content, new RegExp(identity.digest));
     return undefined;
   };
