@@ -7,11 +7,11 @@ Use these scenarios to smoke-test the `/picm-new` flow. The flow is intentionall
 For every scenario, `/picm-new` should:
 
 - load the `picm-factory` skill and relevant references
-- run metadata-only preflight and ask the baseline security/privacy question before inventory or inspection
-- record exact persisted/session exclusions, call `begin`, then inspect the current folder lightly before writing
-- pair every current exact write preview with the Git checkpoint recommendation
+- inspect the current folder lightly and ask about sensitive or excluded material when needed
+- honor Git ignores, configured/session exclusions, and known sensitive paths as discovery defaults without claiming host-tool enforcement
+- recommend a user-created Git checkpoint for substantial existing-content changes when useful; it never blocks the flow
 - recommend one primary layout profile and explain alternatives
-- preview exact file/folder actions before writing
+- present a concise final direction covering affected file/folder actions and material uncertainty, then wait for conversational sign-off before writing
 - avoid unresolved bracket placeholders in generated files
 - ask or infer “What will you run first?” before proposing extra stages, roles, folders, references, or examples
 - write minimal, useful context instead of one-time artifact scatter
@@ -37,8 +37,8 @@ Expected behavior:
 - classifies the folder as empty enough
 - accepts common package/editor noise such as `package.json`, lockfiles, `.pi/`, `.vscode/`, `.idea/`, and `.DS_Store`
 - runs or seeds the core interview
-- creates a minimal scaffold after approval, normally including `AGENTS.md`, `CONTEXT.md`, `.picm/config.json`, and layout-specific folders/files
-- previews `.picm/config.json` with `"createdAt": "{{createdAt}}"`, explains that the approved write resolves that value at write time, and writes a canonical ISO 8601 UTC timestamp without adding another reviewed file or write action
+- creates a minimal scaffold after conversational sign-off on the final direction, normally including `AGENTS.md`, `CONTEXT.md`, `.picm/config.json`, and layout-specific folders/files
+- explains that `.picm/config.json` resolves `createdAt` at write time and writes a canonical ISO 8601 UTC timestamp without adding a separate sign-off step
 - creates references/examples/input/output folders only when the interview justifies them
 
 ## Scenario 2: source-material-only folder
@@ -59,8 +59,8 @@ Expected behavior:
 - asks whether to build the PiCM scaffold around existing material without moving or rewriting it
 - recommends `/picm-adopt` only if the current structure appears to encode an existing workspace architecture
 - when sensitive/private/local-only material is identified, offers exact optional `.gitignore` entries for commit protection even when root `.gitignore` is absent
-- for a named local-only session exclusion such as `notes/local-only.md`, explains that the exclusion protects PiCM reads but not future Git commits; separately offers `/notes/local-only.md` as an optional root `/.gitignore` entry without writing it or treating the choice as scaffold approval
-- persists approved PiCM scan exclusions in `.picm/config.json` or keeps them session-only when the user declines a config write
+- for a named local-only session exclusion such as `notes/local-only.md`, explains that the agent should avoid it during discovery but that this does not protect future Git commits; separately offers `/notes/local-only.md` as an optional root `/.gitignore` entry without writing it
+- persists agreed PiCM exclusions in `.picm/config.json` as part of the signed-off direction or keeps them session-only
 
 ## Scenario 3: existing architecture folder
 
@@ -79,13 +79,10 @@ Expected behavior:
 
 - detects existing architecture from files/folders such as `AGENTS.md`, `CLAUDE.md`, `CONTEXT.md`, `REFERENCES.md`, `identity.md`, `rules.md`, `examples.md`, `workflows/`, `reference/`, numbered stage folders, `stages/`, or `.picm/`
 - recommends `/picm-adopt`
-- ends discovery and requires a directly observed choice of `adopt existing`, `add/replace scaffold`, or cancel while keeping the privacy-reviewed workflow open
-- rejects another protected scan while the choice remains pending; vague or preview-only continuation input does not select an intent
-- after an add/replace or adopt choice, starts a new protected phase before project reads or drafting; cancellation completes without writes
-- requires one current exact preview and direct approval for every create/update/overwrite action
-- after that preview, `preview only`, `continue`, equivalent vague assent, and a lone `.` write nothing; the proposal remains pending and the response states that no files were written
-- registers the exact operation set and writes all and only those actions after one documented explicit approval form
-- never treats a vague “continue” as permission to overwrite architecture
+- recommends `/picm-adopt` and asks the user to choose adoption, an add/replace scaffold direction, or cancellation
+- after a clear add/replace direction, inspects only the needed architecture and drafts a concise final direction
+- waits for conversational sign-off on that final direction before any create, update, or overwrite action
+- treats cancellation or ambiguous input as a reason to clarify rather than permission to overwrite architecture
 
 ## Scenario 4: no git or dirty git
 
@@ -109,7 +106,7 @@ Expected behavior:
 
 - strongly recommends a user-created Git commit covering current contents of affected existing files, but does not inspect Git status, history, or file contents to verify coverage
 - keeps non-Git and new/empty workspaces supported; a first post-scaffold commit protects future contents only
-- for a proposal affecting current existing content when coverage is absent or uncertain, requests an explicit risk opt-out or clear checkpoint report that is separate from normal direct approval; new-only scaffolds remain directly approvable and PiCM never initializes, stages, commits, resets, cleans, or restores Git automatically
+- for substantial existing-content changes, recommends a user-created Git checkpoint while keeping both non-Git and new/empty workspaces supported; PiCM never initializes, stages, commits, resets, cleans, or restores Git automatically
 
 ## Scenario 5: seeded command arguments
 
@@ -123,18 +120,18 @@ Expected behavior:
 
 - uses the argument text as seed context
 - asks only missing critical questions instead of restarting the whole interview
-- still performs folder safety, Git checkpoint guidance, security/privacy, layout confirmation, and scaffold preview
+- still performs folder safety, advisory Git checkpoint guidance, security/privacy handling, layout confirmation, and final-direction planning
 
 ## Scenario 6: stage pipeline layout choice
 
 Expected behavior when Stage Pipeline is confirmed:
 
 - follows the Stage Pipeline **Placement decision** in `../skills/picm-factory/references/layout-profiles.md`
-- uses the selected placement consistently in the exact preview, generated paths, config path hints, and first-run checklist
+- uses the selected placement consistently in the final direction, generated paths, config path hints, and first-run checklist
 - uses local `CONTEXT.md` files for stage-specific context
 - creates local `AGENTS.md` only if a stage needs hard local behavior rules or independent Pi/subagent cwd execution
-- after the complete Stage Pipeline scaffold preview, treats `preview only`, `continue`, equivalent vague assent, and a lone `.` as strict no-write replies; retains the exact proposal and reports that no files were written
-- writes all and only the registered scaffold actions when the user gives one of the documented explicit approval forms, including `approve this exact scaffold`
+- after the complete Stage Pipeline final direction, waits for conversational sign-off before writing
+- writes the aligned scaffold without repeated approval, while seeking renewed alignment for a material departure
 
 ## Scenario 7: generated file quality
 
@@ -162,7 +159,7 @@ Expected behavior:
 - does not create unused roles, future workflow recipes, `examples.md`, or empty `reference/`, `input/`, or `output/` areas
 - points to the first real input and review output without moving or rewriting the source note
 - recommends adding references/examples after the first real use reveals durable rules or a genuine golden example
-- preserves security, git, profile confirmation, preview, and explicit write-approval gates
+- preserves security, advisory Git guidance, profile confirmation, final-direction sign-off, and meaningful review gates
 
 ## Scenario 9: tailored first-run checklist
 

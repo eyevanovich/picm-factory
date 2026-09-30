@@ -1,4 +1,4 @@
-# Existing Batch Fixture
+# Existing Routing Fixture
 
 Use `routing/legacy-route.md` for workspace routing.
 

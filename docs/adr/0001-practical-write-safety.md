@@ -1,8 +1,10 @@
 ---
-status: accepted
+status: superseded by ADR-0002
 ---
 
 # Practical write safety for a local workflow assistant
+
+**Architectural target superseded:** [ADR-0002](0002-trusted-methodology-assistant.md) replaces the protected-execution model with a trusted methodology assistant. The working-tree implementation has switched, but installed or already-running older versions may still enforce these gates. The remainder of this record documents the prior decision and its implementation status, not permission to bypass a running workflow.
 
 PiCM helps people maintain project-specific agent instructions and workflows; it is not a transactional database or a sandbox against hostile programs on the same machine. We choose guarded, individually committed changes with honest partial results and user-controlled recovery instead of automatic rollback and race-proof pathname guarantees. This removes failure-prone undo machinery without giving up privacy, project scope, or exact approval.
 

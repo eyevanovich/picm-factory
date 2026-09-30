@@ -27,7 +27,7 @@ Include this section only when the user has named a relevant local script, MCP s
 ## Security / privacy
 - Sensitive material: {{picm:sensitive-material-status}}
 - Handling rule: {{picm:handling-rule}}
-- Coding scan rule, when applicable: complete PiCM privacy review before scanning; Git-ignored and PiCM-excluded paths are never read and are checked again immediately before inspection.
+- Coding discovery rule, when applicable: honor Git ignores, PiCM exclusions, session exclusions, and known sensitive paths. Use bounded eligible paths and output; these are agent-followed boundaries rather than host-tool enforcement.
 
 ## Maintenance notes
 Run `/picm-maintain` after the first real workflow or whenever the process changes.

@@ -7,16 +7,16 @@ You are working on PiCM Factory, a project-local Pi package for creating, adopti
 - PiCM Factory is project-local by default. Install with `pi install -l ...`.
 - Keep the extension thin. Runtime methodology belongs in the skill, references, and templates; backing prompts remain repository-only.
 - Do not build a custom TUI or workflow executor without clear evidence it is necessary.
-- Be non-destructive by default. Preview file changes before writing.
-- Before changing or reviewing write safety, cancellation, or approval continuation, read [ADR-0001](docs/adr/0001-practical-write-safety.md). It records the accepted target, not current runtime behavior; migrate enforcement, guidance, and tests together.
+- Be non-destructive by default. Inspect first; for modification commands, present a concise final direction and wait for conversational sign-off before editing.
+- Before changing or reviewing write safety, cancellation, approval, or reminders, read [ADR-0002](docs/adr/0002-trusted-methodology-assistant.md) and [the redesign contract](docs/redesign-contract.md). Migrate runtime, guidance, generated content, and tests together.
 - Security first: never copy secrets, credentials, tokens, private keys, regulated data, or sensitive client material into context files or examples.
-- Before scanning an explicitly invoked `/picm-new`, `/picm-adopt`, `/picm-maintain`, or `/picm-optimize` workflow, finish privacy preflight and review. Never bypass protected inventory or immediate checks: root/nested Git ignores, repository-local excludes, global excludes, `.picm/config.json` privacy exclusions, and session exclusions make matching paths unreadable. Ordinary Pi work and user-typed `!bash` remain outside the workflow guard.
+- Honor root/nested Git ignores, repository-local and global excludes, `.picm/config.json` privacy exclusions, session exclusions, and known sensitive paths as discovery defaults. These are agent-followed boundaries: ordinary host tools are not a comprehensive privacy sandbox. A named external location is read scope, not write authority.
 - `.pi/` is for Pi config. `.picm/` is for minimal PiCM metadata/reports, including optional persisted scan exclusions.
 - Visible files and folders are the source of truth. `.picm/` is maintainer-only context; normal workflow routing should skip it.
 
 ## Repository structure
-- `extensions/picm-factory.ts` — slash-command and guarded-tool registration plus skill dispatch.
-- `extensions/runtime/` — privacy, execution, session, scheduling, and maintenance-depth runtime boundaries.
+- `extensions/picm-factory.ts` — slash-command registration, small UI/configuration helpers, and skill dispatch.
+- `extensions/runtime/` — configuration integrity, reminder, dispatch, and maintenance-depth utilities.
 - `prompts/` — backing prompt text only; package prompt discovery stays disabled to avoid duplicating extension commands.
 - `skills/picm-factory/SKILL.md` — main behavior contract.
 - `skills/picm-factory/references/` — detailed methodology guidance.

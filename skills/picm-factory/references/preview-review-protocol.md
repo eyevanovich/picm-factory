@@ -1,107 +1,50 @@
-# Summary Preview and Optional Diff Review Protocol
+# Conversational Change and Review Guidance
 
-Use this protocol for every proposal batch from `/picm-adopt`, `/picm-maintain`, or `/picm-optimize`. It is conversational guidance, not a deterministic plan engine or semantic-equivalence checker.
+Use this guidance for any PiCM modification. It supports review; it is not a proposal engine, authorization protocol, or semantic-equivalence checker.
 
-## Write gate
+## Final direction and sign-off
 
-Before applying a proposal batch, present one complete concise summary preview. An unambiguous direct approval of that current summary—for example, `accept`, `approve`, `accept and write`, or `proceed`—authorizes all and only its enumerated changes. Do not require a separate summary-acceptance step or a review menu. Option choice, cadence choice, a preview request, review navigation, or vague assent is not approval.
+After inspection, state one concise final direction before editing:
 
-For `/picm-adopt` and `/picm-maintain`, prepare the exact create, modify, delete, and linked-move operations with `picm_proposal_batch` during an active protected scan. `modify` requires whole-file snapshots for both `expectedContent` (current) and `content` (proposed), not replacement paragraphs. For example, a file containing `# Guide\nOld\n` changed to `# Guide\nNew\n` uses `{ "type": "modify", "path": "docs/guide.md", "expectedContent": "# Guide\nOld\n", "content": "# Guide\nNew\n" }` (with escaped newlines in JSON). A prepare-time `PICM_PROPOSAL_STALE` means the submitted expected content did not match the current file; it does not prove another process changed it. `PICM_PROPOSAL_INVALID` indicates a malformed operation. Neither writes a project file: retain the scan phase, read only the affected guarded file if needed, and prepare a corrected batch. Then call `present` with the returned proposal ID and digest. The tool generates, delivers, and records the complete deterministic operation summary, including the Git checkpoint recommendation below, and its approval prompt from that prepared batch. Only after presentation does `apply` accept direct approval of the prepared current proposal. Before mutating anything, it reauthorizes every source and destination against the current Git and PiCM protections and rechecks expected source content; if any prevalidation check fails, the entire batch remains no-write. Once mutation begins, it commits each operation individually: a failure or cancellation stops later operations without restoring completed files or removing created parents. Its returned result distinguishes completed, unattempted, failed, and uncertain operations, and identifies retained created parents or a published move destination where known. A failed filesystem call may have an uncertain effect; inspect only the current protected paths before proposing repair. It records a matching session audit entry without creating an audit file in the workspace; if that post-apply record cannot be stored, report the returned audit warning without hiding file effects. Cancellation before mutation, decline, vague assent, or a requested revision remains no-write. A bare initial `continue` is no-write. Only after an interrupted same-session batch whose retained results are exclusively completed and unattempted may an explicit `continue` reuse the exact original proposal once; it runs only its original unattempted operations and rechecks their path/privacy gates and expected content immediately before execution. Never replay completed work or retry failed, uncertain, or partly published work. A duplicate continuation, changed input, phase/workspace/session replacement, restoration, teardown, or unavailable retained state requires a revised proposal. Applied, failed, cancelled, and revision-required proposals remain terminal; an aborted result is eligible only under that narrow continuation rule. Use `cancel` for a cancellation and prepare a replacement batch after a revision; never use agent Bash for these operations.
+- intended outcome and affected files or areas;
+- material creates, replacements, moves, or deletions;
+- behavior deliberately preserved;
+- meaningful uncertainty or risk; and
+- the most useful diff or file review, when useful.
 
-## Git checkpoint recommendation
+Wait for conversational sign-off on that direction. The user may approve in their own words; do not require an exact phrase, ID, digest, modal, or separate approval for every routine edit. A request to adjust the direction replaces the earlier direction. If implementation reveals a material departure, destructive effect, or external write outside it, pause and realign.
 
-Keep this recommendation inside the normal current-proposal preview, not as a separate wizard, approval gate, or repository-wide clean-state requirement. Before asking for direct write approval, strongly recommend that the user create a Git commit covering the current contents of affected existing files. Use permitted preflight metadata or user confirmation only: do not inspect Git status, history, or file contents to verify coverage. Never initialize, stage, commit, reset, clean, or restore Git, and never ask the user to add sensitive or ignored material to make a checkpoint.
+Option, profile, cadence, and review choices are design input, not sign-off by themselves. Inspection-only and report-only requests remain no-edit. Never treat cancellation or assent to a different question as sign-off.
 
-A repository or old commit does not protect current uncommitted work. A checkpoint does not protect uncommitted or untracked work, which may be unrecoverable through Git; broad Git restore can erase newer edits. Non-Git and new/empty workspaces remain supported. A first post-scaffold commit protects future contents only.
+## Review and Git advice
 
-When the exact proposal affects current existing content and coverage is absent or uncertain, ask the user to explicitly acknowledge the risk before direct approval: `I understand the risk and want to proceed without a Git checkpoint.` A clear user report that they created a Git checkpoint is the same unverified, non-approving acknowledgment. For example: `I created a Git checkpoint.` or `The Git checkpoint covers the current contents of all affected existing files.` PiCM does not verify either report. The normal direct approval of the current exact proposal remains required; new-only proposals remain directly approvable, and no checkpoint acknowledgment authorizes an unpresented or changed proposal.
+Offer exact diffs or file review when the change is material, uncertain, linked across files, or requested. Keep review proportional: a concise direction is normally enough for a small aligned edit, while moves, deletions, safety/privacy changes, and broad restructures deserve clearer impact explanation and a suggested review surface.
 
-Retain a user-reported checkpoint or risk opt-out only while the exact proposal's paths, actions, contents, and digest remain unchanged; do not repeat the warning or acknowledgment request during diff review or return to the same summary. If the proposal changes, present the normal refreshed summary and require normal direct approval; repeat the checkpoint recommendation and obtain a new acknowledgment when current existing content remains at risk. Cancellation, a non-eligible terminal result, workflow/session/phase replacement, restoration, or teardown clears it. The narrow same-session continuation of an unchanged completed/unattempted interrupted batch retains the original acknowledgment with its original approval; it does not create a new approval path.
+For substantial changes to existing content, recommend a user-created Git checkpoint. It is advice, not a prerequisite or a claim that the checkpoint covers current work. Never initialize, stage, commit, reset, clean, restore, or inspect Git history/status to verify coverage. New and non-Git workspaces remain supported.
 
-A request to adjust a draft creates a revised current proposal without restarting the protocol. It supersedes pending write approval, but preserves applicable selection and review state for unchanged paths. Re-evaluate review suggestions for changed paths, present a refreshed summary, then invite direct approval or diff inspection.
+## Implementation and completion
 
-Add a non-blocking review suggestion for deletions, linked moves, material changes to safety, privacy, permissions, approval boundaries, or required commands, and unusually large or uncertain change sets. Explain the change's intent and impact, group related paths, and suggest the most useful diff to inspect. Review suggestions never block approval.
+Use ordinary tools to make the signed-off changes. Preserve unrelated content and settings; re-read an affected file when concurrent changes are apparent. Validate with available documentation, syntax checks, tests, or bounded local checks appropriate to the direction. Permission to run a local check does not imply permission for deployment, publication, or authenticated external work.
 
-Exact review remains available on demand for every affected file or diff. Every persisted `privacy.excludedPaths` or standalone maintenance-policy control write still receives the complete concise summary and direct acceptance first. Then use the built-in exact TUI patch confirmation as the separate runtime write confirmation. For a standalone maintenance-policy apply, pass only `action: "apply"` and the accepted preview's `previewId`; direct-apply runtime compatibility remains unchanged but is not agent guidance. Neither control confirmation authorizes other project writes.
+If an operation fails, report known effects and inspect relevant state before proposing an aligned repair. Do not automatically roll back completed changes or blindly replay uncertain work.
 
-## Standalone maintenance-policy control write
+Finish with:
 
-Treat every maintenance-policy preview, including a one-day cadence, as no-write. Before applying its `previewId`, present the complete concise summary with every category below, using literal `None` for an empty category:
+- what changed;
+- what was checked;
+- completed, failed, or uncertain effects; and
+- remaining uncertainty or follow-up.
 
-- affected files and operations;
-- behavior or configuration changes;
-- linked moves;
-- preserved behavior;
-- known uncertainty;
-- review suggestions; and
-- privacy/configuration impact.
-
-For the privacy/configuration impact, explain that the accepted policy would durably record reminder timestamps in a non-ignored, regular, non-symlink `.picm/config.json` beneath a regular `.picm/` directory. Explain that it is advisory: nothing runs while Pi is closed or outside an eligible interactive TUI session; when due, it presents Run Now and Defer, and Run Now still enters the ordinary privacy-reviewed maintenance flow with normal write approvals. Explicit summary acceptance is no-write. Only after that acceptance may the agent call `apply` using exactly the preview's `previewId`; the tool's exact TUI patch confirmation, not summary acceptance, controls whether the policy is applied.
-
-## Settings publication and late cancellation
-
-Settings updates commit when the prepared config replaces `.picm/config.json`. Cancellation observed before publication prevents the replacement; an already-issued replacement may still finish. Once published, the settings stay committed: late cancellation never restores the old config. A later directory-sync failure means the settings were saved but crash durability is uncertain; report the returned warning, not an unchanged file or a reset that needs repeating.
-
-A completed maintenance pass whose completion settings are published remains completed after late cancellation. Stopping before that publication leaves the prior schedule intact. If the workflow itself changed while publication was in flight, its stale completion is still rejected; the settings may already be saved, so inspect the current allowed state rather than assuming nothing happened or automatically retrying.
-
-Older versions may have left `config.json.rollback-*` files. PiCM neither creates new cancellation snapshots nor restores or deletes those legacy files automatically. Ask the user to preserve and compare any needed copy before an explicitly approved recovery or cleanup; never bypass privacy checks to inspect it. Proposal batches likewise keep completed work and report partial results rather than automatically undoing files.
-
-## Summary preview template
-
-Enumerate every affected file once and keep linked actions visibly connected. Use the literal `None` for every empty category.
+## Concise direction shape
 
 ```markdown
-# Proposed write summary
+## Proposed direction
 
-## Affected files and operations
-- `path`: Create / Modify / Delete / Move source / Move destination
+- **Outcome:** ...
+- **Affected areas:** ...
+- **Material effects:** ...
+- **Preserved:** ...
+- **Uncertainty / review:** ...
 
-## Behavior or configuration changes
-- ...
-
-## Linked cross-file moves
-- `source` → `destination`: ...
-
-## Preserved behavior
-- ...
-
-## Known uncertainty
-- ...
-
-## Review suggestions
-- `path` or linked group: intent, impact, and optional diff to inspect
-
-## Git checkpoint recommendation
-- Recommend a user-created commit covering the current contents of affected existing files; include the protocol's limits and any current user-reported checkpoint or risk opt-out.
+If this direction looks right, I will make these changes and run the relevant checks.
 ```
-
-The summary must be complete even when concise: include every affected path and operation, behavior/configuration effects, linked cross-file moves, behavior intentionally preserved, known uncertainty, and review suggestions.
-
-End every proposed-write summary with: “Approve this proposal to write it, or ask to inspect a diff (for example, `show diff for <path>`). You can also request an adjustment.”
-
-## Optional diff review interaction
-
-Offer exact review whenever the user asks to inspect files or diffs. Execute recognized direct requests immediately: `view all` renders all affected items, and `show diff for <path>` renders that affected path or linked move pair. A generic request such as `review files` offers exactly these choices and no additional peer choice:
-
-1. **View all**
-2. **Select files**
-3. **Return to summary**
-
-**View all** renders every affected item in summary order, pairing linked move sources and destinations. In **Select files**, the user conversationally names or checks paths from the current proposal. Selecting either the source or destination of a linked move selects and reviews the whole source-destination pair. **Select files** retains the current selection and which files have been reviewed while the user navigates. Let the user review selected files one at a time with **Previous**, **Next**, **Back to selection**, and **Return to summary**; navigation must not clear selection or review state. **Return to summary** preserves review state but is not approval.
-
-## Exact rendering
-
-- **Modified file:** show a unified diff with path headers and complete proposed hunks.
-- **New file:** show the complete proposed content.
-- **Deleted file:** show the complete removed content.
-- **Linked move:** review source and destination together, including the source removal and complete destination content or destination diff as applicable.
-
-Do not substitute paraphrase for exact rendering. If protected or sensitive content cannot safely be rendered exactly, do not reveal it or weaken scan/privacy boundaries. Mark the item as unresolved and require a safer revised proposal before writing it.
-
-## Approval language
-
-A valid approval clearly authorizes writing the enumerated current proposal. Exact review is optional and never creates a separate approval ceremony. A requested change supersedes pending approval; retain applicable unchanged-path review state, refresh the summary, and invite direct approval or diff inspection of the revised proposal.
-
-For `/picm-maintain`, an affirmative request to draft after discovery ended, a prepared but unapplied repair, failed preparation, failed application, or cancelled proposal remains unresolved. A draft selection is not write approval; begin a fresh protected phase before preparing and presenting its exact batch. An ambiguous affirmative after an ended scan conservatively blocks completion; clarify by drafting the requested proposal or explicitly choosing report-only. Keep the scan active while correcting an invalid/stale proposal. `complete` refuses to reset a scheduled cycle while repair work is unresolved, even after `end`; begin another protected phase to retry. To leave repairs pending, cancel the workflow and leave the reminder due. To finish an advisory inspection instead, ask the user to reply exactly `Report only`, call `picm_scan_control` with `action: "report-only"` while a protected phase is active, then end and complete. This explicitly resets the reminder without claiming the selected repair was applied; the receipt includes any known partial-effect counts, and the original batch result remains the source of per-operation details. A repair that is applied before completion, or an inspection-only pass with no selected repair, follows normal completion. In supported UI, present the findings before calling `picm_scan_control discovery-choice`. The user can select draft or inspection-only; dismissal leaves completion unresolved. For an exact prepared and presented batch, call `picm_proposal_batch authorize` with its current ID and digest to offer a compact built-in write authorization dialog after any required checkpoint acknowledgment. `Review exact changes` opens a complete readable full-file view derived from the frozen proposal, with current and proposed contents, visible final-newline markers, and escaped control characters; the separately presented exact summary still contains the full checkpoint recommendation. Edits in the view are ignored, no approval is granted, and the same current batch can be offered again. The short digest in the overview is display-only; the full digest remains bound internally. Authorizing a batch is distinct from selecting a repair; `apply` still rechecks the exact approved operations. In non-UI modes, direct textual approval remains available.
-
-This protocol does not authorize crawling, a custom TUI, a workflow executor, or automated semantic-equivalence claims. Use the existing Pi conversation for review; use `picm_proposal_batch` for `/picm-adopt` and `/picm-maintain` mutations, and guarded file tools for eligible `/picm-optimize` mutations, while preserving all runtime privacy and scan behavior.

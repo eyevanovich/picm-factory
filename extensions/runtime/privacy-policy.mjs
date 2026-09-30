@@ -77,3 +77,11 @@ export function validateStoredPrivacyPolicy(value, cwd) {
   if (!Object.hasOwn(value, "excludedPaths")) return { ...value };
   return validatePrivacyPolicy(value, cwd);
 }
+
+export function projectStoredPrivacyPolicy(value, cwd) {
+  if (value === undefined) return undefined;
+  const privacy = validateStoredPrivacyPolicy(value, cwd);
+  return Array.isArray(privacy.excludedPaths)
+    ? { excludedPaths: privacy.excludedPaths }
+    : undefined;
+}

@@ -43,7 +43,7 @@ You do not need to know PiCM or ICM terminology. PiCM Factory gives Pi five comm
 
 | Command | Use it when | What it does |
 | --- | --- | --- |
-| `/picm-new [workflow description]` | You are starting a workflow in a new or mostly empty folder. | Interviews you, previews a minimal workspace, and writes only after approval. |
+| `/picm-new [workflow description]` | You are starting a workflow in a new or mostly empty folder. | Interviews you, presents a final direction, then creates a minimal workspace after conversational sign-off. |
 | `/picm-adopt [coding \| adoption request]` | The folder already contains source code, agent instructions, workflows, stages, or reference material. Add `coding` when you already know it is a coding repository or monorepo. | Inspects first and proposes additive PiCM support without converting the project. `coding` only skips initial classification; regular `/picm-adopt` can offer the same Coding Repository profile. |
 | `/picm-maintain [strict \| balanced] [coding \| routing \| handoffs \| stale-context \| security \| trace "drift symptom"]` | You want a health check, focused routing/context check, or drift investigation. | Runs a heuristic health check; general reports use Pass, Warning, and Suggestion findings. `trace` investigates one concrete symptom and reports likely causes with confidence. |
 | `/picm-optimize` | Agent-facing instructions or context are repetitive, diffuse, or hard to navigate. | Outcome-preserving optimization of agent-facing documentation only. |
@@ -68,16 +68,16 @@ A later interactive `/picm-maintain` run lets you choose a one-run depth with St
 - Strict (recommended): broader systematic coverage across declared roots and mapped contexts; higher cost.
 - Balanced: representative coverage of major boundaries and one coding path; lower cost.
 
-PiCM Factory can also record optional maintenance reminders in `.picm/config.json`. A due reminder only appears in an interactive Pi session and still runs the normal privacy and approval flow—nothing runs while Pi is closed.
+PiCM Factory can also record optional maintenance reminders in `.picm/config.json`. A due reminder offers an ordinary maintenance request in an interactive Pi session; it never launches work or edits autonomously, including while Pi is closed.
 
 ## Safety model
 
 PiCM Factory is conservative by design:
 
-- **Privacy first.** Protected scans begin with a privacy review. Git-ignored paths, Git internals, symlinks, outside-worktree paths, persisted exclusions, and session exclusions are not read.
-- **Non-destructive adoption.** Existing structure is preserved unless you approve an exact proposed action.
-- **Preview before writes.** Adoption, maintenance, and optimization present a complete concise summary before each proposal. Material or uncertain changes can be inspected with optional exact review: `View all`, `Select files`, and `Return to summary`.
-- **Explicit approval.** Selecting an option, asking for a preview, or vague assent does not authorize writes. PiCM applies only the current, explicitly approved proposal and never makes Git commits for you.
+- **Privacy first.** Agents honor Git ignores, configured exclusions, session exclusions, and known sensitive paths as discovery defaults. These are agent-followed boundaries, not a claim that PiCM or arbitrary host tools sandbox every read.
+- **Non-destructive adoption.** Existing structure is preserved unless the signed-off direction changes it.
+- **Final direction before edits.** New, adopt, maintain, and optimize inspect first, state a concise direction and material effects, then wait for conversational sign-off. Optional diffs or file review can clarify consequential changes; routine implementation within the agreed direction does not require repeated approval.
+- **Checkpoint advice, not a gate.** A user-created Git checkpoint can help with substantial existing-content changes. PiCM never initializes, stages, commits, resets, cleans, or restores Git for you.
 - **Documentation-only optimization.** `/picm-optimize` preserves unique constraints and intended outcomes; it does not modify source or runtime files, claim semantic equivalence, or promise token savings.
 
 `.pi/` configures project-local Pi resources. `.picm/` holds small PiCM metadata and reports; it is maintainer-only context, not normal workflow context.

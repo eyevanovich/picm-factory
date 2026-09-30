@@ -61,17 +61,18 @@ test("startup probe handles absent, manual, not-due, nudge, automatic, and dedup
   assert.equal(autoStore.current().maintenance.nextDueAt, "2026-01-02T00:00:00.000Z");
 });
 
-test("explicit cycle reset affects scheduled modes but not manual", async () => {
+test("explicit cycle completion affects existing scheduled modes but not manual", async () => {
   const scheduledStore = memoryStore(createPolicy({ mode: "nudge", intervalValue: 1, intervalUnit: "weeks", now: "2026-01-01T00:00:00.000Z" }));
   const controller = createMaintenanceController({ store: scheduledStore, now: () => new Date("2026-01-10T00:00:00.000Z") });
-  assert.equal((await controller.resetExistingCycle()).changed, true);
+  assert.equal((await controller.completeCycle()).changed, true);
   assert.equal(scheduledStore.current().maintenance.nextDueAt, "2026-01-17T00:00:00.000Z");
 
   const manualStore = memoryStore({ mode: "manual" });
-  assert.equal((await createMaintenanceController({ store: manualStore }).resetExistingCycle()).changed, false);
+  assert.equal((await createMaintenanceController({ store: manualStore }).completeCycle()).changed, false);
+  assert.equal((await controller.completeCycle()).changed, true);
 });
 
-test("an abort during reset does not advance the cycle", async () => {
+test("an abort during completion does not advance the cycle", async () => {
   const abort = new AbortController();
   const store = memoryStore(createPolicy({ mode: "nudge", intervalValue: 1, intervalUnit: "days", now: "2026-01-01T00:00:00.000Z" }));
   const originalRead = store.read;
@@ -84,8 +85,8 @@ test("an abort during reset does not advance the cycle", async () => {
 
   await assert.rejects(
     createMaintenanceController({ store, now: () => new Date("2026-01-10T00:00:00.000Z") })
-      .resetExistingCycle({ signal: abort.signal }),
-    /PICM_SCAN_ABORTED/,
+      .completeCycle({ signal: abort.signal }),
+    /CONFIG_OPERATION_CANCELLED/,
   );
   assert.deepEqual(store.current().maintenance, before);
 });

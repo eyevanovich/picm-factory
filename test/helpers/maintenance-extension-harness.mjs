@@ -87,8 +87,10 @@ export function harness(options = {}) {
   return {
     handlers,
     commands,
+    tools,
     tool: tools.get("picm_maintenance_policy"),
-    scanControl: tools.get("picm_scan_control"),
+    settings: tools.get("picm_settings"),
+    decision: tools.get("picm_decision"),
     sent,
     notifications,
     confirmations,
