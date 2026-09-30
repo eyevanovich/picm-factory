@@ -9,7 +9,7 @@ For bugs and feature proposals, open a [GitHub Issue](https://github.com/eyevano
 For behavior changes, read `AGENTS.md` and `skills/picm-factory/SKILL.md`. The project follows a few important boundaries:
 
 - Keep the extension thin; runtime methodology belongs in the skill's references and templates.
-- Preserve preview-before-write, non-destructive adoption, project-local installation, and security-first context handling.
+- Preserve final-direction conversational sign-off for modifications, non-destructive adoption, project-local installation, and security-first context handling. Git checkpoints are advice, not a gate; privacy exclusions are agent-followed boundaries, not a sandbox claim.
 - Treat layout profiles as recommendations rather than rigid schemas.
 - Keep fixtures and QA tooling repository-only; they must not be included in the npm package.
 
@@ -42,7 +42,7 @@ Run the package check for every change:
 npm run check
 ```
 
-Interactive `/picm-*` QA is manual because commands may ask questions or request write approval. Follow `qa-runner/CONTEXT.md` and `docs/layout-fixture-qa.md`, use a disposable project, and report exactly which writes were approved.
+Interactive `/picm-*` QA is manual because commands may ask questions and modification commands require conversational sign-off on a final direction. Follow `qa-runner/CONTEXT.md` and `docs/layout-fixture-qa.md`, use an explicitly approved disposable project, and report the sign-off, writes, and validation.
 
 Avoid brittle assertions against exact model wording. Prefer structural checks and documented interactive observations.
 

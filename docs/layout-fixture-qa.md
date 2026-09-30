@@ -2,7 +2,7 @@
 
 Use these fixtures for manual smoke testing of PiCM layout guidance, `/picm-maintain`, `/picm-adopt`, and `/picm-optimize`.
 
-Interactive command tests should run in a visible Herdr pane. Do not rely on a headless `bash` run for `/picm-maintain`, `/picm-adopt`, or `/picm-optimize` because the flows may ask clarifying or approval questions. Follow [`qa-runner/CONTEXT.md`](../qa-runner/CONTEXT.md) for the current Herdr input procedure.
+Interactive command tests should run in a visible Herdr pane. Do not rely on a headless `bash` run for `/picm-maintain`, `/picm-adopt`, or `/picm-optimize` because the flows may ask clarifying questions and require conversational sign-off before edits. Follow [`qa-runner/CONTEXT.md`](../qa-runner/CONTEXT.md) for the current Herdr input procedure.
 
 Dated observations below retain the multiplexer used when they were recorded; use the current Herdr procedure for new QA.
 
@@ -45,39 +45,37 @@ Expected behavior:
 - Starts with a compact command-syntax and argument reference, says bare commands remain valid, and explains: type a space after `/picm-adopt` or `/picm-maintain` to show registered argument completions.
 - Shows `/picm-new [workflow description]`, `/picm-adopt [coding | adoption request]`, `/picm-maintain [strict | balanced | coding | routing | handoffs | stale-context | security | trace "drift symptom"]`, and `/picm-optimize` as optional conversational arguments rather than required flags.
 - Uses plain situations rather than requiring PiCM/ICM terminology.
-- Routes new or mostly empty folders to `/picm-new` and existing source-code, agent/workflow, or Claude-style folders to the read-only `/picm-adopt` flow.
+- Routes new or mostly empty folders to `/picm-new` and existing source-code, agent/workflow, or Claude-style folders to read-first `/picm-adopt` (inspection before any signed-off changes).
 - Presents `/picm-adopt coding` as an optional shortcut for a known repository or monorepo while explaining that regular `/picm-adopt` can offer the same Coding Repository profile.
 - Routes general workspace health/drift to `/picm-maintain` and one concrete symptom to `/picm-maintain trace "describe what drifted"`.
 - Explains the Strict-first one-run selector, `/picm-maintain strict`, `/picm-maintain balanced`, no stored-preset mutation, and the exact Strict/Balanced behavior-and-cost guidance.
 - Routes repetitive or diffuse agent-facing documentation to `/picm-optimize`.
 - Recommends `/picm-adopt` when the user is unsure whether an existing folder should use new or adopt.
-- Explains project-local install, preview-before-write, non-destructive adoption, git/security safety, and `.pi/` versus `.picm/`.
+- Explains project-local install, final-direction conversational sign-off before modifications, non-destructive adoption, advisory Git checkpoints, agent-followed privacy boundaries, optional reminders, and `.pi/` versus `.picm/`.
 
 Baseline observed smoke before `/picm-optimize` was added: 2026-07-19 in a visible Zellij/Pi pane against an empty disposable project at `/tmp/picm-mcp-help-smoke`.
 
 - Produced all four command choices and the safe new-vs-adopt fallback in plain language.
 - Identified `.pi/settings.json` as project-local Pi configuration and `.picm/` as maintainer metadata/reports outside normal workflow context.
-- Required previews and explicit approval for writes, preserved existing files by default, and included git and secrets guidance.
+- Explained final-direction conversational sign-off before edits, preserved existing files by default, and included advisory Git and secrets guidance.
 - Wrote no project files beyond the expected local `.pi/` package installation.
 
 ## `/picm-optimize` smoke check
 
-Run conflict detection and decline against a disposable copy of `test/fixtures/coding-repository/existing-doc-duplication`. Run approved-write verification against a disposable copy of `test/fixtures/coding-repository/optimization-writing-lens`.
+Run conflict detection and decline against a disposable copy of `test/fixtures/coding-repository/existing-doc-duplication`. Run signed-off write verification against a disposable copy of `test/fixtures/coding-repository/optimization-writing-lens`.
 
 Expected behavior:
 
-- Completes `preflight`, the additional-path privacy question, `privacy`, `begin`, protected `inventory`, guarded reads, `end`, and final `complete`; it never uses agent Bash, broad traversal, Git history, symlink following, or another worktree to discover documentation.
-- For an adopted or newly scaffolded workspace, asks exactly: "Name any additional project-relative files or directory that should be excluded from reads, or reply `none` to continue." An unknown or incomplete workspace uses the full privacy explanation.
-- Inspects all agent-facing documentation in scope, including root/local instructions, context maps/contracts, routed reference/workflow docs, and prompt/skill guidance when present. It records protected, generated, unrelated, and uncertain omissions without opening excluded/private content. In `optimization-writing-lens`, the expected discovered set is `AGENTS.md`, `CLAUDE.md`, `CONTEXT.md`, `services/billing/AGENTS.md`, `workflows/release/AGENTS.md`, and `generated/deploy/AGENTS.md`; the generated deployment guide is readable but ineligible for edits.
-- Reads each inspected document once into agent context during discovery. Before ending that phase, it builds the preservation ledger, records five writing-lens outcomes with document-specific evidence, and drafts exact candidates. Its first post-discovery findings response after `end` begins `### Writing-lens audit` and contains every ordered lens row before selection, an exact preview, or a no-op result. In the normal successful path, selection and execution do not cause another agent-visible `inventory` or `read`; an edit's internal exact-match read and path revalidation are not context rereads.
-- Identifies evidence-backed opportunities before drafting edits, distinguishes true duplication from intentional local safety or approval reminders, and builds a qualitative preservation ledger for unique safety, privacy, permission, approval, command, behavior, verification, handoff, and domain constraints.
-- Applies the required agent-document writing lens after the ledger and reports **Pass**, **Opportunity**, or **Not applicable** for context pointers, information hierarchy, canonical home, completion criteria, and pruning. Context pointers name their target and reading condition without hiding stable prerequisites; hierarchy progressively discloses only conditional material; canonical homes and thin pointers preserve reachable local routes; completion criteria clarify existing intent without inventing requirements, verification, or human gates; pruning retains deliberately repeated safety, review, and local-boundary guidance.
-- In `existing-doc-duplication`, recognizes the explicit intentional-conflict declaration as a preservation constraint and does not offer to erase it without an alternate user-approved preservation mechanism. In `optimization-writing-lens`, it may select an evidence-backed canonical-pointer/pruning change, but preserves the intentionally repeated local customer-data rule in `services/billing/AGENTS.md`, the release-note human-approval criterion in `workflows/release/AGENTS.md`, and the generated deployment guide's do-not-edit boundary.
-- Offers independently selectable proposals, makes no semantic-equivalence or guaranteed token-savings claim, and does not manufacture a proposal when the current docs are already clear.
-- Never proposes source/build/runtime, `.picm/`, generated-artifact, per-run output, or unrelated-workspace edits.
-- Treats proposal selection as design intent only. Every selected write uses the complete concise summary, non-blocking review suggestions for material or uncertain changes, optional `View all` / `Select files` / `Return to summary` review, and direct explicit approval of the current summary. Draft adjustments supersede pending write approval while preserving applicable review state for unchanged paths.
-- Test approved writes in a Git-initialized, committed disposable copy so the normal direct-approval flow is exercised without the separate non-Git risk acknowledgement. Run non-Git discovery and risk-acknowledgement checks separately.
-- After selection, change the selected source text before approval: the exact replacement must fail safely, trigger a targeted reread/revised proposal, and never write a stale draft. Repeat after making the selected path newly ignored: the guard must deny the edit without opening unrelated files.
+- Uses ordinary host tools to inspect only the agent-facing documentation needed for the task. It honors Git ignores, configured/session exclusions, and known sensitive paths as discovery defaults without claiming universal tool enforcement.
+- Asks about a specific privacy conflict when needed; a named external document can be read as user-authorized context but does not grant authority to write there.
+- Inspects root/local instructions, context maps/contracts, and routed reference/workflow docs in scope. It records generated, unrelated, and uncertain omissions without opening excluded/private content. In `optimization-writing-lens`, the expected discovered set is `AGENTS.md`, `CLAUDE.md`, `CONTEXT.md`, `services/billing/AGENTS.md`, `workflows/release/AGENTS.md`, and `generated/deploy/AGENTS.md`; the generated deployment guide is readable but ineligible for edits.
+- Builds the preservation ledger, records five writing-lens outcomes with document-specific evidence, and shows `### Writing-lens audit` before opportunities, a final direction, or a no-op result.
+- Identifies evidence-backed opportunities before drafting edits, distinguishes true duplication from intentional local safety or review reminders, and preserves unique safety, privacy, permission, command, behavior, verification, handoff, and domain constraints.
+- Applies the required agent-document writing lens after the ledger and reports **Pass**, **Opportunity**, or **Not applicable** for context pointers, information hierarchy, canonical home, completion criteria, and pruning.
+- In `existing-doc-duplication`, recognizes the explicit intentional-conflict declaration as a preservation constraint. In `optimization-writing-lens`, it preserves the intentionally repeated local customer-data rule in `services/billing/AGENTS.md`, the release-note human-approval criterion in `workflows/release/AGENTS.md`, and the generated deployment guide's do-not-edit boundary.
+- Does not propose source/build/runtime, `.picm/`, generated-artifact, per-run output, or unrelated-workspace edits.
+- For selected improvements, presents a concise final direction with material effects and uncertainty, offers a diff or file review when useful, then waits for conversational sign-off before edits. Routine aligned implementation does not need repeated approval.
+- Re-reads affected files when concurrent changes are apparent; reports a stale or changed source rather than blindly overwriting it.
 - If no useful change is justified, reports exactly `No worthwhile optimizations found`.
 
 ## Coding Repository smoke checks
@@ -101,11 +99,11 @@ Run both regular and explicit entry paths against disposable Git copies:
 
 Expected behavior:
 
-- After privacy review, regular `/picm-adopt` uses only shallow protected-inventory path signals before offering the Coding Repository profile; it does not require the shortcut.
-- `/picm-adopt coding` skips the initial classification question but preserves the same security, scan, preview, and approval rules.
+- Regular `/picm-adopt` uses bounded visible routing and repository signals before offering the Coding Repository profile; it does not require the shortcut.
+- `/picm-adopt coding` skips the initial classification question but preserves the same security, agent-followed privacy, final-direction sign-off, and non-destructive rules.
 - The flow offers root, distributed, and scan-and-recommend mapping plus additive and curated adoption. It does not ask for maintenance depth: it automatically performs the Strict examination and previews `capabilities.codebaseMap.maintenancePreset: "strict"`.
 - The user can choose Coding Repository as the primary profile or add codebase mapping to another primary profile.
-- No files are written without a complete concise summary and direct explicit approval.
+- No files are written until the agent presents a concise final direction and receives conversational sign-off.
 
 ### Root and distributed maps
 
@@ -133,7 +131,7 @@ Expected behavior for `hybrid-release-code`:
 Use disposable copies of `monorepo-distributed` and `hybrid-release-code` to test whether optional notes narrow context rather than add prose.
 
 1. Run a representative change against `monorepo-distributed` without extra hints. Record purposeful files opened, searches performed, missed dependencies, and whether the plan is correct. The agent should follow imports and existing routing without proposing an expanded impact map.
-2. Run coding adoption against a fresh `hybrid-release-code` copy with one explicit user hint about a non-local consumer or operational step that is not represented by imports. Ask the flow to preview guidance only; do not approve writes.
+2. Run coding adoption against a fresh `hybrid-release-code` copy with one explicit user hint about a non-local consumer or operational step that is not represented by imports. Ask the flow for guidance only; do not sign off on writes.
 3. Repeat the representative change with that concise, source- or user-cited note present in the disposable copy. Record the same observations. Capture exact token usage only when the runtime exposes a reliable measure.
 
 Expected behavior:
@@ -151,58 +149,26 @@ Run read-only against `existing-doc-duplication` and choose Curated.
 
 Expected behavior:
 
-- Ends the initial protected scan before mapping/depth choices, then begins a new protected inspection phase before reading Curated documentation or other project resources. The normal path produces no PiCM gate-blocked warning; it keeps that phase active through proposal resolution, then ends it and calls `complete` after a declined proposal.
+- Uses bounded ordinary inspection for mapping/depth choices and Curated documentation, honoring eligible-path and sensitive-content boundaries without a PiCM gate-blocked phase.
 - Identifies `AGENTS.md`, `CLAUDE.md`, `docs/ARCHITECTURE.md`, and `docs/development.md` as overlapping/conflicting guidance.
 - Treats `src/main.js` as the evidence-backed entry point and calls the `src/index.js` references stale/uncertain without rewriting anything.
 - Proposes canonical fact homes and thin compatibility pointers.
 - Separately highlights proposed rewrites, merges, moves, archive candidates, or deletions.
-- Treats choosing Curated as permission to draft a proposal, not permission to apply it; declining the proposal leaves the fixture unchanged.
+- Treats choosing Curated as design input, not sign-off; it presents a final direction before changes, and declining or cancelling leaves the fixture unchanged.
 
-### Protected privacy and Git-exclude boundary
+### Privacy and Git-exclude boundary
 
-Prepare the ignored-file fixture in a disposable Git repository:
-
-```bash
-FIXTURE="test/fixtures/coding-repository/ignored-secrets-existing"
-TARGET="/tmp/picm-coding-ignore-smoke"
-rm -rf "$TARGET"
-cp -R "$FIXTURE" "$TARGET"
-cd "$TARGET"
-git init
-printf 'SYNTHETIC_TRACKED_IGNORED=do-not-read\n' > .env.tracked
-git add .
-git add -f .env.tracked
-ln -s .env ignored-target-link
-git add ignored-target-link
-git -c user.name="PiCM Fixture" -c user.email="fixture@example.invalid" commit -m "fixture"
-printf 'SYNTHETIC_ONLY=do-not-read\n' > .env
-mkdir -p secrets
-printf 'SYNTHETIC FAKE KEY - DO NOT READ\n' > secrets/fake-key.pem
-printf 'LOCAL_EXCLUDE=do-not-read\n' > local-excluded.txt
-printf 'local-excluded.txt\n' >> .git/info/exclude
-printf 'CONFIG_EXCLUDE=do-not-read\n' > config-excluded.txt
-pi install -l /path/to/picm-factory
-pi
-```
+Prepare the ignored-file fixture in a disposable Git repository using the setup above.
 
 Expected behavior:
 
-- Before an explicit PiCM command, the extension leaves ordinary Pi reads, user-level skills, screenshots/outside paths, Git inspection, and agent tools untouched; use only the synthetic fixture when demonstrating that pass-through.
-- User-typed `!bash` is never intercepted, including during an active PiCM scan.
-- `/picm-new`, `/picm-adopt`, `/picm-maintain`, and `/picm-optimize` authorize a privacy-pending workflow; `/picm-help` and natural-language requests do not. Before privacy review, every agent tool except `picm_scan_control` is blocked.
-- `picm_scan_control preflight` reports whether the target is a Git repository and the file kind of root `.gitignore` and `.git/info/exclude`, without candidate inventory or temporary Git metadata. Immediately afterward, both `/picm-adopt` classified as coding and `/picm-adopt coding` use the full adoption privacy question: reassure the user that Git ignore rules, Git internals, symlinks, repository/submodule boundaries, and outside-project paths are already protected, then ask whether sensitive material needs additional project-relative exclusions or `none`. The exact concise question is conditional for maintenance and optimization, not adoption.
-- The additional-path question does not claim every secret is inferred or treat ignore rules as sufficient for sensitive eligible files. The workflow records `config-excluded.txt`, previews `privacy.excludedPaths`, and persists it only after exact confirmation.
-- After privacy review but before `begin`, only canonical packaged resources under `skills/` and `prompts/`, plus the package README and metadata, succeed; project-local lookalikes and other project resource reads remain blocked.
-- `begin` is refused before privacy review. After review, `inventory` combines root/nested `.gitignore`, `.git/info/exclude`, global Git excludes, persisted PiCM config, and session additions. After every `end`, invoke only `begin` for the next phase or terminal `complete` before ordinary project tools; a later scan phase calls `begin` again and `end` afterward.
-- Session shutdown clears authorization; workflow completion steps the runtime down without blocking later agent tools. A valid saved same-session authorization can be restored with its reviewed exclusions inactive, and elapsed time alone does not revoke it.
-- Uses `picm_scan_control inventory` to derive candidates without agent Bash and checks Git plus PiCM exclusions immediately before each path-tool execution. Admitted ordinary reads, edits, and writes revalidate the canonical target during execution, and direct creation works on macOS, Linux, and Windows. Unknown agent tools are blocked during active scans; confirmed privacy paths remain blocked between scan phases.
-- In a second disposable fixture, omit `.git` but keep `.gitignore`; verify preflight creates no temporary metadata, then privacy review allows explicit maintenance scans to block excluded reads, allow safe candidates, create no project `.git`, and remove post-review transient metadata on shutdown.
-- In a third disposable fixture, omit both `.git` and `.gitignore`; verify preflight asks privacy before creating transient metadata and persisted/session exclusions protect the scan.
-- Does not open, quote, summarize, hash, or otherwise inspect untracked ignored `.env`, tracked ignored `.env.tracked`, `secrets/fake-key.pem`, `.git/info/exclude`-matched `local-excluded.txt`, or config-excluded `config-excluded.txt`, including through `git show`, broad traversal, or another worktree.
-- Does not follow `ignored-target-link` to the ignored `.env` target.
-- Visible Pi tool logs contain no read of any ignored file or symlink target.
-- Still asks whether tracked files or other approved paths contain secrets; ignore rules are not treated as proof that every remaining path is safe.
-- After a parent scan `end`, an explicitly included present submodule receives fresh conversational confirmation under the retained privacy boundary; it then calls `begin` and `inventory` with `path: "vendor/lib"` without another `privacy` action. The separate worktree applies parent, nested Git, PiCM, and session exclusions; safe candidates remain readable while excluded paths remain blocked, and no clone, initialization, fetch, proposal, or write occurs.
+- The extension does not intercept ordinary Pi tools or user-typed `!bash`; PiCM is not an execution or privacy sandbox.
+- The agent honors root/nested Git ignores, `.git/info/exclude`, global excludes, persisted PiCM exclusions, session exclusions, symlink/external boundaries, and known sensitive paths as discovery defaults. It uses eligible paths and bounded output deliberately.
+- The agent does not open, quote, summarize, hash, or otherwise inspect untracked ignored `.env`, tracked ignored `.env.tracked`, `secrets/fake-key.pem`, `.git/info/exclude`-matched `local-excluded.txt`, or configured-excluded `config-excluded.txt`, including through broad traversal or another worktree.
+- It does not follow `ignored-target-link` to the ignored `.env` target, and does not treat ignore rules as proof that every remaining path is safe.
+- It asks about a specific uncertainty when needed, preserves user-provided exclusions, and never copies sensitive material into reusable context, summaries, or diagnostics.
+- A named external or nested-repository location can be included conversationally for reading; it does not grant implicit external writes, initialize a repository, clone, or fetch.
+- Record observed instruction-following and tool logs as QA evidence, not proof that arbitrary tools enforce the boundary.
 
 Observed smoke: 2026-07-22 in visible Zellij/Pi panes against `/tmp/picm-coding-ignore-smoke`.
 
@@ -213,11 +179,11 @@ Observed smoke: 2026-07-22 in visible Zellij/Pi panes against `/tmp/picm-coding-
 
 ## Maintenance cadence smoke check
 
-In a disposable fixture, preview a one-day reminder with `picm_maintenance_policy` and verify the preview writes nothing. Before apply, verify PiCM presents every standalone-policy summary category required by `skills/picm-factory/references/preview-review-protocol.md`, explains the durable and advisory scheduling impact, and obtains explicit no-write summary acceptance. Confirm the separate exact `.picm/config.json` patch, then make `nextDueAt` due and restart an interactive Pi session. Verify the persistent reminder section renders above the editor and presents a selector with `Run Now` and `Defer`. Test `Defer`: verify the reminder is dismissed for the current session, notification states PiCM will ask again in a new session, timestamps are not changed, and reload/resume in the same session does not prompt again while a fresh session prompts again. Test `Run Now`: verify it invokes the Strict/Balanced depth selector, starts privacy review, and advances `lastCycleAt`/`nextDueAt` and clears the reminder only after successful completion. Verify cancellation or escape before completion settings publication leaves the reminder visible and maintenance due. Cancellation after a successful settings replacement does not restore the previous schedule; a completed pass clears its reminder, and any subsequent directory-sync failure is reported as committed with uncertain crash durability. Repeat with legacy `automatic` and `nudge` configs to verify both use the approval prompt. Print, JSON, and RPC sessions must neither prompt nor mutate the schedule. Decline an apply confirmation and verify no file changes. Do not run write-capable smoke tests outside an explicitly disposable target.
+In an explicitly approved disposable fixture, configure a one-day reminder as part of a signed-off direction and verify unrelated `.picm/config.json` values are preserved. Make `nextDueAt` due and restart an interactive Pi session. Verify the reminder offers `Run Now` and `Later` without launching work or edits. Test `Later`: it dismisses the offer for the session without changing timestamps; a fresh session may offer again. Test `Run Now`: it starts an ordinary maintenance request, which still inspects, presents a final direction, and waits for sign-off before any repair. Advance `lastCycleAt`/`nextDueAt` only after the agreed maintenance pass completes; cancellation, partial repair, shutdown, and incidental replies leave the reminder due. Repeat with legacy `automatic` and `nudge` configs: both offer work and never self-launch. Print, JSON, and RPC sessions must neither prompt nor mutate the schedule. Report configuration conflicts or partial effects honestly. Do not run write-capable smoke tests outside an explicitly approved disposable target.
 
 ## `/picm-maintain` smoke checks
 
-At intake, verify PiCM asks whether to include agent-document optimization and defaults to No. No must preserve the standard maintenance flow. Yes must retain the standalone optimizer's agent-document-only scope, preservation ledger, selectable proposals, `No worthwhile optimizations found` result, privacy boundary, and shared summary/selective-exact preview without proposing source/build/runtime, `.picm/`, generated, or unrelated edits.
+At intake, verify PiCM asks whether to include agent-document optimization and defaults to No. No must preserve the standard maintenance flow. Yes must retain the standalone optimizer's agent-document-only scope, preservation ledger, selected opportunities, `No worthwhile optimizations found` result, privacy boundary, and final-direction/optional-review guidance without proposing source/build/runtime, `.picm/`, generated, or unrelated edits.
 
 ### Coding Repository
 
@@ -235,7 +201,7 @@ Expected behavior:
 - `monorepo-distributed` checks root/local responsibility agreement and manifest-level workspace coverage without attempting a full semantic dependency graph.
 - `hybrid-release-code` checks both coding and workflow routes for mixed release-related changes.
 - Preserves human-authored map content and proposes the smallest evidence-backed patch rather than regenerating whole files.
-- Applies the privacy-first Git and PiCM exclusion boundary before every coding scan.
+- Honors Git and PiCM exclusions as agent-followed discovery boundaries before every coding inspection.
 
 ### Stage Pipeline
 
@@ -254,7 +220,7 @@ Expected behavior:
 - Checks that Inputs distinguish stable reference material from per-run working artifacts where useful.
 - Checks that Outputs name inspectable review surfaces consumed by downstream stages.
 - Does not require local stage `AGENTS.md` files.
-- Does not write files without explicit confirmation.
+- Does not write files until a concise final direction receives conversational sign-off.
 
 ### Source-Integrity Trace
 
@@ -275,7 +241,7 @@ Expected behavior:
 - Identifies the final announcement's September 28 date as inconsistent with the approved September 18 date.
 - Reports **high confidence** in the visible output inconsistency, but only **medium confidence** that the publishing contract's weak fact-alignment Verify step contributed; it must not claim causal or provenance-grade certainty.
 - Recommends **both** an output patch for this run (restore September 18) and source-context healing for future runs (a Tier 2 contract fix requiring exact logistical facts to be checked against the approved brief).
-- Keeps trace mode framed as a heuristic, focused investigation and does not write either repair without a complete concise summary and direct explicit approval.
+- Keeps trace mode framed as a heuristic, focused investigation and does not write either repair until a concise final direction receives conversational sign-off.
 
 ### Maintenance Anti-Patterns
 
@@ -292,7 +258,7 @@ Copy and run `/picm-maintain` from each fixture root. These fixtures contain syn
   - Expected healing direction: Tier 2 contract fixes naming the stage 1 artifact, stage 2 output, and review boundaries.
 - `anti-patterns/mixed-reference-working`
   - Expected primary finding: `reference/current-run-draft.md` is a changing per-run artifact mixed into stable `reference/` material.
-  - Expected healing direction: move or route working drafts to a working/output area while keeping `reference/style-guide.md` stable; never move files without exact approval.
+  - Expected healing direction: move or route working drafts to a working/output area while keeping `reference/style-guide.md` stable; make moves explicit in the final direction before sign-off.
 - `anti-patterns/stale-contradictory-context`
   - Expected primary finding: root routing points to retired `reports/` while current context and artifacts use `deliverables/`.
   - Expected healing direction: smallest Tier 1 routing correction after confirming `deliverables/` is current.
@@ -303,7 +269,7 @@ Copy and run `/picm-maintain` from each fixture root. These fixtures contain syn
   - Expected primary finding: the intake-to-delivery handoff records summary, decision, and confidence but omits blockers, gaps/unknowns, and next action/owner.
   - Expected healing direction: Tier 2 handoff contract/card additions that preserve uncertainty and identify the receiving action.
 
-For every anti-pattern fixture, `/picm-maintain` should use Pass/Warning/Suggestion language, propose the smallest safe previewable repair, and write nothing without explicit approval.
+For every anti-pattern fixture, `/picm-maintain` should use Pass/Warning/Suggestion language, propose the smallest safe repair, and write nothing until the final direction receives conversational sign-off.
 
 Observed smoke: 2026-07-18, `anti-patterns/root-brain-dump` copied to `/tmp/picm-dqk-root-smoke`. `/picm-maintain` identified the 3.7 KB root file as mixed payload rather than concise routing, warned that every task must resolve conflicting history/preferences/output conventions, recommended a Tier 1 routing split into focused context/workflow files, honored the read-only instruction, and changed no files. The agent-created Zellij pane was stopped and closed after QA.
 
@@ -319,7 +285,7 @@ Expected behavior:
 - Explicitly identifies Specialist Folder because all four defining signals are present.
 - Recognizes `identity.md`, `rules.md`, `reference/`, and `workflows/` as specialist signals.
 - Treats `examples.md` as optional: present in one fixture, absent in the other.
-- Does not write files without explicit confirmation.
+- Does not write files until a concise final direction receives conversational sign-off.
 
 ### Team / Role OS
 
@@ -334,7 +300,7 @@ Expected behavior:
 - Recognizes role folders, shared reference, and handoff cards.
 - Treats local role `CONTEXT.md` files as sufficient for lightweight role guidance.
 - Does not require local role `AGENTS.md` files.
-- Does not write files without explicit confirmation.
+- Does not write files until a concise final direction receives conversational sign-off.
 
 ### Adopted Custom / Existing Structure
 
@@ -347,7 +313,7 @@ Expected behavior:
 - Recognizes a custom/existing structure rather than forcing a default profile.
 - Treats `.picm/` as maintainer metadata, not normal workflow routing context.
 - Checks principles: routing clarity, context locality, output boundaries, security, and stale context risk.
-- Does not write files without explicit confirmation.
+- Does not write files until a concise final direction receives conversational sign-off.
 
 ### Security Red-Team Maintenance
 
@@ -362,8 +328,8 @@ Expected behavior:
 - Suggests `.gitignore` hardening, repo visibility checks, and clearer source/context/output boundaries.
 - Treats `source/` as per-run working material and `reference/` as stable guidance; does not promote source details into reusable context/examples.
 - Keeps `.picm/` maintainer-only and does not route normal memo drafting through it.
-- Does not quote or copy token-looking strings, private/client details, or personal-looking placeholders into proposed reusable context without explicit approval and sanitization.
-- Does not write files without explicit confirmation.
+- Does not quote or copy token-looking strings, private/client details, or personal-looking placeholders into reusable context without sanitization and clear user direction.
+- Does not write files until a concise final direction receives conversational sign-off.
 
 ## Observed `/picm-maintain` smoke notes
 
@@ -407,13 +373,13 @@ Last checked: 2026-07-18 in a visible Zellij/Pi pane against `stage-pipeline/sou
 - Focused on the reported symptom and inspected the source request, approved brief, final announcement, routing/context, and both stage contracts.
 - Reported high confidence that the September 28 final date drifted from the approved September 18 date, and medium confidence that the publishing contract's generic Verify step allowed the mismatch to escape review.
 - Recommended both a current-run output patch and a Tier 2 source-context repair requiring exact date, time, location, and capacity comparison against the approved brief.
-- Presented exact preview diffs, described the result as a heuristic rather than causal provenance, asked the security question before edits, and did not write files.
+- Under the prior runtime, presented exact preview diffs, described the result as a heuristic rather than causal provenance, asked the security question before edits, and did not write files. This historical observation does not validate the redesigned command.
 
 Known calibration notes:
 
 - Smoke fixture copies under `/tmp` are often not git repos. This can be reported as a safety warning/suggestion, but should not obscure layout health.
 - General reports should remain advisory for custom folder names and profile fit; only routing, safety, stale context, or output-boundary problems should become warnings.
-- Before previewing or applying edits, maintain should ask whether the workspace contains secrets, regulated data, client data, or private/personal material.
+- Before edits, maintain should honor existing exclusions and ask about specific sensitive-scope conflicts when needed; do not repeat a blanket privacy questionnaire when the task already establishes scope. Present the final direction and wait for conversational sign-off.
 
 ### Observed security red-team `/picm-maintain` smoke notes
 
@@ -436,7 +402,7 @@ Scenario:
 Expected behavior:
 
 - Classifies `.git/` + `.pi/` as empty enough.
-- Includes the Git checkpoint recommendation in the current exact preview without inspecting Git status, history, or contents; an explicit risk opt-out remains separate from direct write approval.
+- Includes advisory Git checkpoint guidance in the final direction without inspecting Git status, history, or contents; it does not block sign-off or writing.
 - Records public-only / no-sensitive-data boundary.
 - Recommends Stage Pipeline with root numbered folders.
 - Generated stage contracts distinguish stable reference material from working artifacts.
@@ -444,7 +410,7 @@ Expected behavior:
 - Final transcript includes a tailored first-run checklist: start in the first stage folder, read its `CONTEXT.md`, create the named first output/review artifact, inspect/edit/approve it before the next stage consumes it, keep gaps/unknowns visible, and run `/picm-maintain` after the first real workflow or process change.
 - For multi-stage pipelines, final transcript names each intermediate output review/edit point before downstream consumption, not only the first stage.
 - Generated files do not contain unresolved bracket placeholders.
-- Does not create empty speculative input/output/example folders unless the user explicitly approves physical directories now or the scaffold writes a real seed/reference/first-run artifact there.
+- Does not create empty speculative input/output/example folders unless the signed-off direction includes physical directories now or the scaffold writes a real seed/reference/first-run artifact there.
 
 Team / Role OS smoke scenario:
 
@@ -481,7 +447,7 @@ Observed `picm-fvs` smoke notes:
 
 Last checked: 2026-05-25 in visible Zellij/Pi panes against `/tmp/picm-fvs-new-smoke` and `/tmp/picm-fvs-new-smoke2`.
 
-- First run completed scaffold after explicit dirty-repo approval; wrote root routing/context, style reference, stage contracts, and `.picm/config.json`.
+- First run completed scaffold after then-required dirty-repo approval; wrote root routing/context, style reference, stage contracts, and `.picm/config.json`.
 - First run generated stage contracts with stable reference vs working artifact inputs, output paths, Verify, and review gates, and no unresolved bracket placeholders.
 - First run calibration gap: it pre-created empty `input/` and `output/` directories. Guidance was tightened so `/picm-new` should name future paths in contracts without pre-creating empty directories unless explicitly approved or populated.
 - Second run after guidance tightening previewed “no empty input/ or output/ dirs,” created only populated scaffold files/directories, named future output paths in contracts, and filesystem verification found no empty non-git directories and no unresolved bracket placeholders.
@@ -504,17 +470,17 @@ Expected behavior:
 - Detects whether `CLAUDE.md`, `AGENTS.md`, both, or neither are present.
 - Classifies routing quality rather than assuming a present file is adequate.
 - Uses an adequate existing `CLAUDE.md` or `AGENTS.md` as the routing source of truth instead of proposing replacement.
-- If both files exist, checks coexistence/conflict and offers optimization only as an approved optional edit.
-- For `custom-existing-structure/existing-no-agent-files`, recommends `AGENTS.md` as the default routing source and, before making the final proposal, explicitly asks whether to draft a `CLAUDE.md` compatibility shim.
+- If both files exist, checks coexistence/conflict and offers optimization only as an optional edit requiring its own final direction/sign-off.
+- For `custom-existing-structure/existing-no-agent-files`, recommends `AGENTS.md` as the default routing source and asks whether to include a `CLAUDE.md` compatibility shim in the final direction.
 - If the shim is accepted, it appears only in the draft; declining it leaves the remaining proposal unchanged. Neither choice writes a file.
-- Does not rewrite, merge, rename, move, delete, or create visible files without a complete concise summary, clear impact flags where applicable, user iteration, and direct explicit approval.
-- Does not treat option selection as write approval; if the user asks for preview or says not to write yet, it stops after preview and waits for direct explicit approval of the current summary before writing even `.picm/` files.
+- Does not rewrite, merge, rename, move, delete, or create visible files without a concise final direction, clear material impact flags, and conversational sign-off.
+- Treats option selection as design input, not sign-off; if the user asks for preview or says not to write yet, it stops after review and waits for conversational sign-off before writing even `.picm/` files.
 - Separates readiness labels: `Ready`, `Ready with warnings`, `Needs routing before adoption`, and `Scanned only`.
 - Marks `.picm/config.json` as `adoption.status: "adopted"` only when visible routing is adequate.
-- May write scanned-only `.picm/config.json`/`.picm/adoption-report.md` after approval, with a report link or brief scan summary for future `/picm-maintain` guidance.
+- May write scanned-only `.picm/config.json`/`.picm/adoption-report.md` after sign-off, with a report link or brief scan summary for future `/picm-maintain` guidance.
 - Adoption report includes existing routing source, inferred layout profile, PiCM compatibility, optional ICM improvements, security/privacy notes, optional `.picm` artifacts, and a `Preserved as-is` section.
 - Coding adoption reports whether Coding Repository is primary or codebase mapping is composable, the selected mapping/adoption modes, resulting root/distributed shape, automatic Strict examination and stored strict preset, proposed boundaries, evidence, and unknowns.
-- After every successful adopted-status write, asks exactly “Would you like to run an initial maintenance pass now (recommended)?” with `Run maintenance now` and `Finish`. Run reuses the conversation's confirmed exclusions, opens the ordinary Strict/Balanced selector with Strict preselected, and continues profile-appropriate maintenance through the shared summary/selective-exact preview. Finish or stopping before completion settings publication does not record a maintenance run or change configured reminders; late cancellation after publication does not undo the saved completion settings. Later maintenance starts with normal privacy review.
+- After every successful adopted-status write, offers—not requires—an initial maintenance request. Run Now starts ordinary maintenance planning; it does not approve repairs or reset cadence. Finish, cancellation, or unfinished repairs do not record maintenance completion or change configured reminders.
 
 ### Optional file-role inventory
 
@@ -537,7 +503,7 @@ Expected behavior:
 - Keeps routing readiness separate: the inventory does not turn the fixture's partial `AGENTS.md` into adequate routing or full adoption.
 - Does not invent an archive candidate when none is supported. If a path is unclear, asks the owner and preserves it as-is rather than labeling it dead.
 - Does not propose destinations or move, rename, archive, delete, merge, rewrite, or create files from the classification.
-- Does not write files without a complete concise summary and direct explicit approval.
+- Does not write files until a concise final direction receives conversational sign-off.
 
 Observed smoke: 2026-07-19 in a visible Zellij/Pi pane against a disposable copy at `/tmp/picm-7hj-adopt-inventory`.
 
@@ -557,10 +523,10 @@ Expected behavior:
 
 - Treats the existing `CLAUDE.md` and folders as user-owned material.
 - Detects the public-safe `synthetic.env` stand-in, credential-shaped redacted placeholders, labeled private/client material, and sensitive-looking examples/source notes.
-- Before any adoption write in this non-Git fixture, proposes exact `.gitignore` patterns for future commit protection (or PiCM exclusions when Git is not planned), asks the owner to confirm workspace/repository visibility, and keeps sensitive source outside reusable context and adoption metadata. It does not initialize Git or change `.gitignore` without direct approval.
-- Does not quote or copy token-looking strings, private/client details, personal-looking placeholders, or sensitive-looking examples into `AGENTS.md`, `CLAUDE.md`, `.picm/config.json`, `.picm/adoption-report.md`, reusable examples, or stable references without explicit approval and sanitization.
-- If writing scanned/adopted metadata is approved, records only generic security findings such as “sensitive-looking source material present”; it should not reproduce the sensitive-looking content.
-- Does not treat a preview request or option selection as write approval.
+- Before any adoption write in this non-Git fixture, recommends `.gitignore` patterns for future commit protection (or PiCM exclusions when Git is not planned), clarifies workspace/repository visibility when needed, and keeps sensitive source outside reusable context and adoption metadata. It does not initialize Git or change `.gitignore` without final-direction sign-off.
+- Does not quote or copy token-looking strings, private/client details, personal-looking placeholders, or sensitive-looking examples into `AGENTS.md`, `CLAUDE.md`, `.picm/config.json`, `.picm/adoption-report.md`, reusable examples, or stable references without sanitization and clear user direction.
+- If writing scanned/adopted metadata is signed off, records only generic security findings such as “sensitive-looking source material present”; it should not reproduce the sensitive-looking content.
+- Does not treat a preview request or option selection as conversational sign-off.
 
 ## Observed security red-team `/picm-adopt` smoke notes
 
@@ -571,25 +537,22 @@ Last checked: 2026-05-26 in visible Zellij/Pi pane against `security-red-team/ad
 - Classified compatibility as `Needs routing before adoption` because existing routing lacks a `.picm/` maintainer-metadata exclusion.
 - Preserved `CLAUDE.md` as canonical routing and offered minimal patch, scanned-only, and stronger ICM routing options.
 - Stated it would not copy source-note, private-reference, token-looking, or personal-looking content into reports/config/context.
-- Asked for security confirmation and preview/approval before any writes.
+- Asked about security and presented a final direction before any writes.
 
 The sensitive non-Git safeguard is covered by `test/security-adoption-contract.test.mjs`; keep this fixture's expected guidance and the no-write path aligned with that contract.
 
-## Summary preview and optional-diff-review interaction
+## Final direction and optional review interaction
 
 Do not run this write-capable interaction against a real project. When interactive QA is explicitly approved, use disposable copies and test both `/picm-adopt` and `/picm-maintain` with `test/fixtures/layout-profiles/custom-existing-structure/mixed-proposal-batch`.
 
-For each command, use the fixture's exact batch: modify `AGENTS.md` to route through `routing/current-route.md` and require `npm run check`; create `reference/approval-notes.md`; delete `reference/obsolete.md`; and move `routing/legacy-route.md` to `routing/current-route.md`. Verify:
+For each command, use the fixture's batch: modify `AGENTS.md` to route through `routing/current-route.md` and require `npm run check`; create `reference/approval-notes.md`; delete `reference/obsolete.md`; and move `routing/legacy-route.md` to `routing/current-route.md`. Verify:
 
-- Before every proposal batch, one complete concise summary enumerates every affected file and operation, behavior/configuration changes, linked cross-file moves, preserved behavior, known uncertainty, and review suggestions; every empty category says `None`.
-- Flag every deletion before acceptance, with its intent and impact. Also suggest review for linked moves, material safety/privacy/permission/approval/required-command changes, and unusually large or uncertain change sets; suggestions never block approval.
-- Option choice, cadence choice, preview request, review navigation, and vague assent produce no write. Prepare this exact batch with `picm_proposal_batch`, then verify cancellation before mutation, decline, vague assent, and a requested revision remain no-write. An unambiguous direct approval from the current summary writes exactly the enumerated proposal as one auditable batch without opening a review menu or using agent Bash.
-- An initial adoption proposal that creates ordinary `.picm/config.json` and/or `.picm/adoption-report.md` follows the same summary-and-direct-approval flow as every other ordinary proposal; metadata remains optional to inspect.
-- Standalone maintenance-policy previews, including a one-day cadence, write nothing; the complete summary and its acceptance also write nothing, and only the following exact runtime confirmation controls the policy write. Persisted privacy-exclusion writes retain their exact runtime confirmation. Neither confirmation authorizes any other write.
-- Direct `view all` and `show diff for <path>` requests render the requested review immediately without opening a menu; a generic `review files` request offers `View all`, `Select files`, and `Return to summary`.
-- `View all` renders every affected item in summary order. In `Select files`, the user conversationally names or checks paths from the current proposal; selecting either source or destination of a linked move selects and reviews the whole source-destination pair. Selection and reviewed state persist while navigating one file at a time through `Previous`, `Next`, `Back to selection`, and `Return to summary`. Returning to the summary and re-entering review does not lose state.
-- A modified file renders as a unified diff; a new file renders complete proposed content; a deleted file renders complete removed content; and a linked move renders source and destination together.
-- `Return to summary` never counts as approval. If the proposal is revised, pending write approval is superseded while applicable selection and exact-review state for unchanged paths remains valid; a refreshed complete summary precedes a new approval.
-- If protected or sensitive content cannot safely be rendered exactly, the flow stops and neither approves nor writes that item or linked change set.
-- Before final explicit approval, inspect `git diff --exit-code` in the disposable target to confirm no project write occurred. After approval, verify only the currently summarized files and operations were written, and inspect the `picm-proposal-batch` session audit entry. Repeat the no-write check after a revision but before renewed approval. After `picm_scan_control end`, verify ordinary project tools remain blocked until the next `begin` or terminal `complete`.
-- After an applied, failed, aborted, cancelled, or revision-required proposal becomes terminal, verify later approval-shaped input and `cancel` cannot make that batch writable again; further writes require a newly prepared proposal.
+- The agent inspects first and presents one concise final direction naming affected files and operations, behavior/configuration changes, linked moves, preserved behavior, known uncertainty, and material deletion effects.
+- It flags deletion intent/impact and offers a diff or file review for linked moves, material safety/privacy/permission changes, and unusually large or uncertain changes. Review is advisory, not a blocking protocol.
+- Option and cadence choices are design input, not sign-off. Cancellation, a request to revise, or assent to a different question does not authorize edits.
+- Conversational sign-off on the final direction permits routine aligned implementation and validation without repeated approval. A material departure, destructive action outside the direction, or external write requires renewed alignment.
+- An adoption direction may include `.picm/config.json` and/or `.picm/adoption-report.md`; configuration changes preserve unrelated values and report conflicts or partial effects honestly.
+- Direct `view all` and `show diff for <path>` requests receive the requested review. A modified file renders as a unified diff where useful; a new/deleted file or linked move makes its content/effects reviewable.
+- If a selected source changes, the agent re-reads the affected file, updates the direction if needed, and never blindly overwrites stale content.
+- If protected or sensitive content cannot safely be rendered, the agent stops that change and reports the boundary.
+- Before sign-off, inspect `git diff --exit-code` in the disposable target to confirm no project write occurred. After implementation, verify the aligned files/operations, validation result, and final report. Confirm that no autonomous reminder action, invisible authorization state, or tool gate is involved.

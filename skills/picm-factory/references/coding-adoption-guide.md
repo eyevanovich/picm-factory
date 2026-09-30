@@ -1,341 +1,108 @@
 # Coding Repository Adoption Guide
 
-Use this guide when `/picm-adopt coding` is invoked or normal `/picm-adopt` identifies a likely coding repository and the user chooses coding adoption.
+Use this guide for `/picm-adopt coding` or when ordinary adoption identifies a likely coding repository and the user selects coding adoption. Map agent-relevant context without documenting every file or claiming complete architecture knowledge.
 
-Coding adoption maps agent-relevant repository context without trying to document every file or infer a complete architecture. It can be the primary **Coding Repository** profile or a composable codebase-map capability alongside another primary layout.
+## Scope and privacy
 
-## Security boundary: excluded means unreadable
+Use bounded, relevant inspection. Honor Git ignores, persisted `privacy.excludedPaths`, session exclusions, and known sensitive paths; do not open or summarize excluded/private material. Do not claim that ordinary tools enforce those boundaries universally. Avoid broad traversal of unrelated areas, symlink targets, nested repositories, generated/dependency trees, and history unless the user clearly scopes them and they are eligible.
 
-Coding repositories commonly store credentials, local configuration, private fixtures, generated artifacts, and large dependency trees behind Git or project privacy rules. Treat every exclusion source as a hard read boundary. The PiCM extension enforces this boundary only inside a workflow explicitly authorized by `/picm-new`, `/picm-adopt`, `/picm-maintain`, or `/picm-optimize`; outside that workflow ordinary Pi tools behave normally. User-typed `!bash` is an explicit human action and is never intercepted.
+A named external file, folder, or nested repository may be read as conversationally scoped context. It does not authorize writes there, initialization, fetching, or other repository changes. If a needed location is unclear or conflicts with a sensitive exclusion, ask about that specific conflict.
 
-Before inspecting repository contents:
+Keep credentials, private fixtures, local configuration, and sensitive findings out of maps and reports. The boundary reduces exposure; it is not proof that every remaining file is safe.
 
-1. Call `picm_scan_control preflight`. It checks Git-repository status plus root `.gitignore` and repository-local `.git/info/exclude` presence without inventorying files or creating temporary Git metadata.
-2. Ask the privacy question with this concise reassurance: “PiCM automatically protects:\n- paths covered by root, nested, and repository-local Git ignore rules;\n- Git internals;\n- symlinks and nested repository/submodule boundaries; and\n- paths outside this project.\n\nBefore scanning any workspace files, does this workspace contain secrets, regulated data, client data, or personal/private material that must be excluded? If so, name each exact project-relative file or directory to exclude. Name any other project-relative exclusions too, or reply `none` if there are none.” These protections are automatic; the reply adds exclusions for sensitive eligible paths PiCM cannot infer. No other agent tool is available until this privacy review completes.
-3. Call `picm_scan_control privacy` with every exact project-relative exclusion. When the user chooses durable PiCM exclusions, use `persist: true`; the action shows the exact `privacy.excludedPaths` patch and writes `.picm/config.json` only after TUI confirmation. Otherwise exclusions remain session-only. Existing persisted exclusions are merged automatically and exclusions can only be added during the workflow.
-4. When the Git repository has no root `.gitignore`, offer an exact `.gitignore` proposal for paths the user also wants excluded from commits. Declining it does not weaken PiCM protection because config and session exclusions remain enforced.
-5. Call `begin`, then use `inventory` for candidate discovery. Never begin with broad traversal or direct filesystem tools.
+## Entry and profile choice
 
-Protected inventory combines these sources as a union:
-
-- root and nested `.gitignore`;
-- repository-local `.git/info/exclude`;
-- the user's global Git excludes;
-- `.picm/config.json` `privacy.excludedPaths`;
-- current-session privacy exclusions.
-
-A match from any source blocks the path. Git's `--exclude-standard` inventory and immediate `git check-ignore --no-index` check honor Git sources, including tracked matches. PiCM filters config/session exclusions from inventory and checks them immediately before every guarded path-tool execution. Unguarded recursive traversal is blocked; canonical-path-bound, protected-descendant-filtered directory traversal is authorized only for `grep`, `find`, `ls`, and automatic `rg`. Each admitted ordinary `read`, `edit`, `write`, `grep`, `find`, `ls`, or `rg` call revalidates its canonical target during built-in execution, so replacing the leaf or retargeting a parent symlink fails closed. Regular files with multiple hard-link names are rejected at admission and immediately before guarded access or mutation. Guarded `grep` and automatic `rg` bound traversal discovery/entries, retained files and aggregate snapshots, match/context rendering work, rendered output, and subprocess records/stdout/stderr. Direct creation of missing guarded files and parent directories uses the same canonical path boundary on macOS, Linux, and Windows. During active scans PiCM blocks every agent Bash command and unrecognized agent tool; confirmed privacy paths remain blocked between scan phases and after same-session resume. Trusted packaged resources under `skills/` and `prompts/`, plus package README and metadata, require declared- or canonical-package-root provenance plus the exact expected canonical target, and the extension rewrites the built-in read input to that target before execution. Legitimately symlinked package-root installs remain supported, but project aliases and nested or leaf package-resource aliases do not gain trust. This is a deterministic boundary around PiCM's guarded tools, not an OS sandbox for arbitrary filesystem access. Never use another worktree or any other route to bypass it.
-
-Do not follow symlinks during protected scans. A non-excluded symlink can resolve to excluded or out-of-repository content, so the extension blocks direct path-tool access to symlinks. Record only the link path/type; if its content is genuinely needed, ask the user for a non-symlink, non-excluded copy inside the approved workspace.
-
-Treat each submodule as a separate repository boundary. Do not initialize, fetch, or enter it automatically. A present nested Git worktree remains unreadable until the user directly replies on its own line with `Include submodule: vendor/lib`, substituting its exact project-relative root. Apply parent Git rules, session/config privacy exclusions, and that submodule's own Git exclusions before reading anything. Inclusion alone grants no access; never treat an agent tool call as user inclusion.
-
-### Explicit submodule re-entry after a scan end
-
-When the parent scan phase has ended, obtain a fresh direct reply on its own line: `Include submodule: vendor/lib`, substituting the exact project-relative root of the already-present submodule. That reply is not another `picm_scan_control privacy` action: the parent phase retains its confirmed config and session exclusions, and `privacy` is invalid after `end`.
-
-1. Call `picm_scan_control` with `action: "begin"` to start the next protected phase.
-2. Call `picm_scan_control` with `action: "inventory"` and that exact root as `path` (for example, `vendor/lib`). This validates the initialized submodule root, its parent Git boundary, and its own Git rules while retaining the existing PiCM exclusions. The reply alone does not admit reads, listings, or traversal.
-3. Read only the resulting safe candidates, then `end` the phase before continuing or completing the workflow.
-
-If the user needs additional session or persisted exclusions, do not scan the submodule in that settled workflow. Complete it and restart `/picm-adopt` so privacy review can record the full exclusion set before any scan. Never clone, initialize, fetch, or write while handling this re-entry.
-
-When `.git` is absent, the extension creates temporary bare Git metadata only after privacy review, points it at the workspace for candidate and remaining Git-exclude evaluation, and removes it on session shutdown. It never runs `git init` in the user's workspace. If Git, privacy-config validation, or an ignore check is unavailable, stop rather than weakening enforcement.
-
-The exclusion boundary reduces exposure but does not prove remaining files are safe. Avoid quoting credential-shaped or sensitive content in maps and reports.
-
-## Entry paths
-
-### Explicit shortcut
-
-`/picm-adopt coding` enters coding adoption directly.
-
-### Detection through normal adoption
-
-After privacy review, normal `/picm-adopt` may use a shallow, path-only check for signals such as these. Derive this sample from protected candidate inventory in both Git and non-Git workspaces rather than directory traversal:
-
-- language or workspace manifests;
-- app, service, package, library, source, and test areas;
-- build, lint, test, or CI configuration;
-- existing architecture or developer documentation.
-
-Do not perform a deep content scan merely to classify the repo. When signals are present, offer:
-
-1. adopt as a **Coding Repository**;
-2. add codebase mapping to the existing/inferred workflow profile;
-3. continue with normal non-coding adoption.
-
-The explicit shortcut skips only this classification question. It does not change safety, preview, or approval requirements.
-
-## Profile and capability model
-
-- **Coding Repository profile**: use when software development is the workspace's primary operating shape.
-- **Codebase-map capability**: enable alongside Stage Pipeline, Specialist Folder, Team / Role OS, or Custom / Existing Structure when coding is one part of a hybrid workspace.
-
-Coding and workflow scopes may overlap. Root routing should tell the agent when to read coding context, workflow context, or both; do not force every directory into exclusive ownership.
-
-## Interview
-
-Ask only decisions that cannot be recovered safely from the repository.
-
-### 1. Mapping approach
-
-Offer three choices:
-
-- **Root map** — a bounded scan and one concise map. Best for a small or cohesive repository.
-- **Distributed map** — root routing plus local context at user-confirmed meaningful boundaries.
-- **Scan and recommend** — a broader read-only topology scan followed by a root/distributed recommendation. Explain that this uses more context and does not write anything.
-
-`scan and recommend` is an analysis method. After the user accepts a proposed shape, record the resulting shape as `root` or `distributed`.
-
-### 2. Adoption depth
+The explicit shortcut skips only classification. Otherwise use a shallow path-level orientation to identify language/workspace manifests, source/test areas, build/lint/test/CI configuration, and developer/architecture documentation; do not deep-scan merely to classify.
 
 Offer:
 
-- **Additive** — preserve existing documentation and add only missing routing/maps. Report repetition or conflicts as optional findings.
-- **Curated** — inventory agent and architecture documentation, identify repetition/conflict/stale pointers, and draft a consolidation/restructure proposal.
+1. **Coding Repository** as the primary profile for code-first work;
+2. **codebase-map capability** alongside a Stage Pipeline, Specialist Folder, Team / Role OS, or Custom profile for hybrid work; or
+3. normal adoption.
 
-Curated mode is permission to analyze and propose—not permission to apply. Apply `preview-review-protocol.md` before every proposal batch. Highlight linked moves and deletions with their intent and impact in the summary, and suggest exact review when useful; direct approval of the complete current summary remains sufficient.
+Coding and workflow scopes can overlap. Root routing says when to load coding context, workflow context, or both; do not force exclusive directory ownership.
 
-### 3. Automatic Strict adoption examination
+## Interview
 
-Do not ask the user to choose a maintenance depth during initial coding adoption. Perform the Strict examination automatically and record `capabilities.codebaseMap.maintenancePreset: "strict"` in the exact config preview.
+Ask only decisions not recoverable safely from the repository.
 
-Strict (recommended): broader systematic coverage across declared roots and mapped contexts; higher cost.
+### Mapping approach
 
-Use the Strict checks in `coding-maintenance-rubric.md` to establish the initial map baseline. This remains a bounded, protected scan: it does not authorize exhaustive source comprehension, weaken privacy boundaries, or approve writes.
+- **Root map** — a bounded scan and concise map for a small/cohesive repository.
+- **Distributed map** — root routing plus local context at user-confirmed meaningful boundaries.
+- **Scan and recommend** — a broader, still bounded topology assessment before recommending root or distributed shape.
 
-### 4. Optional user hints
+`Scan and recommend` is analysis, not an output shape. Explain the evidence used, likely high-value boundaries, context-cost tradeoff, areas not inspected, and uncertain responsibilities needing confirmation. Record the resulting shape as `root` or `distributed`.
 
-Ask for only high-value knowledge, such as:
+### Adoption depth
 
-- important apps/services/packages;
-- boundaries that should or should not receive local context;
-- legacy or do-not-extend areas;
-- components that must change together;
-- real public APIs or entry points;
-- meaningful verification gates;
-- generated code or files that should not be edited.
+- **Additive** — preserve existing documentation and add only missing routing/maps; report repetition or conflicts as optional findings.
+- **Curated** — inventory agent/developer/architecture documentation and draft a consolidation or restructure direction.
 
-Treat hints as strong evidence, then verify what can be checked safely. Preserve disagreements or unknowns for user correction.
+Curated is permission to analyze and propose, not to apply. Use `preview-review-protocol.md` before changes, and make linked moves or deletions clear in the final direction.
 
-## Scan-phase lifecycle
+### Initial Strict examination and user hints
 
-The shallow classification and initial orientation scan is one protected phase. Call `end` before asking the user to choose mapping approach and adoption depth. After those choices (and any optional boundary hints), call `begin` again before any project or resource read for the Strict examination, map analysis, or Curated documentation inventory. Use protected inventory and guarded reads only while that phase is active. Keep the phase active while preparing, presenting, and resolving its proposal, then call `end` cleanly.
+Initial coding adoption applies the Strict checks from `coding-maintenance-rubric.md` and records `capabilities.codebaseMap.maintenancePreset: "strict"` as legacy baseline metadata. It does not select later maintenance depth or authorize changes.
 
-An `end` is an intentional no-read boundary. Do not retry a gate-blocked project/resource read after it; begin the next inspection phase first when further inspection is needed. If the user declines a Curated proposal, cancel it while the inspection phase is active, preserve the no-write result, end the phase, and call `complete` before reporting. Do not reopen a scan just to revisit the proposal.
+Ask for high-value hints only: meaningful apps/services/packages, boundaries that should or should not receive local context, legacy/do-not-extend areas, coupled components, real public surfaces, verification gates, and generated/do-not-edit areas. Treat hints as evidence to check where safely possible; retain disagreement or uncertainty for user correction.
 
-## Scan depth
-
-### Root map
-
-Inspect the smallest evidence set that can establish:
-
-- repository purpose;
-- major source/test areas;
-- authoritative manifests and developer docs;
-- primary entry points;
-- repository-wide verification sources;
-- existing agent routing.
-
-Do not inspect every package merely because it exists.
-
-### Distributed map
-
-Start from user hints and visible workspace/build boundaries. Propose local context only for meaningful areas with one or more of:
-
-- distinct responsibility or domain ownership;
-- independent entry points or public API;
-- independent build/test/verification contract;
-- important operational or safety constraints;
-- frequent independent agent work;
-- material cross-boundary coordination risk.
-
-Do not place `CONTEXT.md` in every package by default. Preview the proposed boundaries and rationale, and let the user add/remove boundaries before drafting files. A proposal adjustment supersedes pending write approval while preserving applicable unchanged-path review state.
-
-### Scan and recommend
-
-Perform a bounded manifest/documentation-level topology scan. Recommend root or distributed mapping and explain:
-
-- evidence used;
-- likely high-value boundaries;
-- token/context tradeoff;
-- areas not inspected;
-- uncertain responsibilities requiring user confirmation.
-
-Do not attempt full semantic code analysis or generate a complete dependency graph.
-
-## Map placement
+## Map placement and content
 
 Use this order:
 
-1. If a small map fits cleanly in the existing root routing file, propose a concise section there.
-2. If the map is substantial or the workspace is hybrid, prefer root `CONTEXT-MAP.md` linked from the canonical `AGENTS.md` or `CLAUDE.md`.
-3. If an existing `ARCHITECTURE.md`, developer guide, or equivalent already provides an adequate map, reuse it and add only the missing route/pointers.
+1. keep a genuinely small map in existing root routing;
+2. use `CONTEXT-MAP.md` for substantial or hybrid maps, linked from canonical `AGENTS.md` or `CLAUDE.md`; or
+3. reuse adequate `ARCHITECTURE.md` or developer guidance and add only missing pointers.
 
 Responsibilities:
 
-- `AGENTS.md` or canonical `CLAUDE.md` — behavioral rules and task-to-context routing.
-- `CONTEXT-MAP.md` — repository areas, responsibilities, entry/verification pointers, and what context to load.
-- local `CONTEXT.md` — detailed boundary-specific context.
+- root `AGENTS.md`/canonical `CLAUDE.md`: behavior and task-to-context routing;
+- `CONTEXT-MAP.md` or equivalent: boundaries, responsibilities, context, entry/verification pointers;
+- local `CONTEXT.md`: boundary-specific purpose, read-first files, entry points, dependencies/constraints, risks, verification, coordination, and known unknowns.
 
-Do not let `CONTEXT-MAP.md` become a duplicated instruction file or exhaustive code catalog.
+A useful map identifies, where supported by evidence: repository purpose and shape; meaningful boundaries; authoritative context/docs; entry points or public surfaces; tests and authoritative verification sources; cross-boundary constraints; generated/do-not-edit areas; and explicit unknowns. Prefer pointers to manifests, scripts, tests, and architecture decisions over copied dependency lists or command definitions. Do not claim ownership, coupling, or invariants unsupported by visible evidence or user confirmation.
 
-## Map content rules
+Use local context only for meaningful boundaries: distinct ownership, independent entry/public surface, independent build/test contract, material operational/safety constraints, frequent independent work, or cross-boundary coordination risk. Do not add `CONTEXT.md` to every package.
 
-A useful root map should identify, where supported by evidence:
+## Optional impact notes and status
 
-- repository purpose and shape;
-- meaningful boundaries and what they own;
-- authoritative local context or docs;
-- important entry points/public surfaces;
-- test and verification locations or authoritative command sources;
-- cross-boundary constraints;
-- generated/do-not-edit areas;
-- explicit unknowns and low-confidence inferences.
+Default to omission. An impact note is useful only for a recurring or high-risk change whose important non-local effects are not cheap to recover from ordinary navigation, such as external consumers, generated artifacts, migrations, configuration/reflection registration, deployment, or user-confirmed coupling. Include affected surfaces, cited evidence or confirmation, confidence, and unknowns—not copied import graphs.
 
-Prefer pointers to manifests, scripts, tests, and architecture decisions over copied dependency lists or command definitions. Do not claim ownership, coupling, or invariants that cannot be supported by visible evidence or user confirmation. Do not duplicate relationships an agent can recover cheaply from ordinary imports, manifests, registration, or wiring.
+Operational status is optional and navigation-focused:
 
-A local coding context should remain concise and cover only the boundary's purpose, read-first files, entry points, dependencies/constraints, change risks, verification, coordination boundaries, and known unknowns.
+- **live** — active and authoritative by evidence/confirmation;
+- **leftover** — present but explicitly superseded or deprecated;
+- **ghost** — planned/stubbed/named but visibly not wired;
+- **unknown** — evidence cannot support another status.
 
-### Optional non-obvious change-impact notes
-
-Default to omission. Add an impact note only when a recurring or high-risk edit has important effects that ordinary code navigation does not reveal cheaply, such as external consumers, generated artifacts, migrations, configuration or reflection-based registration, deployment steps, or user-confirmed operational coupling.
-
-A useful note contains:
-
-- potentially affected non-local surfaces;
-- known exclusions only when explicitly supported;
-- source paths, architecture decisions, or user confirmation;
-- confidence and unresolved uncertainty.
-
-Do not turn impact notes into copied import graphs or complete dependency catalogs. Absence of a visible import or caller is not evidence for a known exclusion. Put unsupported effects in **Unknowns**.
-
-### Optional operational status
-
-Use an operational status only when it changes how an agent should navigate or edit an area:
-
-- **live** — visible evidence or user confirmation shows the area is active and authoritative;
-- **leftover** — the area remains present but explicit evidence identifies another path as primary or records this one as deprecated;
-- **ghost** — the area is planned, stubbed, documented, or named but evidence shows it is not wired into current behavior;
-- **unknown** — available evidence cannot support one of the other classifications.
-
-An agent may propose a status with citations and confidence. Ask the user to confirm an ambiguous or consequential classification. User confirmation is strong evidence, while absence of imports alone is insufficient because configuration, reflection, plugins, generated code, and external consumers can hide use. Maintenance may flag possible drift, but must not silently relabel user-confirmed status.
-
-Neither impact notes nor operational status are coding-readiness requirements. Keep them out of maps when they do not reduce navigation uncertainty.
+Ask before changing an ambiguous or consequential classification. Missing imports alone do not prove a status.
 
 ## Curated documentation analysis
 
-Keep the existing optional file-role inventory separate from a curated consolidation proposal. For relevant non-ignored agent/developer/architecture documents, record:
+Keep the optional file-role inventory separate from a curated consolidation direction. For relevant eligible agent/developer/architecture documents, record:
 
 | Path | Observed purpose | Overlap/conflict | Proposed role | Confidence |
 | --- | --- | --- | --- | --- |
 
-Rules:
+Distinguish repeated facts from intentional compatibility shims; prefer one supported canonical home and thin pointers. Preserve terminology and useful history. Treat archive/dead status as a user decision. Do not mix source-code refactors into documentation consolidation.
 
-- Distinguish repeated facts from intentional compatibility shims.
-- Propose one canonical fact home with pointers elsewhere when supported.
-- Preserve user terminology and useful history.
-- Label dead/archive status as a user decision, not an inferred fact.
-- Do not mix source-code refactors into documentation consolidation.
-- Keep every proposed action previewable and reversible through Git.
+## Readiness and minimal config
 
-## Coding readiness
+Coding adoption is **Ready** only when a cold agent can identify coding/hybrid context, reach a root map/equivalent, find the relevant boundary, entry point, and verification source without scanning the whole repo, see generated/security boundaries, and avoid `.picm/` in normal coding work.
 
-Coding adoption is **Ready** only when visible routing enables a cold agent to:
+Minimal metadata may record adoption status/readiness, profile, routing source, path hints, and a codebase-map shape, roots, map/equivalent, local contexts, and `maintenancePreset: "strict"`. A hybrid preserves its workflow profile and adds the capability. Existing `light`, `balanced`, and `strict` preset values remain readable legacy metadata; they do not select a run depth. Persisted privacy exclusions stay normalized under `privacy.excludedPaths`, preserving other valid privacy fields.
 
-1. identify that the workspace is a coding repository or hybrid;
-2. find the root map or equivalent authoritative architecture map;
-3. reach the relevant component context or source boundary;
-4. locate entry points and verification sources without scanning the whole repo;
-5. understand security and generated/do-not-edit boundaries;
-6. avoid `.picm/` during normal coding work.
+## Direction and first coding run
 
-Use existing adoption readiness labels. A generated `.picm/config.json` never substitutes for visible routing.
+Before edits, follow the shared contract: explain the map or documentation outcome, affected areas, material consolidation/move/delete effects, preserved routing, and uncertainty; wait for conversational sign-off; then use ordinary tools and validation. Do not regenerate or overwrite a whole map merely because drift exists.
 
-## Minimal config
+End with a user-facing checklist:
 
-Record only what maintenance needs. Example coding-primary config:
+1. state the coding task normally;
+2. the agent follows canonical root routing to the map/equivalent, local boundary, entry point, and verification source;
+3. it makes the smallest appropriate change and runs real checks;
+4. the user reviews the diff and check result; and
+5. cross-boundary effects and unknowns stay visible.
 
-```json
-{
-  "version": 1,
-  "generatedBy": "picm-factory",
-  "adoption": {
-    "status": "adopted",
-    "readiness": "ready"
-  },
-  "profile": "coding-repository",
-  "routing": {
-    "source": "AGENTS.md",
-    "status": "updated-existing",
-    "coexistence": "single-routing-file"
-  },
-  "paths": {
-    "rootInstructions": "AGENTS.md",
-    "rootContext": null,
-    "workflowFolders": []
-  },
-  "capabilities": {
-    "codebaseMap": {
-      "shape": "distributed",
-      "roots": ["apps", "packages"],
-      "map": "CONTEXT-MAP.md",
-      "localContexts": ["apps/web/CONTEXT.md"],
-      "maintenancePreset": "strict"
-    }
-  }
-}
-```
-
-For a hybrid, preserve the primary workflow profile and use the same optional `capabilities.codebaseMap` object. Roots may overlap `paths.workflowFolders`. If the map lives in the routing file or an existing architecture document, record that path instead of manufacturing `CONTEXT-MAP.md`.
-
-Existing configs remain compatible: explicit `light`, `balanced`, and `strict` values are preserved and readable as legacy metadata, but never select a maintenance run depth. A historically missing value has no Balanced fallback. Light has no active or scheduled compatibility dispatch and must not appear in new adoption choices or new adoption output.
-
-When the user approves durable PiCM-only scan exclusions, preserve their normalized project-relative paths in the same config:
-
-```json
-{
-  "privacy": {
-    "excludedPaths": [".env", "private-data"]
-  }
-}
-```
-
-These paths are scan policy, not normal agent context. The extension loads them before protected inventory, filters them from candidates, and blocks direct access throughout the authorized workflow. Keep file contents and explanatory sensitive details out of config.
-
-When adding exclusions to an older `privacy` object that has no `excludedPaths`, preserve its existing members and add the normalized array. Reject an explicitly present malformed `excludedPaths` value instead of replacing or discarding it.
-
-## Report additions
-
-Add these sections to the normal adoption report when coding adoption is selected:
-
-```markdown
-## Coding adoption
-- Primary profile or added capability:
-- Mapping approach selected:
-- Resulting map shape:
-- Adoption depth:
-- Initial examination: Strict
-- Stored maintenance preset: strict
-
-## Repository boundaries proposed
-
-## Evidence and unknowns
-
-## Documentation consolidation proposal
-```
-
-Omit the consolidation section in additive mode unless there is a safety/routing conflict that must be surfaced.
-
-## First coding run
-
-End with a path-specific, user-facing checklist that separates the user's actions from expected agent behavior:
-
-1. Tell the user to state the coding task normally; do not tell them to manually open or read an auto-loaded `AGENTS.md` or `CLAUDE.md`.
-2. Describe as expected agent behavior that the agent uses the canonical root routing file and follows it to `CONTEXT-MAP.md` or the reused architecture map.
-3. The agent should reach the relevant local context/source boundary and confirm the named entry point and verification source before editing.
-4. The agent should make the smallest appropriate change, run the repository's real checks, and present the diff/test result.
-5. Tell the user to review that presented diff/test result and any approval boundary that actually requires human judgment.
-6. Require the agent to keep cross-boundary effects and unknowns visible.
-7. Recommend `/picm-maintain` after the first real coding task and whenever repository boundaries, manifests, commands, or architecture docs change.
+Recommend `/picm-maintain` after the first real coding task and when boundaries, manifests, commands, or architecture documentation change.

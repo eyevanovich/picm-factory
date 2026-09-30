@@ -55,9 +55,13 @@ export function createMaintenanceController({ store, now = () => new Date() } = 
     };
   }
 
-  async function resetExistingCycle({ signal } = {}) {
+  async function completeCycle({ signal } = {}) {
     const throwIfAborted = () => {
-      if (signal?.aborted) throw new Error("PICM_SCAN_ABORTED: operation was cancelled before mutation");
+      if (signal?.aborted) {
+        const error = new Error("CONFIG_OPERATION_CANCELLED: operation was cancelled before mutation");
+        error.code = "CONFIG_OPERATION_CANCELLED";
+        throw error;
+      }
     };
 
     throwIfAborted();
@@ -74,7 +78,7 @@ export function createMaintenanceController({ store, now = () => new Date() } = 
       const result = await store.compareAndUpdateMaintenance(previous, maintenance, { signal });
       return result.ok ? { ...result, maintenance: result.conflict ? result.maintenance : maintenance } : result;
     } catch (error) {
-      if (error?.message?.startsWith("PICM_SCAN_ABORTED:")) throw error;
+      if (error?.code === "CONFIG_OPERATION_CANCELLED") throw error;
       return failed(error);
     }
   }
@@ -104,8 +108,8 @@ export function createMaintenanceController({ store, now = () => new Date() } = 
   return {
     apply,
     applyPolicy,
+    completeCycle,
     preview,
-    resetExistingCycle,
     startupProbe,
     status,
   };

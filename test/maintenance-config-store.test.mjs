@@ -1,28 +1,23 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { execFileSync } from "node:child_process";
 import * as fs from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { createGitReadGate } from "../extensions/runtime/git-read-gate.mjs";
 import { createMaintenanceConfigStore } from "../extensions/runtime/maintenance-config-store.mjs";
 import { createMaintenanceController } from "../extensions/runtime/maintenance-controller.mjs";
 import { createPolicy } from "../extensions/runtime/maintenance-policy.mjs";
 
-async function repository(t, gitignore = "") {
+async function repository(t) {
   const cwd = await fs.mkdtemp(join(tmpdir(), "picm-maintenance-"));
   t.after(() => fs.rm(cwd, { recursive: true, force: true }));
-  execFileSync("git", ["init", "-q"], { cwd });
-  await fs.writeFile(join(cwd, ".gitignore"), gitignore);
-  const gate = createGitReadGate({ cwd, packageRoot: process.cwd() });
-  return { cwd, gate };
+  return { cwd };
 }
 
 const monthly = createPolicy({ mode: "nudge", intervalValue: 1, intervalUnit: "months", now: "2026-01-01T00:00:00.000Z" });
 
 test("creates only minimal metadata plus explicitly set maintenance", async (t) => {
-  const { cwd, gate } = await repository(t);
-  const store = createMaintenanceConfigStore({ cwd, gate, randomId: () => "one" });
+  const { cwd } = await repository(t);
+  const store = createMaintenanceConfigStore({ cwd, randomId: () => "one" });
   const result = await store.updateMaintenance(monthly);
   assert.equal(result.ok, true);
   assert.deepEqual(JSON.parse(await fs.readFile(join(cwd, ".picm/config.json"), "utf8")), {
@@ -33,8 +28,8 @@ test("creates only minimal metadata plus explicitly set maintenance", async (t) 
 });
 
 test("persists and conditionally updates normalized privacy exclusions", async (t) => {
-  const { cwd, gate } = await repository(t);
-  const store = createMaintenanceConfigStore({ cwd, gate, randomId: () => "privacy" });
+  const { cwd } = await repository(t);
+  const store = createMaintenanceConfigStore({ cwd, randomId: () => "privacy" });
   const first = await store.updatePrivacy({ excludedPaths: ["secrets/key.txt", "secrets/", ".env"] });
   assert.equal(first.ok, true);
   assert.deepEqual(first.privacy, { excludedPaths: [".env", "secrets"] });
@@ -53,9 +48,72 @@ test("persists and conditionally updates normalized privacy exclusions", async (
   assert.deepEqual((await store.read()).privacy, { excludedPaths: [".env", "secrets"] });
 });
 
+test("settings projection and conditional exclusions preserve opaque config", async (t) => {
+  const { cwd } = await repository(t);
+  const path = join(cwd, ".picm/config.json");
+  await fs.mkdir(join(cwd, ".picm"));
+  await fs.writeFile(path, `${JSON.stringify({
+    custom: { keep: true },
+    privacy: { excludedPaths: ["private"], owner: "preserve" },
+  }, null, 2)}\n`);
+  const store = createMaintenanceConfigStore({ cwd });
+
+  const settings = await store.readSettings();
+  assert.deepEqual(settings, {
+    ok: true,
+    exists: true,
+    privacy: { excludedPaths: ["private"] },
+  });
+  assert.equal(Object.hasOwn(settings, "config"), false);
+
+  const updated = await store.compareAndUpdatePrivacyExclusions(["private"], ["private", "later"]);
+  assert.deepEqual(updated, {
+    ok: true,
+    changed: true,
+    committed: true,
+    code: undefined,
+    warning: undefined,
+    exists: true,
+    privacy: { excludedPaths: ["later", "private"] },
+  });
+  assert.deepEqual(JSON.parse(await fs.readFile(path, "utf8")), {
+    custom: { keep: true },
+    privacy: { excludedPaths: ["later", "private"], owner: "preserve" },
+  });
+
+  const conflict = await store.compareAndUpdatePrivacyExclusions(["private"], ["other"]);
+  assert.deepEqual(conflict, {
+    ok: true,
+    changed: false,
+    conflict: true,
+    code: "PRIVACY_POLICY_CONFLICT",
+    message: "privacy exclusions changed before the conditional update",
+    privacy: { excludedPaths: ["later", "private"] },
+  });
+});
+
+test("invalid config diagnostics do not echo opaque content", async (t) => {
+  const { cwd } = await repository(t);
+  await fs.mkdir(join(cwd, ".picm"));
+  await fs.writeFile(join(cwd, ".picm/config.json"), '{"private":"SYNTHETIC_SECRET",');
+  const result = await createMaintenanceConfigStore({ cwd }).readSettings();
+  assert.equal(result.code, "CONFIG_INVALID_JSON");
+  assert.equal(JSON.stringify(result).includes("SYNTHETIC_SECRET"), false);
+  assert.equal(JSON.stringify(result).includes(cwd), false);
+});
+
+test("stale exclusion updates do not recreate a removed config directory", async (t) => {
+  const { cwd } = await repository(t);
+  const store = createMaintenanceConfigStore({ cwd });
+  const result = await store.compareAndUpdatePrivacyExclusions(["previous"], ["next"]);
+  assert.equal(result.conflict, true);
+  assert.equal(result.code, "PRIVACY_POLICY_CONFLICT");
+  await assert.rejects(fs.lstat(join(cwd, ".picm")), { code: "ENOENT" });
+});
+
 test("rejects malformed or outside privacy exclusions", async (t) => {
-  const { cwd, gate } = await repository(t);
-  const store = createMaintenanceConfigStore({ cwd, gate });
+  const { cwd } = await repository(t);
+  const store = createMaintenanceConfigStore({ cwd });
   assert.equal((await store.updatePrivacy({ excludedPaths: ["../outside"] })).code, "PRIVACY_EXCLUDED_PATH_OUTSIDE");
 
   await fs.mkdir(join(cwd, ".picm"));
@@ -69,19 +127,19 @@ test("rejects malformed or outside privacy exclusions", async (t) => {
 });
 
 test("does not create a config for absent manual policy", async (t) => {
-  const { cwd, gate } = await repository(t);
-  const store = createMaintenanceConfigStore({ cwd, gate });
+  const { cwd } = await repository(t);
+  const store = createMaintenanceConfigStore({ cwd });
   assert.deepEqual(await store.updateMaintenance(undefined), { ok: true, changed: false, exists: false, maintenance: undefined });
   await assert.rejects(fs.access(join(cwd, ".picm/config.json")));
 });
 
 test("preserves unknown config fields and existing file mode", async (t) => {
-  const { cwd, gate } = await repository(t);
+  const { cwd } = await repository(t);
   await fs.mkdir(join(cwd, ".picm"));
   const path = join(cwd, ".picm/config.json");
   await fs.writeFile(path, JSON.stringify({ version: 7, custom: { keep: true }, adoption: { status: "adopted" } }));
   await fs.chmod(path, 0o4640);
-  const store = createMaintenanceConfigStore({ cwd, gate });
+  const store = createMaintenanceConfigStore({ cwd });
   const result = await store.updateMaintenance(monthly);
   assert.equal(result.ok, true);
   const config = JSON.parse(await fs.readFile(path, "utf8"));
@@ -97,7 +155,7 @@ test("preserves unknown config fields and existing file mode", async (t) => {
 test("preserves legacy codebase-map metadata during maintenance policy reads and writes", async (t) => {
   for (const preset of ["light", "balanced", "strict", undefined]) {
     await t.test(preset ?? "absent", async (t) => {
-      const { cwd, gate } = await repository(t);
+      const { cwd } = await repository(t);
       const codebaseMap = {
         shape: "root",
         roots: ["src"],
@@ -112,7 +170,7 @@ test("preserves legacy codebase-map metadata during maintenance policy reads and
       const path = join(cwd, ".picm/config.json");
       await fs.mkdir(join(cwd, ".picm"));
       await fs.writeFile(path, `${JSON.stringify(original, null, 2)}\n`);
-      const store = createMaintenanceConfigStore({ cwd, gate });
+      const store = createMaintenanceConfigStore({ cwd });
 
       const read = await store.read();
       assert.equal(read.ok, true);
@@ -130,13 +188,11 @@ test("preserves legacy codebase-map metadata during maintenance policy reads and
   }
 });
 
-test("blocks ignored and symlink maintenance configs or directories", async (t) => {
-  const ignored = await repository(t, ".picm/config.json\n");
-  await fs.mkdir(join(ignored.cwd, ".picm"));
-  await fs.writeFile(join(ignored.cwd, ".picm/config.json"), "{}\n");
-  const ignoredResult = await createMaintenanceConfigStore(ignored).read();
-  assert.equal(ignoredResult.ok, false);
-  assert.equal(ignoredResult.code, "CONFIG_ACCESS_BLOCKED");
+test("reads regular configs and blocks linked config paths or directories", async (t) => {
+  const regular = await repository(t);
+  await fs.mkdir(join(regular.cwd, ".picm"));
+  await fs.writeFile(join(regular.cwd, ".picm/config.json"), "{}\n");
+  assert.equal((await createMaintenanceConfigStore(regular).read()).ok, true);
 
   const linked = await repository(t);
   await fs.mkdir(join(linked.cwd, ".picm"));
@@ -153,133 +209,13 @@ test("blocks ignored and symlink maintenance configs or directories", async (t) 
   assert.equal(linkedDirectoryResult.code, "CONFIG_DIRECTORY_SYMLINK_BLOCKED");
 });
 
-test("bootstrap privacy is pathless, projected, and works through Git ignore sources", async (t) => {
-  const cases = [
-    ["root ignore", async (cwd) => fs.writeFile(join(cwd, ".gitignore"), ".picm/config.json\n")],
-    ["nested ignore", async (cwd) => fs.writeFile(join(cwd, ".picm/.gitignore"), "config.json\n")],
-    ["local exclude", async (cwd) => fs.writeFile(join(cwd, ".git/info/exclude"), ".picm/config.json\n")],
-  ];
-  for (const [name, ignore] of cases) {
-    await t.test(name, async (t) => {
-      const { cwd, gate } = await repository(t);
-      await fs.mkdir(join(cwd, ".picm"));
-      await ignore(cwd);
-      await fs.writeFile(join(cwd, ".picm/config.json"), `${JSON.stringify({
-        adoption: { status: "adopted", opaque: "hidden" },
-        privacy: { excludedPaths: ["private"], owner: "hidden-but-preserved" },
-        opaque: { tokenLikeUnknown: "never-return" },
-      })}\n`);
-      const store = createMaintenanceConfigStore({ cwd, gate });
-      assert.equal((await store.read()).code, "CONFIG_ACCESS_BLOCKED");
-      assert.equal((await store.read({ authorizeAccess: false })).code, "CONFIG_ACCESS_BLOCKED");
-      assert.deepEqual(await store.privacyBootstrap.read(), {
-        ok: true,
-        exists: true,
-        privacy: { excludedPaths: ["private"] },
-        completedSetup: "adopted",
-      });
-      assert.deepEqual(Object.keys(store.privacyBootstrap).sort(), ["compareAndUpdate", "read"]);
-    });
-  }
-});
-
-test("bootstrap privacy works through an isolated global exclude and restores process state", async (t) => {
-  const { cwd, gate } = await repository(t);
-  await fs.mkdir(join(cwd, ".picm"));
-  await fs.writeFile(join(cwd, ".picm/config.json"), '{"privacy":{"excludedPaths":["private"]}}\n');
-  const globalIgnore = join(cwd, "global-ignore");
-  const globalConfig = join(cwd, "global-config");
-  await fs.writeFile(globalIgnore, ".picm/config.json\n");
-  await fs.writeFile(globalConfig, `[core]\n\texcludesFile = ${globalIgnore}\n`);
-  const previous = process.env.GIT_CONFIG_GLOBAL;
-  try {
-    process.env.GIT_CONFIG_GLOBAL = globalConfig;
-    const store = createMaintenanceConfigStore({ cwd, gate });
-    assert.equal((await store.read()).code, "CONFIG_ACCESS_BLOCKED");
-    assert.deepEqual((await store.privacyBootstrap.read()).privacy, { excludedPaths: ["private"] });
-  } finally {
-    if (previous === undefined) delete process.env.GIT_CONFIG_GLOBAL;
-    else process.env.GIT_CONFIG_GLOBAL = previous;
-  }
-  assert.equal(process.env.GIT_CONFIG_GLOBAL, previous);
-});
-
-test("ignored bootstrap updates are conditional, projected, and preserve opaque config", async (t) => {
-  const { cwd, gate } = await repository(t, ".picm/config.json\n");
-  const path = join(cwd, ".picm/config.json");
-  await fs.mkdir(join(cwd, ".picm"));
-  await fs.writeFile(path, `${JSON.stringify({
-    version: 9,
-    adoption: { status: "adopted", internal: "preserve" },
-    privacy: { excludedPaths: ["old"], owner: "preserve" },
-    opaque: { preserve: true },
-  }, null, 2)}\n`);
-  const store = createMaintenanceConfigStore({ cwd, gate });
-
-  const conflict = await store.privacyBootstrap.compareAndUpdate(
-    { excludedPaths: ["different"] },
-    { excludedPaths: ["new"] },
-  );
-  assert.equal(conflict.conflict, true);
-  assert.deepEqual(conflict.privacy, { excludedPaths: ["old"] });
-
-  const updated = await store.privacyBootstrap.compareAndUpdate(
-    { excludedPaths: ["old"] },
-    { excludedPaths: ["new"] },
-  );
-  assert.deepEqual(updated, {
-    ok: true,
-    changed: true,
-    committed: true,
-    code: undefined,
-    warning: undefined,
-    exists: true,
-    privacy: { excludedPaths: ["new"] },
-  });
-  assert.equal(Object.hasOwn(updated, "config"), false);
-  assert.deepEqual(JSON.parse(await fs.readFile(path, "utf8")), {
-    version: 9,
-    adoption: { status: "adopted", internal: "preserve" },
-    privacy: { excludedPaths: ["new"], owner: "preserve" },
-    opaque: { preserve: true },
-  });
-  assert.equal((await store.read()).code, "CONFIG_ACCESS_BLOCKED");
-});
-
-test("bootstrap privacy ignores malformed unrelated maintenance", async (t) => {
-  const { cwd, gate } = await repository(t);
-  const path = join(cwd, ".picm/config.json");
-  await fs.mkdir(join(cwd, ".picm"));
-  await fs.writeFile(path, `${JSON.stringify({
-    adoption: { status: "adopted" },
-    maintenance: { mode: "invalid" },
-    privacy: { excludedPaths: ["private"] },
-  })}\n`);
-  const store = createMaintenanceConfigStore({ cwd, gate });
-
-  assert.deepEqual(await store.privacyBootstrap.read(), {
-    ok: true,
-    exists: true,
-    privacy: { excludedPaths: ["private"] },
-    completedSetup: "adopted",
-  });
-  assert.equal((await store.read()).code, "INVALID_MODE");
-  const updated = await store.privacyBootstrap.compareAndUpdate(
-    { excludedPaths: ["private"] },
-    { excludedPaths: ["private", "safe"] },
-  );
-  assert.equal(updated.ok, true);
-  assert.deepEqual(updated.privacy, { excludedPaths: ["private", "safe"] });
-  assert.deepEqual(JSON.parse(await fs.readFile(path, "utf8")).maintenance, { mode: "invalid" });
-});
-
-test("bootstrap privacy rejects hard-linked configs and immediate link replacement", async (t) => {
+test("blocks hard-linked configs and immediate link replacement", async (t) => {
   const hardLinked = await repository(t);
   await fs.mkdir(join(hardLinked.cwd, ".picm"));
   const hardPath = join(hardLinked.cwd, ".picm/config.json");
   await fs.writeFile(hardPath, "{}\n");
   await fs.link(hardPath, join(hardLinked.cwd, "config-alias.json"));
-  assert.equal((await createMaintenanceConfigStore(hardLinked).privacyBootstrap.read()).code, "CONFIG_HARDLINK_BLOCKED");
+  assert.equal((await createMaintenanceConfigStore(hardLinked).read()).code, "CONFIG_HARDLINK_BLOCKED");
 
   const replaced = await repository(t);
   await fs.mkdir(join(replaced.cwd, ".picm"));
@@ -299,12 +235,11 @@ test("bootstrap privacy rejects hard-linked configs and immediate link replaceme
       return fs.realpath(candidate);
     },
   };
-  const result = await createMaintenanceConfigStore({ ...replaced, fs: replacingFs }).privacyBootstrap.read();
+  const result = await createMaintenanceConfigStore({ ...replaced, fs: replacingFs }).read();
   assert.equal(result.code, "CONFIG_OUTSIDE_WORKTREE");
 });
-
 test("revalidates .picm after taking the lock", async (t) => {
-  const { cwd, gate } = await repository(t);
+  const { cwd } = await repository(t);
   await fs.mkdir(join(cwd, ".picm"));
   await fs.writeFile(join(cwd, ".picm/config.json"), '{"version":1}\n');
   const realOpen = fs.open;
@@ -321,35 +256,14 @@ test("revalidates .picm after taking the lock", async (t) => {
       return handle;
     },
   };
-  const result = await createMaintenanceConfigStore({ cwd, gate, fs: swappingFs }).updateMaintenance(monthly);
+  const result = await createMaintenanceConfigStore({ cwd, fs: swappingFs }).updateMaintenance(monthly);
   assert.equal(result.ok, false);
   assert.equal(result.code, "CONFIG_DIRECTORY_SYMLINK_BLOCKED");
   assert.equal(await fs.readFile(join(cwd, ".picm-original/config.json"), "utf8"), '{"version":1}\n');
 });
 
-test("revalidates Git ignore authorization under the lock", async (t) => {
-  const { cwd, gate } = await repository(t);
-  await fs.mkdir(join(cwd, ".picm"));
-  const path = join(cwd, ".picm/config.json");
-  const original = '{"version":1}\n';
-  await fs.writeFile(path, original);
-  let writeChecks = 0;
-  const changingGate = {
-    async checkPath(toolName, candidate) {
-      if (toolName === "write" && ++writeChecks === 2) {
-        await fs.writeFile(join(cwd, ".gitignore"), ".picm/config.json\n");
-      }
-      return gate.checkPath(toolName, candidate);
-    },
-  };
-  const result = await createMaintenanceConfigStore({ cwd, gate: changingGate }).updateMaintenance(monthly);
-  assert.equal(result.ok, false);
-  assert.equal(result.code, "CONFIG_ACCESS_BLOCKED");
-  assert.equal(await fs.readFile(path, "utf8"), original);
-});
-
 test("rejects config substitution during the immediate pre-rename validation", async (t) => {
-  const { cwd, gate } = await repository(t);
+  const { cwd } = await repository(t);
   const path = join(cwd, ".picm/config.json");
   const outside = join(cwd, "outside.json");
   const original = '{"version":1}\n';
@@ -357,35 +271,83 @@ test("rejects config substitution during the immediate pre-rename validation", a
   await fs.writeFile(path, original);
   await fs.writeFile(outside, '{"opaque":"external"}\n');
   let substituted = false;
-  let writeChecks = 0;
-  const substitutingGate = {
-    async checkPath(toolName, candidate) {
-      const decision = await gate.checkPath(toolName, candidate);
-      if (!substituted && toolName === "write" && ++writeChecks === 4) {
+  let configStats = 0;
+  const substitutingFs = {
+    ...fs,
+    async lstat(candidate) {
+      if (candidate === path && ++configStats === 3) {
         substituted = true;
         await fs.unlink(path);
         await fs.symlink(outside, path);
       }
-      return decision;
+      return fs.lstat(candidate);
     },
   };
 
-  const result = await createMaintenanceConfigStore({ cwd, gate: substitutingGate }).updateMaintenance(monthly);
+  const result = await createMaintenanceConfigStore({ cwd, fs: substitutingFs }).updateMaintenance(monthly);
   assert.equal(result.ok, false);
   assert.equal(result.code, "CONFIG_SYMLINK_BLOCKED");
   assert.equal(await fs.readFile(path, "utf8"), '{"opaque":"external"}\n');
   assert.equal((await fs.readdir(join(cwd, ".picm"))).some((entry) => entry.includes(".tmp-")), false);
 });
 
-test("two concurrent cycle resets atomically allow one update", async (t) => {
-  const { cwd, gate } = await repository(t);
+test("external opaque edits before publication return conflict without overwriting", async (t) => {
+  const { cwd } = await repository(t);
+  const path = join(cwd, ".picm/config.json");
+  await fs.mkdir(join(cwd, ".picm"));
+  await fs.writeFile(path, '{"version":1,"opaque":"original"}\n');
+  let reads = 0;
+  const store = createMaintenanceConfigStore({
+    cwd,
+    fs: {
+      ...fs,
+      async readFile(candidate, ...args) {
+        if (candidate === path && ++reads === 3) {
+          await fs.writeFile(path, '{"version":1,"opaque":"external"}\n');
+        }
+        return fs.readFile(candidate, ...args);
+      },
+    },
+  });
+  const result = await store.compareAndUpdateMaintenance(undefined, monthly);
+  assert.equal(result.conflict, true);
+  assert.equal(result.code, "CONFIG_CHANGED_BEFORE_WRITE");
+  assert.equal(await fs.readFile(path, "utf8"), '{"version":1,"opaque":"external"}\n');
+  assert.deepEqual(await fs.readdir(join(cwd, ".picm")), ["config.json"]);
+});
+
+test("pre-publication cancellation reports a potentially retained new directory", async (t) => {
+  const { cwd } = await repository(t);
+  const abort = new AbortController();
+  let fileStats = 0;
+  const path = join(cwd, ".picm/config.json");
+  const store = createMaintenanceConfigStore({
+    cwd,
+    fs: {
+      ...fs,
+      async lstat(candidate) {
+        if (candidate === path && ++fileStats === 2) abort.abort();
+        return fs.lstat(candidate);
+      },
+    },
+  });
+  await assert.rejects(
+    store.compareAndUpdateMaintenance(undefined, monthly, { signal: abort.signal }),
+    (error) => error.code === "CONFIG_OPERATION_CANCELLED" && error.possibleCreatedDirectory === true && /may have been created and retained/.test(error.message),
+  );
+  await assert.rejects(fs.lstat(path), { code: "ENOENT" });
+  assert.deepEqual(await fs.readdir(join(cwd, ".picm")), []);
+});
+
+test("two concurrent cycle completions atomically allow one update", async (t) => {
+  const { cwd } = await repository(t);
   const due = createPolicy({ mode: "nudge", intervalValue: 1, intervalUnit: "days", now: "2026-01-01T00:00:00.000Z" });
   await fs.mkdir(join(cwd, ".picm"));
   await fs.writeFile(join(cwd, ".picm/config.json"), `${JSON.stringify({ version: 1, maintenance: due }, null, 2)}\n`);
 
   const stores = [
-    createMaintenanceConfigStore({ cwd, gate, randomId: () => "claim-one" }),
-    createMaintenanceConfigStore({ cwd, gate, randomId: () => "claim-two" }),
+    createMaintenanceConfigStore({ cwd, randomId: () => "claim-one" }),
+    createMaintenanceConfigStore({ cwd, randomId: () => "claim-two" }),
   ];
   let arrivals = 0;
   let release;
@@ -403,41 +365,41 @@ test("two concurrent cycle resets atomically allow one update", async (t) => {
     now: () => new Date("2026-01-02T00:00:00.000Z"),
   }));
 
-  const decisions = await Promise.all(controllers.map((controller) => controller.resetExistingCycle()));
+  const decisions = await Promise.all(controllers.map((controller) => controller.completeCycle()));
   assert.equal(decisions.filter((decision) => decision.ok && decision.changed).length, 1);
   const loser = decisions.find((decision) => decision.ok && !decision.changed);
   assert.equal(loser.conflict, true);
 });
 
-test("cycle reset cancellation before rename preserves the prior policy", async (t) => {
-  const { cwd, gate } = await repository(t);
+test("cycle completion cancellation before rename preserves the prior policy", async (t) => {
+  const { cwd } = await repository(t);
   const path = join(cwd, ".picm/config.json");
   await fs.mkdir(join(cwd, ".picm"));
   await fs.writeFile(path, `${JSON.stringify({ version: 1, maintenance: monthly }, null, 2)}\n`);
   const abort = new AbortController();
-  let writeChecks = 0;
-  const abortingGate = {
-    async checkPath(toolName, candidate) {
-      const decision = await gate.checkPath(toolName, candidate);
-      if (toolName === "write" && ++writeChecks === 4) abort.abort();
-      return decision;
+  let configStats = 0;
+  const abortingFs = {
+    ...fs,
+    async lstat(candidate) {
+      if (candidate === path && ++configStats === 3) abort.abort();
+      return fs.lstat(candidate);
     },
   };
   const controller = createMaintenanceController({
-    store: createMaintenanceConfigStore({ cwd, gate: abortingGate }),
+    store: createMaintenanceConfigStore({ cwd, fs: abortingFs }),
     now: () => new Date("2026-02-01T00:00:00.000Z"),
   });
 
   await assert.rejects(
-    controller.resetExistingCycle({ signal: abort.signal }),
-    /PICM_SCAN_ABORTED/,
+    controller.completeCycle({ signal: abort.signal }),
+    /CONFIG_OPERATION_CANCELLED/,
   );
   assert.deepEqual(JSON.parse(await fs.readFile(path, "utf8")).maintenance, monthly);
   assert.deepEqual(await fs.readdir(join(cwd, ".picm")), ["config.json"]);
 });
 
-test("cycle reset cancellation during rename keeps the committed policy", async (t) => {
-  const { cwd, gate } = await repository(t);
+test("cycle completion cancellation during rename keeps the committed policy", async (t) => {
+  const { cwd } = await repository(t);
   const path = join(cwd, ".picm/config.json");
   await fs.mkdir(join(cwd, ".picm"));
   await fs.writeFile(path, `${JSON.stringify({ version: 1, maintenance: monthly }, null, 2)}\n`);
@@ -452,11 +414,11 @@ test("cycle reset cancellation during rename keeps the committed policy", async 
     },
   };
   const controller = createMaintenanceController({
-    store: createMaintenanceConfigStore({ cwd, gate, fs: renamingFs }),
+    store: createMaintenanceConfigStore({ cwd, fs: renamingFs }),
     now: () => new Date("2026-02-01T00:00:00.000Z"),
   });
 
-  const result = await controller.resetExistingCycle({ signal: abort.signal });
+  const result = await controller.completeCycle({ signal: abort.signal });
   assert.equal(abort.signal.aborted, true);
   assert.equal(result.ok, true);
   assert.equal(result.changed, true);
@@ -468,11 +430,10 @@ test("cycle reset cancellation during rename keeps the committed policy", async 
 });
 
 test("cancellation during first config publication keeps the new file", async (t) => {
-  const { cwd, gate } = await repository(t);
+  const { cwd } = await repository(t);
   const abort = new AbortController();
   const store = createMaintenanceConfigStore({
     cwd,
-    gate,
     fs: {
       ...fs,
       async rename(from, to) {
@@ -490,8 +451,8 @@ test("cancellation during first config publication keeps the new file", async (t
 });
 
 for (const failure of ["sync", "close"]) {
-  test(`cycle reset cancellation during directory ${failure} failure reports a committed policy`, async (t) => {
-    const { cwd, gate } = await repository(t);
+  test(`cycle completion cancellation during directory ${failure} failure reports a committed policy`, async (t) => {
+    const { cwd } = await repository(t);
     const path = join(cwd, ".picm/config.json");
     await fs.mkdir(join(cwd, ".picm"));
     await fs.writeFile(path, `${JSON.stringify({ version: 1, maintenance: monthly }, null, 2)}\n`);
@@ -522,11 +483,11 @@ for (const failure of ["sync", "close"]) {
       },
     };
     const controller = createMaintenanceController({
-      store: createMaintenanceConfigStore({ cwd, gate, fs: abortingFs }),
+      store: createMaintenanceConfigStore({ cwd, fs: abortingFs }),
       now: () => new Date("2026-02-01T00:00:00.000Z"),
     });
 
-    const result = await controller.resetExistingCycle({ signal: abort.signal });
+    const result = await controller.completeCycle({ signal: abort.signal });
     assert.equal(result.ok, true);
     assert.equal(result.committed, true);
     assert.equal(result.code, "CONFIG_COMMITTED_SYNC_FAILED");
@@ -538,7 +499,7 @@ for (const failure of ["sync", "close"]) {
 }
 
 test("late cancellation preserves an external replacement and leaves legacy rollback files alone", async (t) => {
-  const { cwd, gate } = await repository(t);
+  const { cwd } = await repository(t);
   const path = join(cwd, ".picm/config.json");
   const legacyPath = `${path}.rollback-legacy`;
   const original = `${JSON.stringify({ version: 1, maintenance: monthly }, null, 2)}\n`;
@@ -564,11 +525,11 @@ test("late cancellation preserves an external replacement and leaves legacy roll
     },
   };
   const controller = createMaintenanceController({
-    store: createMaintenanceConfigStore({ cwd, gate, fs: replacingFs }),
+    store: createMaintenanceConfigStore({ cwd, fs: replacingFs }),
     now: () => new Date("2026-02-01T00:00:00.000Z"),
   });
 
-  const result = await controller.resetExistingCycle({ signal: abort.signal });
+  const result = await controller.completeCycle({ signal: abort.signal });
   assert.equal(result.ok, true);
   assert.equal(result.committed, true);
   assert.equal(await fs.readFile(path, "utf8"), external);
@@ -578,7 +539,7 @@ test("late cancellation preserves an external replacement and leaves legacy roll
 });
 
 test("lock cleanup failure after a cancelled commit does not undo the policy", async (t) => {
-  const { cwd, gate } = await repository(t);
+  const { cwd } = await repository(t);
   const path = join(cwd, ".picm/config.json");
   await fs.mkdir(join(cwd, ".picm"));
   await fs.writeFile(path, `${JSON.stringify({ version: 1, maintenance: monthly })}\n`);
@@ -586,8 +547,7 @@ test("lock cleanup failure after a cancelled commit does not undo the policy", a
   const controller = createMaintenanceController({
     store: createMaintenanceConfigStore({
       cwd,
-      gate,
-      fs: {
+        fs: {
         ...fs,
         async rename(from, to) {
           await fs.rename(from, to);
@@ -602,7 +562,7 @@ test("lock cleanup failure after a cancelled commit does not undo the policy", a
     now: () => new Date("2026-02-01T00:00:00.000Z"),
   });
 
-  const result = await controller.resetExistingCycle({ signal: abort.signal });
+  const result = await controller.completeCycle({ signal: abort.signal });
   assert.equal(result.ok, true);
   assert.equal(result.committed, true);
   assert.deepEqual(JSON.parse(await fs.readFile(path, "utf8")).maintenance, result.maintenance);
@@ -610,7 +570,7 @@ test("lock cleanup failure after a cancelled commit does not undo the policy", a
 });
 
 test("post-rename directory sync failure reports a committed change", async (t) => {
-  const { cwd, gate } = await repository(t);
+  const { cwd } = await repository(t);
   await fs.mkdir(join(cwd, ".picm"));
   const path = join(cwd, ".picm/config.json");
   await fs.writeFile(path, '{"version":1}\n');
@@ -628,7 +588,7 @@ test("post-rename directory sync failure reports a committed change", async (t) 
       return handle;
     },
   };
-  const result = await createMaintenanceConfigStore({ cwd, gate, fs: failingSyncFs }).updateMaintenance(monthly);
+  const result = await createMaintenanceConfigStore({ cwd, fs: failingSyncFs }).updateMaintenance(monthly);
   assert.equal(result.ok, true);
   assert.equal(result.changed, true);
   assert.equal(result.committed, true);
@@ -638,19 +598,19 @@ test("post-rename directory sync failure reports a committed change", async (t) 
 });
 
 test("lock or write failure leaves the prior file unchanged", async (t) => {
-  const { cwd, gate } = await repository(t);
+  const { cwd } = await repository(t);
   await fs.mkdir(join(cwd, ".picm"));
   const path = join(cwd, ".picm/config.json");
   const original = '{"version":1,"custom":"original"}\n';
   await fs.writeFile(path, original);
   await fs.writeFile(`${path}.lock`, "held");
-  const locked = await createMaintenanceConfigStore({ cwd, gate }).updateMaintenance(monthly);
+  const locked = await createMaintenanceConfigStore({ cwd }).updateMaintenance(monthly);
   assert.equal(locked.code, "CONFIG_LOCKED");
   assert.equal(await fs.readFile(path, "utf8"), original);
   await fs.unlink(`${path}.lock`);
 
   const failingFs = { ...fs, rename: async () => { throw new Error("synthetic rename failure"); } };
-  const failed = await createMaintenanceConfigStore({ cwd, gate, fs: failingFs, randomId: () => "failure" }).updateMaintenance(monthly);
+  const failed = await createMaintenanceConfigStore({ cwd, fs: failingFs, randomId: () => "failure" }).updateMaintenance(monthly);
   assert.equal(failed.code, "CONFIG_WRITE_FAILED");
   assert.equal(await fs.readFile(path, "utf8"), original);
   await assert.rejects(fs.access(`${path}.lock`));
@@ -658,7 +618,7 @@ test("lock or write failure leaves the prior file unchanged", async (t) => {
 });
 
 test("recovers a dead-owner lock but never removes a live-owner lock", async (t) => {
-  const { cwd, gate } = await repository(t);
+  const { cwd } = await repository(t);
   await fs.mkdir(join(cwd, ".picm"));
   const path = join(cwd, ".picm/config.json");
   await fs.writeFile(path, `${JSON.stringify({ version: 1, maintenance: monthly })}\n`);
@@ -666,7 +626,6 @@ test("recovers a dead-owner lock but never removes a live-owner lock", async (t)
   await fs.writeFile(lockPath, `${JSON.stringify({ pid: 41, token: "dead-owner" })}\n`);
   const recovered = await createMaintenanceConfigStore({
     cwd,
-    gate,
     processId: 99,
     isProcessAlive: (pid) => pid !== 41,
   }).updateMaintenance({ mode: "manual" });
@@ -676,7 +635,6 @@ test("recovers a dead-owner lock but never removes a live-owner lock", async (t)
   await fs.writeFile(lockPath, `${JSON.stringify({ pid: 42, token: "live-owner" })}\n`);
   const blocked = await createMaintenanceConfigStore({
     cwd,
-    gate,
     processId: 99,
     isProcessAlive: () => true,
   }).updateMaintenance(monthly);
@@ -685,7 +643,7 @@ test("recovers a dead-owner lock but never removes a live-owner lock", async (t)
 });
 
 test("serializes concurrent stale-lock recovery without moving a replacement", async (t) => {
-  const { cwd, gate } = await repository(t);
+  const { cwd } = await repository(t);
   await fs.mkdir(join(cwd, ".picm"));
   const path = join(cwd, ".picm/config.json");
   await fs.writeFile(path, `${JSON.stringify({ version: 1, maintenance: monthly })}\n`);
@@ -693,13 +651,11 @@ test("serializes concurrent stale-lock recovery without moving a replacement", a
 
   const first = createMaintenanceConfigStore({
     cwd,
-    gate,
     processId: 91,
     isProcessAlive: (pid) => pid !== 41,
   });
   const second = createMaintenanceConfigStore({
     cwd,
-    gate,
     processId: 92,
     isProcessAlive: (pid) => pid !== 41,
   });
@@ -715,7 +671,7 @@ test("serializes concurrent stale-lock recovery without moving a replacement", a
 });
 
 test("reclaims orphaned unique recovery links", async (t) => {
-  const { cwd, gate } = await repository(t);
+  const { cwd } = await repository(t);
   await fs.mkdir(join(cwd, ".picm"));
   const path = join(cwd, ".picm/config.json");
   const lockPath = `${path}.lock`;
@@ -725,7 +681,6 @@ test("reclaims orphaned unique recovery links", async (t) => {
 
   const result = await createMaintenanceConfigStore({
     cwd,
-    gate,
     processId: 99,
     isProcessAlive: (pid) => pid !== 41,
   }).updateMaintenance({ mode: "manual" });
@@ -735,23 +690,21 @@ test("reclaims orphaned unique recovery links", async (t) => {
 });
 
 test("legacy opaque privacy objects remain readable and merge exclusions without data loss", async (t) => {
-  const { cwd, gate } = await repository(t);
+  const { cwd } = await repository(t);
   await fs.mkdir(join(cwd, ".picm"));
   const path = join(cwd, ".picm/config.json");
   const legacyPrivacy = { owner: "security-team", legacyMode: "private" };
   await fs.writeFile(path, `${JSON.stringify({ version: 1, custom: "keep", privacy: legacyPrivacy }, null, 2)}\n`);
-  const store = createMaintenanceConfigStore({ cwd, gate });
+  const store = createMaintenanceConfigStore({ cwd });
 
-  const review = await store.privacyBootstrap.read();
-  assert.equal(review.ok, true);
-  assert.equal(review.privacy, undefined);
-  assert.equal(Object.hasOwn(review, "config"), false);
-  assert.equal(Object.hasOwn(review, "mode"), false);
-  assert.deepEqual(JSON.parse(await fs.readFile(path, "utf8")).privacy, legacyPrivacy);
-
-  const updated = await store.privacyBootstrap.compareAndUpdate(
+  assert.deepEqual(await store.readSettings(), {
+    ok: true,
+    exists: true,
+    privacy: undefined,
+  });
+  const updated = await store.compareAndUpdatePrivacyExclusions(
     undefined,
-    { excludedPaths: ["private", "private/nested"] },
+    ["private", "private/nested"],
   );
   assert.equal(updated.ok, true);
   assert.equal(updated.changed, true);
@@ -766,35 +719,20 @@ test("legacy opaque privacy objects remain readable and merge exclusions without
   });
 });
 
-test("legacy non-object privacy requires non-destructive migration", async (t) => {
-  const { cwd, gate } = await repository(t);
-  await fs.mkdir(join(cwd, ".picm"));
-  const path = join(cwd, ".picm/config.json");
+test("non-object and malformed privacy remain non-destructive errors", async (t) => {
+  const nonObject = await repository(t);
+  await fs.mkdir(join(nonObject.cwd, ".picm"));
+  const path = join(nonObject.cwd, ".picm/config.json");
   const original = `${JSON.stringify({ version: 1, privacy: "security-owned" }, null, 2)}\n`;
   await fs.writeFile(path, original);
-  const store = createMaintenanceConfigStore({ cwd, gate });
-
-  const result = await store.privacyBootstrap.read();
+  const result = await createMaintenanceConfigStore(nonObject).readSettings();
   assert.equal(result.ok, false);
   assert.equal(result.code, "PRIVACY_LEGACY_MIGRATION_REQUIRED");
   assert.match(result.message, /migrate it explicitly/);
   assert.equal(await fs.readFile(path, "utf8"), original);
-});
-
-test("bootstrap privacy fails closed for malformed privacy and safely projects missing metadata", async (t) => {
-  const missing = await repository(t);
-  const missingStore = createMaintenanceConfigStore(missing);
-  assert.deepEqual(await missingStore.privacyBootstrap.read(), {
-    ok: true,
-    exists: false,
-    privacy: undefined,
-    completedSetup: false,
-  });
 
   const malformed = await repository(t);
   await fs.mkdir(join(malformed.cwd, ".picm"));
   await fs.writeFile(join(malformed.cwd, ".picm/config.json"), '{"privacy":{"excludedPaths":"secret"}}\n');
-  const result = await createMaintenanceConfigStore(malformed).privacyBootstrap.read();
-  assert.equal(result.ok, false);
-  assert.equal(result.code, "PRIVACY_EXCLUDED_PATHS_INVALID");
+  assert.equal((await createMaintenanceConfigStore(malformed).readSettings()).code, "PRIVACY_EXCLUDED_PATHS_INVALID");
 });

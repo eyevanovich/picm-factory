@@ -1,21 +1,15 @@
 # Layout Profiles
 
-Layout profiles are recommendations, not validation laws. Users can organize differently if the structure remains legible and routable.
-
-When a workflow has mixed signals, recommend one primary profile for legibility and borrow a secondary pattern sparingly. Do not default to Custom just because the workflow has both stages and a specialist or both roles and reference material.
-
-**Coding Repository** is both a first-class primary profile and the source of a composable codebase-map capability. Use the profile when coding is the workspace's primary operating shape. In hybrid workspaces, retain the primary workflow profile and enable codebase mapping alongside it. Coding and workflow scopes may overlap; root routing decides which context a task loads.
+Layout profiles are recommendations, not validation laws. Choose one primary profile for a mixed workspace and borrow a secondary pattern sparingly. **Coding Repository** can be primary or a composable codebase-map capability alongside another profile.
 
 ## Stage Pipeline
 
-Best for repeatable workflows with ordered steps.
-
-Common shapes:
+Best for repeatable ordered work with different inputs/outputs and human review between steps.
 
 ```text
 01_discovery/
   CONTEXT.md
-  output/        # only when this stage produces reviewable artifacts for downstream use
+  output/        # only for real reviewable artifacts
 02_mapping/
   CONTEXT.md
 03_production/
@@ -24,48 +18,24 @@ Common shapes:
   CONTEXT.md
 ```
 
-or:
+A nested `stages/01_discovery/` shape is equally valid. Each active stage has a local `CONTEXT.md` stating Purpose, Inputs, Process, Outputs, optional Verify checks, and Handoff/review. Distinguish stable reference from per-run working artifacts when it affects what the agent should trust. Outputs consumed downstream name an inspectable artifact or review surface.
 
-```text
-stages/
-├── 01_discovery/
-│   ├── CONTEXT.md
-│   └── output/  # optional review/edit surface for produced artifacts
-├── 02_mapping/
-│   └── CONTEXT.md
-├── 03_production/
-│   └── CONTEXT.md
-└── 04_validation/
-    └── CONTEXT.md
-```
-
-Use when:
-
-- work usually moves in a sequence
-- each step has different inputs/outputs
-- human review happens between steps
-- the user wants to see process order at a glance
-
-For each active stage, generate a local `CONTEXT.md` contract that states its Purpose, Inputs, Process, Outputs, optional Verify checks, and Handoff/review gate. Inputs should distinguish stable reference material from per-run working artifacts when that distinction affects what the agent should load or trust. Outputs should point to a named inspectable artifact or review surface when another stage consumes the result.
-
-First-run ending guidance for this profile should be path-specific: tell the user to start in the first stage folder and read its `CONTEXT.md`; produce the first named output/review artifact; stop before the downstream stage; inspect/edit/approve the artifact and record gaps or unsupported claims visibly; then run the next stage from that approved edited artifact. When the scaffold has multiple handoffs, name each intermediate output review/edit point before the downstream stage consumes it. If the contract names a future `output/...` path but no physical empty directory was created, explain that the first run should create the artifact at that path.
+First-run guidance is path-specific: start in the first stage, create its named output, stop for human review/editing, keep gaps or unsupported claims visible, then continue from the reviewed artifact. Name every meaningful intermediate review point.
 
 ### Placement decision
 
-After Stage Pipeline is confirmed and before choosing root stage paths, resolve where the stages belong:
+After Stage Pipeline is confirmed and before choosing paths:
 
-- If command arguments contain an explicitly seeded placement, retain that override and skip the question. `Use root numbered folders` means paths such as `01_intake/`; `use nested stages` means paths such as `stages/01_intake/`.
-- Otherwise ask: “Should stages be root-numbered or nested under `stages/`?” Do not choose root-numbered merely because placement was omitted.
-- Only after the user says they have no preference, choose root-numbered as the documented default. It is especially suitable for non-technical users who benefit from seeing the workflow immediately.
-- Honor a nested choice when the root already has many persistent folders or the user prefers cleaner root organization.
+- honor an explicit seeded placement (`01_intake/` or `stages/01_intake/`);
+- otherwise ask whether stages should be root-numbered or nested under `stages/`;
+- choose root-numbered only when the user has no preference, especially when immediate visibility helps; and
+- prefer nesting when the root already has many persistent folders or the user wants a cleaner root.
 
-The exact scaffold preview, generated stage paths, `.picm/config.json` path hints, and first-run checklist must all use the selected placement without mixing the two shapes.
+Use the selected shape consistently in generated paths, config hints, and first-run guidance.
 
 ## Specialist Folder
 
-Best for one reusable expert/helper.
-
-Common shape:
+Best for one reusable expert/helper where domain rules and examples matter more than ordered stages.
 
 ```text
 identity.md
@@ -75,38 +45,25 @@ reference/
 workflows/
 ```
 
-Use when:
+`identity.md`, `rules.md`, and `examples.md` are optional. Create them only for identified reusable guidance or real examples; otherwise add them after real use reveals a need.
 
-- the value is a narrow expert role
-- domain rules and examples matter more than ordered stages
-- the workflow may have several task recipes under `workflows/`
+### Visible first-run receipt
 
-`identity.md` and `rules.md` are optional: create them only when identified reusable guidance needs a separate home. Only create `examples.md` when real golden examples or anti-examples are available or the user explicitly wants an example area. Otherwise mention that examples should be added after the first real run.
-
-After an approved scaffold, derive first-run ending guidance only from one explicit receipt in the visible approved recipe, never from recipe headings or prose. The receipt is the recipe's first nonblank content: its opening line is exactly ```` ```picm-specialist-first-run ```` with no indentation or trailing text or spaces, and its closing line is exactly ```` ``` ````. This is the authoritative leading shape:
+A specialist recipe should begin with one visible receipt that makes first-run routing inspectable. This is methodology for the generated workspace, not a mandatory runtime tool or authorization mechanism. Use a concise fenced JSON object such as:
 
 ````markdown
 ```picm-specialist-first-run
-{"version":1,"inputs":[{"path":"reference/style.md","availability":"scaffolded","description":"Reusable style guidance"},{"path":"reference/approved-policy.md","availability":"pre-existing","description":"Stable policy already maintained in the workspace"},{"path":"source/request.md","availability":"per-run","description":"Material supplied for this run"}],"expectedArtifact":"review/result.md","review":{"requiresInspectEditApprove":true,"visibleUncertainty":["unsupported claims"]},"nextAction":{"source":"review/result.md"}}
+{"version":1,"inputs":[{"path":"reference/style.md","availability":"scaffolded","description":"Reusable style guidance"},{"path":"source/request.md","availability":"per-run","description":"Material supplied for this run"}],"expectedArtifact":"review/result.md","review":{"requiresInspectEditApprove":true,"visibleUncertainty":["unsupported claims"]},"nextAction":{"source":"review/result.md"}}
 ```
 ````
 
-Allow only initial blank or space/tab-only lines before the opening. Parse JSON through its first exact closing line. Across the raw recipe source, exactly one canonical opening line is required; reject another canonical opening anywhere, including a later comment, example, nested fence, or HTML. Later prose, headings, Markdown, and HTML are ordinary source text and do not affect the receipt. The receipt has version `1`, a nonempty `inputs` array of unique local `path`/`availability`/`description` objects, `expectedArtifact`, `review.requiresInspectEditApprove: true` with nonempty `visibleUncertainty`, and `nextAction.source` equal to `expectedArtifact`. `scaffolded` names a reusable file generated by this approved scaffold and checked by the runtime; it may include `CONTEXT.md` or `rules.md`. The recipe itself and `.picm/config.json` are not receipt inputs. `pre-existing` names stable material already maintained in the workspace; `per-run` names future material supplied for an individual run. Non-scaffolded availability is declared, not read or verified by the runtime. Keep the existing root config hints and local `paths.firstRecipe` pointer. If legacy `paths.generatedInputs` is present, it must match the receipt's scaffolded routes; if legacy `paths.runtimeInputs` is present, it must match the union of pre-existing and per-run routes. Do not add new `.picm/` route inventories.
+The receipt names unique local inputs, the expected artifact, visible uncertainty, required human review, and the source for the next action. Require `nextAction.source` to equal `expectedArtifact` so downstream work uses the reviewed artifact. `scaffolded` means the input is created in this scaffold, `pre-existing` means it already exists, and `per-run` means the user supplies it for each run; create every `scaffolded` input and do not invent an unavailable `pre-existing` route. Keep any retained `paths.firstRecipe`, generated-input, or runtime-input hints aligned with it. Use it—not loose recipe prose—to derive the first-run checklist. An older prose-only recipe can gain a receipt through an agreed edit; do not silently rewrite it.
 
-Use `{{picm:...}}` only for unresolved template tokens. Any case-sensitive `{{picm:` occurrence is unresolved, including an empty, multiline, or unclosed token; ordinary brackets, ordinary mustache variables, and JavaScript interpolation are literal text. Replace every such token before approving a scaffold. An older prose-only recipe has no fallback interpretation: add this receipt through an explicitly approved recipe edit rather than automatically rewriting it.
-
-Require an explicit human gate to inspect, edit, and explicitly approve the receipt's expected artifact before any subsequent specialist action; the next action reads from its declared source. Keep the receipt's uncertainty categories visible in the artifact or review notes. After review, distinguish one-off artifact edits from durable lessons that belong in an approved existing `rules.md`, `examples.md`, or `reference/` route; never invent optional folders, recipes, or operations. Recommend `/picm-maintain` after the first real use or when the specialist workflow, routing, or stable guidance changes.
-
-Examples from references:
-
-- Voiceprint-style writing specialist
-- Customs tool development specialist
+Before a subsequent specialist action, the expected artifact receives the review its receipt describes. Keep uncertainty visible in the artifact or review notes. After review, distinguish one-off edits from durable lessons that belong in an existing approved `rules.md`, `examples.md`, or `reference/` route; never invent optional folders or operations merely to fill a layout.
 
 ## Team / Role OS
 
-Best for multiple roles passing work between each other.
-
-Common shape:
+Best for multiple roles passing work between boundaries.
 
 ```text
 market-intel/
@@ -116,106 +73,38 @@ shared-reference/
 handoffs/
 ```
 
-Use when:
+Use when role ownership and handoff context matter. Consider local `AGENTS.md` only for independent Pi/subagent working directories; otherwise local `CONTEXT.md` keeps routing lighter.
 
-- the workspace represents a team or service operation
-- work crosses role boundaries
-- handoff context matters
-- each role needs its own local rules/context
-
-Recommend handoff cards when:
-
-- downstream roles need context, not just a command
-- unknowns and gaps must stay visible
-- work can move backward after review
-
-For roles likely to run as independent Pi/subagent working directories, consider local `AGENTS.md` files. Otherwise prefer local `CONTEXT.md` files to avoid stale routing instructions.
-
-First-run ending guidance for this profile should name the first role/folder to use, the handoff card or agreed handoff artifact to create/update before another role acts, and the receiving role/folder that consumes it. The handoff review point should require a human to check summary, facts/decisions, confidence, blockers/risks, gaps/unknowns, and next action. Tell the user to keep uncertainty visible instead of smoothing it into confident instructions; downstream roles should work from the reviewed handoff, not chat memory.
+First-run guidance names the first role, the handoff artifact, and the receiving role. Human review checks summary, facts/decisions, confidence, blockers/risks, gaps/unknowns, and next action. Keep uncertainty visible and have the receiving role use the reviewed handoff rather than chat memory.
 
 ## Coding Repository
 
-Best for source-code repositories and monorepos where an agent must find the correct architectural boundary, entry point, constraints, and verification source without loading the whole repo.
+Best for source repositories and monorepos where an agent must find the architectural boundary, entry point, constraints, and verification source without loading the whole repository.
 
-Common small-repo shape:
-
-```text
-AGENTS.md              # rules and coding-task routing, with a concise map when small
-src/
-tests/
-docs/
-```
-
-Common larger or hybrid shape:
+Small repositories can keep a concise map in root `AGENTS.md`. Larger or hybrid repositories commonly use:
 
 ```text
-AGENTS.md              # tells the agent when to load coding/workflow context
-CONTEXT-MAP.md         # repository boundary and context index
+AGENTS.md              # behavior and task routing
+CONTEXT-MAP.md         # repository boundary/context index
 apps/
-├── web/
-│   └── CONTEXT.md     # only when this boundary benefits from local context
-└── api/
-    └── CONTEXT.md
+  web/CONTEXT.md       # only at meaningful boundaries
 packages/
-└── shared/
-workflows/             # optional overlapping ICM workflow layout
+  shared/
+workflows/             # optional overlapping workflow layout
 ```
 
-Use when:
+Use a **root map** for a small/cohesive repository, **distributed map** for user-confirmed meaningful boundaries, and **scan and recommend** for a bounded topology assessment before choosing. Reuse adequate `ARCHITECTURE.md` or equivalent rather than duplicating it.
 
-- the repository's primary work is software development;
-- the agent needs progressive context loading across apps/services/packages;
-- entry points, public surfaces, tests, generated code, or dependency boundaries matter;
-- a monorepo is difficult to navigate from root instructions alone.
+Root routing owns behavior and task-to-context routing. A map indexes areas, responsibility, authoritative context, entry points, and verification sources. Local `CONTEXT.md` holds boundary detail. Keep one fact home; do not duplicate instructions across all three.
 
-Mapping choices during adoption:
+A useful map identifies repository purpose, meaningful boundaries, local context/docs, entry/public surfaces, tests or authoritative verification sources, cross-boundary constraints, generated/do-not-edit areas, and explicit unknowns. Prefer pointers to manifests, scripts, tests, and decisions over copied command lists or dependency graphs. Optional impact notes or `live`/`leftover`/`ghost`/`unknown` status belong only when they reduce navigation uncertainty and are supported by evidence or user confirmation.
 
-- **Root map** for a small/cohesive repository.
-- **Distributed map** for user-confirmed meaningful boundaries, not every package.
-- **Scan and recommend** when the user wants a broader read-only topology assessment before choosing.
-
-Map placement is adaptive:
-
-- keep a genuinely small map in the canonical root routing file;
-- use `CONTEXT-MAP.md` for substantial or hybrid maps;
-- reuse an adequate existing `ARCHITECTURE.md` or equivalent rather than duplicating it.
-
-`AGENTS.md`/canonical `CLAUDE.md` owns behavior and task routing. `CONTEXT-MAP.md` indexes areas, responsibilities, authoritative context, entry points, and verification sources. Local `CONTEXT.md` files hold boundary-specific detail. Do not duplicate the same instructions across all three.
-
-Optional source-cited impact notes may document non-local effects that imports and wiring do not reveal cheaply, but they are not a default map layer or a readiness requirement. Optional `live`, `leftover`, `ghost`, or `unknown` status belongs only where it changes navigation; agents may propose a status from evidence, while ambiguous or consequential classifications require user confirmation.
-
-The first-run checklist should be user-facing: tell the user they can state one real coding task normally, then describe what the agent should do from the auto-loaded root routing → map/equivalent → owning boundary → entry point → authoritative tests/checks. The user reviews the presented code diff and check result; the agent keeps cross-boundary effects and unknowns visible. Recommend `/picm-maintain` after the first real change or when repository boundaries/manifests/verification sources change.
-
-During explicitly invoked PiCM workflows, protected paths are unreadable after the required privacy review. Load `coding-adoption-guide.md` or `coding-maintenance-rubric.md` for the authoritative exclusion-boundary procedure.
+The first-run checklist tells the user to state a normal coding task. The agent follows root routing to the map/equivalent, owning boundary, entry point, and authoritative checks; the user reviews the diff and check result while cross-boundary effects and unknowns remain visible.
 
 ## Custom / Existing Structure
 
-Best when the user already has a working organization or the workflow does not match a standard profile.
-
-Use when:
-
-- adopting an existing ICM project
-- user has strong folder preferences
-- project has mixed stage/specialist/role behavior
-
-Maintenance should validate principles:
-
-- routing clarity
-- context locality
-- security
-- output boundaries
-- stale context risk
-
-Do not fail because paths differ from defaults.
-
-First-run ending guidance for this profile should follow the visible routing source and name the generated or existing folder/file where first work begins. Use the review/handoff convention that actually exists. If no inspectable output or handoff surface exists yet, mention it as a `/picm-maintain` follow-up rather than forcing a stage/role rewrite during `/picm-new`.
+Use when existing organization works or the workspace does not fit a standard profile. Validate routing clarity, context locality, security, output boundaries, and stale-context risk; do not fail it because paths differ from defaults. Follow the visible route and review/handoff convention in first-run guidance, and mark a missing review surface as a maintenance suggestion rather than forcing a profile rewrite.
 
 ## Local context vs local instructions
 
-Default scaffolds should use one root `AGENTS.md` plus local `CONTEXT.md` files. Pi auto-loads `AGENTS.md`/`CLAUDE.md` from the current directory and parent directories, while `CONTEXT.md` and `CONTEXT-MAP.md` are read because the root routing file tells the agent when to read them.
-
-Create local/buried `AGENTS.md` only when a folder needs hard local behavior rules or is likely to be used as an independent Pi/subagent working directory. Examples:
-
-- a review folder where the agent must never produce final approval
-- a publishing folder where the agent must prepare a checklist but never publish
-- a data folder where raw inputs must never be modified in place
+Default scaffolds use root `AGENTS.md` plus local `CONTEXT.md`. Root instructions tell the agent when to load `CONTEXT.md` or `CONTEXT-MAP.md`; local/buried `AGENTS.md` is for hard local behavior rules or an independent working directory. Visible workspace files are the routing source of truth, while `.picm/` remains maintainer metadata and normal workflow routing skips it.

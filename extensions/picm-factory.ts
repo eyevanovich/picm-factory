@@ -1,644 +1,189 @@
 import {
-  createEditTool,
-  createFindTool,
-  createGrepTool,
-  createLsTool,
-  createReadTool,
-  createWriteTool,
   withFileMutationQueue,
   type ExtensionAPI,
-  type ExtensionContext,
 } from "@earendil-works/pi-coding-agent";
 import { StringEnum } from "@earendil-works/pi-ai";
-import { realpathSync } from "node:fs";
-import { join, resolve } from "node:path";
+import { join } from "node:path";
 import { Type } from "typebox";
 import {
   BALANCED_MAINTENANCE_GUIDANCE,
   MAINTENANCE_DEPTH_CHOICES,
   STRICT_MAINTENANCE_GUIDANCE,
-  parseMaintenanceDepthArgument,
 } from "./runtime/coding-maintenance-depth.mjs";
-import { packageRootFromImportMeta } from "./runtime/git-read-gate.mjs";
-import { executeBoundGrep } from "./runtime/path-execution-binding.mjs";
-import { canonicalNow } from "./runtime/maintenance-policy.mjs";
-import { createRuntimeCoordinator } from "./runtime/runtime-coordinator.mjs";
-import { renderSpecialistFirstRunGuidance } from "./runtime/specialist-first-run-guidance.mjs";
+import { commandPrompt, maintenanceRequest } from "./runtime/command-dispatch.mjs";
+import { createMaintenanceConfigStore } from "./runtime/maintenance-config-store.mjs";
+import { createMaintenanceController } from "./runtime/maintenance-controller.mjs";
+import { createMaintenanceReminder } from "./runtime/maintenance-reminder.mjs";
 
-type CommandName = "picm-new" | "picm-adopt" | "picm-maintain" | "picm-optimize" | "picm-help";
-
-const scanWorkflowEntryType = "picm-scan-workflow";
-const proposalBatchEntryType = "picm-proposal-batch";
-
-const commandDescriptions: Record<CommandName, string> = {
+const commandDescriptions = {
   "picm-new": "Create a workspace; optionally add a workflow description after the command",
   "picm-adopt": "Adopt an existing workspace safely; type a space for optional arguments",
   "picm-maintain": "Check workspace health; type a space for one-run depth and focus arguments",
   "picm-optimize": "Optimize agent-facing documentation without changing intended outcomes",
   "picm-help": "Show command syntax, arguments, examples, setup, and safety guidance",
-};
+} as const;
+
+type CommandName = keyof typeof commandDescriptions;
 
 const adoptArgumentCompletions = [
-  {
-    value: "coding",
-    label: "coding",
-    description: "Skip initial classification and enter Coding Repository adoption",
-  },
+  { value: "coding", label: "coding", description: "Skip initial classification and enter Coding Repository adoption" },
 ];
-
 const maintainArgumentCompletions = [
   { value: "strict", label: "strict", description: STRICT_MAINTENANCE_GUIDANCE },
   { value: "balanced", label: "balanced", description: BALANCED_MAINTENANCE_GUIDANCE },
   { value: "coding", label: "coding", description: "Check repository context-map drift" },
-  {
-    value: 'trace "final output drifted from approved source"',
-    label: 'trace "drift symptom"',
-    description: "Investigate one concrete drift symptom",
-  },
-  {
-    value: 'trace "handoffs are losing uncertainty"',
-    label: 'trace "handoff symptom"',
-    description: "Investigate a handoff problem",
-  },
-  {
-    value: 'trace "stage output no longer matches prior decisions"',
-    label: 'trace "stage alignment symptom"',
-    description: "Investigate stage-output drift",
-  },
+  { value: 'trace "final output drifted from approved source"', label: 'trace "drift symptom"', description: "Investigate one concrete drift symptom" },
+  { value: 'trace "handoffs are losing uncertainty"', label: 'trace "handoff symptom"', description: "Investigate a handoff problem" },
+  { value: 'trace "stage output no longer matches prior decisions"', label: 'trace "stage alignment symptom"', description: "Investigate stage-output drift" },
   { value: "routing", label: "routing", description: "Focus on task and context routing" },
   { value: "handoffs", label: "handoffs", description: "Focus on handoff contracts" },
   { value: "stale-context", label: "stale-context", description: "Focus on stale context" },
   { value: "security", label: "security", description: "Focus on security boundaries" },
 ];
 
-const adoptionPrivacyQuestion = `PiCM automatically protects:
-- paths covered by root, nested, and repository-local Git ignore rules;
-- Git internals;
-- symlinks and nested repository/submodule boundaries; and
-- paths outside this project.
-
-Before scanning any workspace files, does this workspace contain secrets, regulated data, client data, or personal/private material that must be excluded? If so, name each exact project-relative file or directory to exclude. Name any other project-relative exclusions too, or reply \`none\` if there are none.`;
-
-const concisePrivacyQuestion =
-  "Name any additional project-relative files or directory that should be excluded from reads, or reply `none` to continue.";
-
-const sensitiveNonGitAdoptionSafeguards =
-  "Before offering any adoption write, if protected inventory indicates sensitive material in a non-Git workspace, give actionable protection guidance: propose exact `.gitignore` patterns for any future commit protection (or explain the equivalent PiCM session/persisted exclusions), confirm appropriate repository/workspace visibility, and keep sensitive source outside reusable context, examples, and adoption metadata. Do not initialize Git or modify `.gitignore` without direct approval.";
-
-const maintenanceOptimizationIntake =
-  "At maintenance intake, ask whether to include agent-document optimization in this pass. Default to No. No runs the standard maintenance workflow unchanged. If Yes, load and follow `references/optimization-guide.md` as the single source for the documentation-only optimization scope, preservation ledger, proposal selection, no-worthwhile-change result, privacy boundaries, and shared summary/selective-exact preview; do not duplicate or weaken that flow.";
-
-const proposalBatchGuidance =
-  "For /picm-adopt and /picm-maintain, prepare every exact create, modify, delete, and linked move set with `picm_proposal_batch` while a protected scan phase is active. Call `present` with the returned proposal ID and digest so the runtime generates and delivers the complete exact operation summary, including the Git checkpoint recommendation, then wait. The runtime accepts only an unambiguous direct approval of the presented current proposal (`accept`, `approve`, `accept and write`, or `proceed`) before `apply`; a vague response, cancellation, or requested revision is no-write. Before mutation, the tool rechecks all approved paths and expected contents. After it begins, failure or cancellation stops later operations without undoing completed files or created parents; use its per-operation result to report completed, unattempted, failed, or uncertain effects, including a published move destination. Never use Bash for file operations. Use `cancel` after a cancellation, or `prepare` a replacement batch after a revision. The tool records a session audit for each prepared, presented, approval-observed, cancelled, failed, and applied batch; if that record cannot be stored after apply, report its audit warning without hiding file effects.";
-
-const submoduleReentryGuidance =
-  "Nested Git worktree re-entry — never enter, initialize, fetch, or write a nested Git worktree automatically. Parent inventory may identify its root but must not disclose its contents. After ending the parent phase, wait for a direct user reply on its own line in exactly this form: `Include submodule: vendor/lib` (substitute the exact project-relative root). Only then begin a fresh phase and call `picm_scan_control` inventory with that exact root. Inclusion alone grants no read/list/traversal access; scoped inventory must succeed first. Do not treat an agent tool call, prompt text, or a prior-session reply as inclusion.";
-
-const gitCheckpointGuidance =
-  "Git checkpoint recommendation — include it in the normal current exact preview. For affected existing content, recommend a user-created commit; never inspect Git status, history, or contents, require a clean tree, or perform Git actions. Non-Git and new/empty workspaces remain supported. If coverage is absent or uncertain, the exact risk opt-out (`I understand the risk and want to proceed without a Git checkpoint.`) or a clear checkpoint report is an unverified acknowledgement, not approval: direct approval must follow. Retain it only for the unchanged presented proposal. Follow `references/preview-review-protocol.md` for the canonical method and risk explanation.";
-
-function buildMaintenanceContinuationPrompt(depth: "strict" | "balanced") {
-  return `Initial maintenance continuation — successful adoption selected an initial maintenance pass. The adoption privacy review and its confirmed exclusions remain active for this conversation. Do not repeat preflight or the privacy question. Begin a new protected scan phase with \`picm_scan_control\` action \`begin\`, then run profile-appropriate maintenance using protected inventory and guarded reads.\n\nMode: maintain\nInitial maintenance run depth: ${depth}. Apply this depth to this run only. Do not mutate \`capabilities.codebaseMap.maintenancePreset\`.\n\n${maintenanceOptimizationIntake}\n\nBefore applying a proposal batch, follow the skill's shipped summary-preview and optional-diff-review protocol. Present the complete current summary, including non-blocking review suggestions for material or uncertain changes, then treat an unambiguous direct approval such as accept, approve, accept and write, or proceed as approval to write only that exact proposal. Do not require a separate summary-acceptance step or review menu. Keep exact review available on demand for view all, review files, and show diff for a path. When the user requests a draft adjustment, revise the current proposal conversationally, preserve applicable unchanged-path review state, and invite direct approval or diff inspection of the revision.\n\n${gitCheckpointGuidance}\n\n${proposalBatchGuidance}\n\nAfter the final maintenance scan \`end\`, call \`picm_scan_control\` with \`action: "complete"\` before reporting, saving session state, or using any other agent tool.`;
+function response(result: unknown) {
+  return { content: [{ type: "text" as const, text: JSON.stringify(result) }], details: result };
 }
 
-function buildStagePlacementContext(command: CommandName): string {
-  if (command !== "picm-new") return "";
-  return "\n\nStage Pipeline placement: follow the loaded skill when interpreting User arguments. Retain exactly one unambiguous affirmative root-numbered or nested placement as seed context. Treat negated, conflicting, or absent placement as unresolved and ask whether stages should be root-numbered or nested under `stages/` before previewing stage paths. Select root-numbered only after the user says they have no preference, then use the resolved placement in every preview and generated path.";
+function settingsStore(cwd: string) {
+  return createMaintenanceConfigStore({ cwd });
 }
 
-function buildSpecialistFirstRunContext(command: CommandName): string {
-  if (command !== "picm-new") return "";
-  return "\n\nSpecialist Folder final guidance: follow the authoritative visible-recipe receipt contract in `references/layout-profiles.md`; do not infer route semantics from recipe prose. Keep the local `paths.firstRecipe` hint and any applicable legacy input hints aligned with that receipt. Write the config after the completed visible scaffold, then call `picm_specialist_first_run_guidance` and use its returned text as the final first-run guidance. Do not invent optional folders, recipes, or operations.";
-}
-
-function buildSourceMaterialLocalInputContext(command: CommandName): string {
-  if (command !== "picm-new") return "";
-  return "\n\nSource-material-only local input protection: after protected inventory classifies the workspace, when the user identifies a path as local-only, including one excluded for this session, explain that a session scan exclusion is only a read boundary and does not protect a later Git commit. Offer an exact optional root `/.gitignore` proposal, for example the line `/notes/local-only.md`, whether or not `.gitignore` exists. Do not write it or add it to scaffold actions automatically; declining leaves the source path unchanged, and choosing it is not scaffold approval.";
-}
-
-function buildPrompt(
-  command: CommandName,
-  args: string,
-  privacyBootstrap = command === "picm-adopt" || command === "picm-optimize",
-): string {
-  const mode = command.replace("picm-", "");
-  const argText = args.trim() ? `\n\nUser arguments:\n${args.trim()}` : "";
-  const completionGuidance = command === "picm-adopt"
-    ? "\n\nAfter a successful adopted-status write and final scan `end`, call `picm_scan_control` with `action: \"adoption-complete\"` before reporting or saving session state; it offers the initial maintenance choice. Use `action: \"complete\"` for Scanned only or Needs routing before adoption."
-    : command !== "picm-help"
-      ? "\n\nAfter the final scan `end`, call `picm_scan_control` with `action: \"complete\"` before reporting, saving session state, or using any other agent tool."
-      : "";
-  const commandContext = `Mode: ${mode}\nCommand: /${command}${argText}${completionGuidance}`;
-  const adoptionReferenceRouting = command === "picm-adopt"
-    ? "\n\nLoad and follow `references/adoption-guide.md` before creating an adoption proposal."
-    : "";
-  const codingAdoptionLifecycle = command === "picm-adopt" && args.trimStart().toLowerCase().startsWith("coding")
-    ? "\n\nCoding adoption lifecycle: after mapping and adoption-depth choices, call `picm_scan_control` with `action: \"begin\"` before the Strict examination, map analysis, or Curated documentation inventory. Keep that phase active through proposal resolution, then call `picm_scan_control` with `action: \"end\"` and finish a declined proposal with `action: \"complete\"`."
-    : "";
-  const previewGuidance = command === "picm-adopt" || command === "picm-maintain" || command === "picm-optimize"
-    ? "\n\nBefore applying a proposal batch, follow the skill's shipped summary-preview and optional-diff-review protocol. Present the complete current summary, including non-blocking review suggestions for material or uncertain changes, then treat an unambiguous direct approval such as accept, approve, accept and write, or proceed as approval to write only that exact proposal. Do not require a separate summary-acceptance step or review menu. Keep exact review available on demand for view all, review files, and show diff for a path. When the user requests a draft adjustment, revise the current proposal conversationally, preserve applicable unchanged-path review state, and invite direct approval or diff inspection of the revision."
-    : "";
-  const checkpointGuidance = command === "picm-help" ? "" : `\n\n${gitCheckpointGuidance}`;
-  const nestedWorktreeGuidance = command === "picm-help" ? "" : `\n\n${submoduleReentryGuidance}`;
-  const optimizationIntake = command === "picm-maintain" ? `\n\n${maintenanceOptimizationIntake}` : "";
-  const sensitiveNonGitSafeguards = command === "picm-adopt" ? `\n\n${sensitiveNonGitAdoptionSafeguards}` : "";
-  const stagePlacementContext = buildStagePlacementContext(command);
-  const batchGuidance = command === "picm-adopt" || command === "picm-maintain"
-    ? `\n\n${proposalBatchGuidance}`
-    : "";
-  const specialistFirstRunContext = buildSpecialistFirstRunContext(command);
-  const sourceMaterialLocalInputContext = buildSourceMaterialLocalInputContext(command);
-  if (command === "picm-maintain" || command === "picm-optimize") {
-    const workflow = command === "picm-maintain" ? "maintenance" : "optimization";
-    return `Privacy-first startup — follow this order exactly:\n1. Call \`picm_scan_control\` with \`action: "preflight"\`. Do not load the skill or use any other tool yet.\n2. After preflight, if it reports \`privacyQuestionIsConcise: true\`, ask exactly:\n\n${concisePrivacyQuestion}\n\nThen call \`picm_scan_control\` with \`action: "privacy"\` and every additional exact path (an empty list for \`none\`).\n3. Otherwise, ask the user:\n\n${adoptionPrivacyQuestion}\n\nThen call \`picm_scan_control\` with \`action: "privacy"\` and every additional exact path (an empty list for \`none\`). Use \`persist: true\` only if the user requests durable exclusions and follow its summary and exact TUI confirmation requirements.\n4. After the privacy call completes, load the \`picm-factory\` skill and continue the ${workflow} workflow.\n\n${commandContext}${previewGuidance}${checkpointGuidance}${nestedWorktreeGuidance}${batchGuidance}${optimizationIntake}`;
-  }
-  if (privacyBootstrap) {
-    return `Privacy-first startup — follow this order exactly:\n1. Call \`picm_scan_control\` with \`action: "preflight"\`. Do not load the skill or use any other tool yet.\n2. After preflight, ask the user:\n\n${adoptionPrivacyQuestion}\n\n3. Prepare the privacy call with every additional exact path from the reply (an empty list for \`none\`). Use \`persist: true\` only if the user requests durable exclusions. Before a call with \`persist: true\`, present the complete concise \`.picm/config.json\` summary categories: affected files and operations, behavior or configuration changes, linked cross-file moves, preserved behavior, known uncertainty, and review suggestions. Use \`None\` for empty categories, explain the privacy configuration impact, and obtain the user's summary acceptance. Then call \`picm_scan_control\` with \`action: "privacy"\`; its exact TUI patch confirmation is the separate runtime write confirmation.\n4. Only after privacy review completes, load the \`picm-factory\` skill and its \`SKILL.md\`, then continue the ${mode} workflow.\n\n${commandContext}${sensitiveNonGitSafeguards}${adoptionReferenceRouting}${codingAdoptionLifecycle}${stagePlacementContext}${sourceMaterialLocalInputContext}${specialistFirstRunContext}${previewGuidance}${checkpointGuidance}${nestedWorktreeGuidance}${batchGuidance}`;
-  }
-  return `Use the picm-factory skill. Load its SKILL.md before proceeding.\n\n${commandContext}${stagePlacementContext}${sourceMaterialLocalInputContext}${specialistFirstRunContext}${previewGuidance}${checkpointGuidance}${nestedWorktreeGuidance}${batchGuidance}`;
-}
-
-type PicmFactoryExtensionOptions = {
-  createCoordinator?: typeof createRuntimeCoordinator;
-  grepExecutionOptions?: Parameters<typeof executeBoundGrep>[3];
-};
-
-function resolveNewScaffoldCreatedAt(params: any, cwd: string, command: string | undefined) {
-  if (
-    command !== "picm-new" ||
-    typeof params?.path !== "string" ||
-    typeof params.content !== "string" ||
-    resolve(cwd, params.path) !== join(cwd, ".picm", "config.json")
-  ) return params;
-
-  try {
-    const config = JSON.parse(params.content);
-    if (!config || typeof config !== "object" || Array.isArray(config) || config.createdAt !== "{{createdAt}}") {
-      return params;
-    }
-    const createdAt = canonicalNow();
-    const marker = JSON.stringify("{{createdAt}}");
-    const candidates: string[] = [];
-    let offset = params.content.indexOf(marker);
-    while (offset !== -1) {
-      const content = `${params.content.slice(0, offset)}${JSON.stringify(createdAt)}${params.content.slice(offset + marker.length)}`;
-      try {
-        const candidate = JSON.parse(content);
-        if (candidate && typeof candidate === "object" && !Array.isArray(candidate) && candidate.createdAt === createdAt) {
-          candidates.push(content);
-        }
-      } catch {}
-      offset = params.content.indexOf(marker, offset + marker.length);
-    }
-    return candidates.length === 1 ? { ...params, content: candidates[0] } : params;
-  } catch {
-    return params;
-  }
-}
-
-export default function picmFactoryExtension(
-  pi: ExtensionAPI,
-  options: PicmFactoryExtensionOptions = {},
-) {
-  const packageRoot = packageRootFromImportMeta(import.meta.url);
-  const canonicalPackageRoot = realpathSync(packageRoot);
-  const coordinator = (options.createCoordinator ?? createRuntimeCoordinator)({
-    packageRoot,
-    canonicalPackageRoot,
-  });
-
-  const registerBoundBuiltin = (
-    toolName: "read" | "edit" | "write" | "grep" | "rg" | "find" | "ls",
-    createTool: any,
-  ) => {
-    const definition = createTool(process.cwd());
-    pi.registerTool({
-      ...definition,
-      async execute(toolCallId: string, params: any, signal: AbortSignal | undefined, onUpdate: any, ctx: ExtensionContext) {
-        const binding = coordinator.beginBoundPathExecution(toolCallId, ctx, toolName);
-        if (binding && (toolName === "grep" || toolName === "rg")) {
-          return executeBoundGrep(binding, params, signal, options.grepExecutionOptions);
-        }
-        const resolvedParams = toolName === "write"
-          ? resolveNewScaffoldCreatedAt(params, ctx.cwd, coordinator.workflowCommand(ctx))
-          : params;
-        const tool = createTool(ctx.cwd, binding ? { operations: binding.operations } : undefined);
-        return tool.execute(toolCallId, resolvedParams, signal, onUpdate, ctx);
-      },
-    });
-  };
-
-  registerBoundBuiltin("read", createReadTool);
-  registerBoundBuiltin("edit", createEditTool);
-  registerBoundBuiltin("write", createWriteTool);
-  registerBoundBuiltin("grep", createGrepTool);
-  registerBoundBuiltin("rg", (cwd: string, options?: any) => ({ ...createGrepTool(cwd, options), name: "rg" }));
-  registerBoundBuiltin("find", createFindTool);
-  registerBoundBuiltin("ls", createLsTool);
-
-  const restoreScanWorkflow = (ctx: ExtensionContext) => {
-    let state;
-    for (const entry of ctx.sessionManager.getBranch()) {
-      if (entry.type === "custom" && entry.customType === scanWorkflowEntryType) state = entry.data;
-    }
-    coordinator.restoreWorkflow(ctx, state);
-  };
-
-  const recordClearedWorkflow = (ctx: ExtensionContext) => {
-    pi.appendEntry(scanWorkflowEntryType, { status: "cleared", cwd: ctx.cwd });
-  };
-
-  const recordProposalAudit = (audit: any, ctx: ExtensionContext) => {
-    pi.appendEntry(proposalBatchEntryType, { cwd: ctx.cwd, ...audit });
-  };
-
-  pi.registerTool({
-    name: "picm_specialist_first_run_guidance",
-    label: "PiCM Specialist First-Run Guidance",
-    description: "Render final Specialist Folder guidance from an approved generated recipe",
-    promptSnippet: "Render route-derived final guidance after approving a Specialist Folder scaffold",
-    promptGuidelines: [
-      "After approved Specialist config and recipe writes, call with no arguments and use the returned text as the final first-run guidance.",
-    ],
-    parameters: Type.Object({}),
-    async execute(_toolCallId, _params, _signal, _onUpdate, ctx) {
-      if (!ctx || coordinator.workflowCommand(ctx) !== "picm-new") {
-        throw new Error("SPECIALIST_GUIDANCE_NOT_AUTHORIZED: invoke /picm-new before rendering final guidance");
-      }
-      const guidance = renderSpecialistFirstRunGuidance(await coordinator.specialistRouteSemantics(ctx));
-      return { content: [{ type: "text", text: guidance }], details: { guidance } };
-    },
+export default function picmFactoryExtension(pi: ExtensionAPI) {
+  const reminder = createMaintenanceReminder({
+    controllerForWorkspace: (cwd: string) => createMaintenanceController({ store: settingsStore(cwd) }),
   });
 
   pi.registerTool({
-    name: "picm_scan_control",
-    label: "PiCM Scan Control",
-    description: "Preflight, privacy-review, and control protected scan phases inside an explicitly authorized PiCM workflow",
-    promptSnippet: "Preflight, record privacy exclusions, and control protected PiCM scan phases",
-    promptGuidelines: [
-      "Only an explicit /picm-new, /picm-adopt, /picm-maintain, or /picm-optimize command authorizes picm_scan_control; natural-language requests do not.",
-      "After an explicit command, call picm_scan_control preflight before any scan. For /picm-maintain and /picm-optimize, if preflight returns privacyQuestionIsConcise true, ask exactly: Name any additional project-relative files or directory that should be excluded from reads, or reply `none` to continue. Then call privacy with every exact project-relative excluded path. Otherwise, ask the full privacy question before privacy and begin.",
-      "Use picm_scan_control privacy with persist true only when the user requests durable exclusions. First present and obtain acceptance of the complete concise .picm/config.json summary, explain the privacy configuration impact, then use the action's exact TUI patch confirmation as the separate runtime write confirmation.",
-      "When the user cancels the workflow, call picm_scan_control cancel, including before privacy review or between phases. It clears authorization without reading project files, rolling back completed writes, or recording maintenance completion.",
-      "Use picm_scan_control inventory only after begin, end after each scan phase, and complete when the PiCM workflow finishes. A nested Git worktree stays unreadable until a direct user reply on its own line says exactly `Include submodule: vendor/lib` with its exact project-relative root, followed by begin and scoped inventory for that same root; tool calls and inclusion alone are not consent or admission. An end intentionally blocks later project/resource reads: do not retry a gate-blocked read; begin the next inspection phase first. After coding mapping and adoption-depth choices, begin a new phase before the Strict examination, map analysis, or Curated documentation inventory. Use new-intent only for the directly observed choice reported by the /picm-new runtime; it does not approve writes. After an adoption writes exact adoption.status \"adopted\", call adoption-complete to present the initial-maintenance choice; other adoption outcomes finish normally without the choice.",
-    ],
+    name: "picm_settings",
+    label: "PiCM Settings",
+    description: "Read projected privacy settings or conditionally update exclusions in the current workspace",
     parameters: Type.Object({
-      action: StringEnum(["preflight", "privacy", "begin", "inventory", "end", "complete", "cancel", "adoption-complete", "new-intent", "status"] as const),
-      intent: Type.Optional(StringEnum(["add-replace", "adopt-existing", "cancel"] as const)),
-      path: Type.Optional(Type.String({ minLength: 1 })),
+      action: StringEnum(["status", "set-exclusions"] as const),
       excludedPaths: Type.Optional(Type.Array(Type.String({ minLength: 1 }))),
-      persist: Type.Optional(Type.Boolean()),
+      expectedExcludedPaths: Type.Optional(Type.Array(Type.String({ minLength: 1 }))),
     }),
-    async execute(toolCallId, params, signal, _onUpdate, ctx) {
-      const run = () => coordinator.scanControl(ctx, params, { toolCallId, signal });
-      const result = params.action === "adoption-complete"
-        ? await completeAdoption(ctx, toolCallId, signal)
-        : params.action === "privacy" && params.persist
-          ? await withFileMutationQueue(join(ctx.cwd, ".picm", "config.json"), run)
-          : await run();
-      if (
-        (result.ok || params.action === "complete") &&
-        result.authorized &&
-        !result.completed &&
-        !coordinator.isWorkflowCompleted(ctx)
-      ) {
-        const serialized = coordinator.serializeWorkflow(ctx, "authorized");
-        if (serialized) pi.appendEntry(scanWorkflowEntryType, serialized);
-        if (result.maintenanceReset && (!result.maintenanceReset.ok || result.maintenanceReset.conflict) && ctx.hasUI) {
-          ctx.ui.notify(`[picm-factory] ${result.warning ?? result.message}`, "warning");
-        }
-      } else if (params.action === "complete" || params.action === "cancel" || result.completed) {
-        if (result.completed) {
-          const serialized = coordinator.serializeWorkflow(ctx, "completed");
-          if (serialized) pi.appendEntry(scanWorkflowEntryType, serialized);
-          if (ctx.hasUI) {
-            ctx.ui.setWidget("picm-maintenance-reminder", undefined);
-          }
-          if (result.maintenanceReset && (!result.maintenanceReset.ok || result.maintenanceReset.conflict) && ctx.hasUI) {
-            ctx.ui.notify(
-              `[picm-factory] Maintenance cycle was not reset: ${result.maintenanceReset.message}`,
-              "warning",
-            );
-          }
-        } else {
-          recordClearedWorkflow(ctx);
-        }
-      }
-      return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }], details: result };
-    },
-  });
-
-  pi.registerTool({
-    name: "picm_proposal_batch",
-    label: "PiCM Proposal Batch",
-    description: "Prepare, present, cancel, or apply an exact approved PiCM create, modify, delete, and linked-move batch",
-    promptSnippet: "Prepare and apply an explicitly approved PiCM proposal batch",
-    promptGuidelines: [
-      "Use only during an active protected /picm-adopt or /picm-maintain scan. Prepare the exact operations, then call present with its proposalId and digest so the runtime generates and delivers the exact operation summary and Git checkpoint recommendation. Wait for an unambiguous direct approval before apply.",
-      "For current existing content, keep a user-reported checkpoint or explicit risk opt-out only while the presented exact proposal remains unchanged. It is unverified and never approves a proposal; a revision needs a renewed acknowledgement, refreshed summary, and direct approval. New-only batches need no acknowledgement.",
-      "The runtime accepts accept, approve, accept and write, or proceed as direct approval. Vague assent, cancellation, or a requested revision remains no-write. Use cancel for cancellation or prepare a replacement batch after revision.",
-      "The batch rechecks every protected path and expected content before mutation, then rechecks each operation immediately before execution. A failure or cancellation stops later operations without undoing completed files or created parents; report its completed, unattempted, failed, or uncertain per-operation results, including any published move destination. A bare initial continue remains no-write. Only a same-session explicit continue after an interrupted retained batch with exclusively completed and unattempted results can reuse its original approval once, applying only its original unattempted operations; failed, uncertain, partly published, changed, duplicate, phase-replaced, restored, or unavailable work needs a revised proposal. It records session audit entries; if a post-apply audit cannot be stored, report its warning without hiding file effects. Never use Bash for PiCM file operations.",
-    ],
-    parameters: Type.Object({
-      action: StringEnum(["prepare", "present", "apply", "cancel"] as const),
-      proposalId: Type.Optional(Type.String({ minLength: 1 })),
-      digest: Type.Optional(Type.String({ minLength: 1 })),
-      operations: Type.Optional(Type.Array(Type.Object({
-        type: StringEnum(["create", "modify", "delete", "move"] as const),
-        path: Type.String({ minLength: 1 }),
-        from: Type.Optional(Type.String({ minLength: 1 })),
-        content: Type.Optional(Type.String()),
-        expectedContent: Type.Optional(Type.String()),
-      }))),
-    }),
-    async execute(toolCallId, params, signal, _onUpdate, ctx) {
-      try {
-        const result = await coordinator.proposalBatch(params, ctx, { toolCallId, signal });
-        if (result.audit) {
-          try {
-            recordProposalAudit(result.audit, ctx);
-          } catch {
-            if (params.action !== "apply" || !Array.isArray(result.results)) throw new Error("PICM_PROPOSAL_AUDIT_FAILED: the session audit could not be recorded");
-            result.auditWarning = "The session audit could not be recorded; the reported file effects were not undone.";
-          }
-        }
-        return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }], details: result };
-      } catch (error: any) {
-        if (error?.picmProposalAudit) recordProposalAudit(error.picmProposalAudit, ctx);
-        throw error;
-      }
-    },
-  });
-
-  pi.registerTool({
-    name: "picm_scaffold_proposal",
-    label: "PiCM Scaffold Proposal",
-    description: "Register the exact write and edit operations in the current /picm-new scaffold proposal",
-    promptSnippet: "Bind scaffold approval to an exact reviewed operation set",
-    promptGuidelines: [
-      "After scanning and before presenting a /picm-new scaffold preview, register every exact write/edit tool input in one preview call.",
-      "Pair the complete current preview with the Git checkpoint recommendation. For current existing content, a user-reported checkpoint or explicit risk opt-out is an unverified acknowledgement, not scaffold approval, and remains relevant only while that exact proposal is unchanged; new-only scaffolds need no acknowledgement.",
-      "Present the returned previewId and complete operation set. Only the documented direct approval phrases approve that current preview; a bare initial continue remains no-write. After a same-session interrupted scaffold record with only completed and unattempted operations, one explicit continue can run only its original unattempted operations. A failed scaffold execution never retries silently and requires a revised preview. Revisions require a new preview.",
-    ],
-    parameters: Type.Object({
-      action: StringEnum(["preview"] as const),
-      operations: Type.Array(Type.Object({
-        tool: StringEnum(["write", "edit"] as const),
-        input: Type.Record(Type.String(), Type.Any()),
-      }), { minItems: 1 }),
-    }),
-    async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
-      if (coordinator.currentWorkflowCommand(ctx) !== "picm-new") {
-        throw new Error("SCAFFOLD_PROPOSAL_UNAVAILABLE: invoke /picm-new first");
-      }
-      const previewId = await coordinator.scaffoldProposal(ctx, params.operations);
-      const result = { previewId, operations: params.operations };
-      return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }], details: result };
+    async execute(_id, params, signal, _onUpdate, ctx) {
+      const store = settingsStore(ctx.cwd);
+      if (params.action === "status") return response(await store.readSettings());
+      if (!params.excludedPaths) throw new Error("Provide excludedPaths for set-exclusions");
+      return response(await withFileMutationQueue(join(ctx.cwd, ".picm", "config.json"), () =>
+        store.compareAndUpdatePrivacyExclusions(params.expectedExcludedPaths, params.excludedPaths, { signal })));
     },
   });
 
   pi.registerTool({
     name: "picm_maintenance_policy",
     label: "PiCM Maintenance Policy",
-    description: "Preview, apply, or inspect PiCM maintenance cadence in .picm/config.json",
-    promptSnippet: "Preview or configure deterministic PiCM maintenance cadence",
-    promptGuidelines: [
-      "Use picm_maintenance_policy preview to calculate exact maintenance JSON before including it in a scaffold/adoption preview.",
-      "A standalone preview, including a one-day cadence, is no-write. Before applying it as a standalone policy write, present the complete concise .picm/config.json summary: affected files and operations, behavior or configuration changes, linked moves, preserved behavior, known uncertainty, review suggestions (or None), and privacy/configuration impact. Explain that the policy durably records reminder timestamps in a non-ignored regular .picm/config.json, but nothing runs while Pi is closed or outside an eligible interactive TUI session; a due reminder still requires Run Now and normal approval gates. Obtain explicit summary acceptance without calling apply or writing. Only after that acceptance, pass only action apply and that previewId so the exact timestamps are reused; the tool's exact TUI patch confirmation remains the separate runtime write confirmation that controls application.",
-    ],
+    description: "Inspect, configure or complete an optional maintenance reminder cycle",
     parameters: Type.Object({
-      action: StringEnum(["preview", "apply", "status"] as const),
-      previewId: Type.Optional(Type.String({ minLength: 1 })),
+      action: StringEnum(["status", "configure", "complete"] as const),
       mode: Type.Optional(StringEnum(["manual", "nudge", "automatic"] as const)),
       intervalValue: Type.Optional(Type.Integer({ minimum: 1 })),
       intervalUnit: Type.Optional(StringEnum(["days", "weeks", "months"] as const)),
+      expectedMaintenance: Type.Optional(Type.Any()),
     }),
-    async execute(_toolCallId, params, signal, _onUpdate, ctx) {
-      const result = await coordinator.maintenancePolicy(params, ctx, signal);
-      if (params.action === "preview") {
-        const response = {
-          previewId: result.previewId,
-          expiresAt: result.expiresAt,
-          patch: result.patch,
-        };
-        return { content: [{ type: "text", text: JSON.stringify(response, null, 2) }], details: result };
-      }
-      return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }], details: result };
+    async execute(_id, params, signal, _onUpdate, ctx) {
+      const store = settingsStore(ctx.cwd);
+      const controller = createMaintenanceController({ store });
+      if (params.action === "status") return response(await controller.status());
+      return response(await withFileMutationQueue(join(ctx.cwd, ".picm", "config.json"), async () => {
+        if (params.action === "complete") {
+          const result = await controller.completeCycle({ signal });
+          return { ok: result.ok, changed: result.changed, committed: result.committed, conflict: result.conflict, code: result.code, warning: result.warning, message: result.message, maintenance: result.maintenance };
+        }
+        const calculated = controller.preview({
+          mode: params.mode ?? "nudge",
+          intervalValue: params.intervalValue,
+          intervalUnit: params.intervalUnit,
+        });
+        if (!calculated.ok) return calculated;
+        const result = await store.compareAndUpdateMaintenance(params.expectedMaintenance, calculated.maintenance, { signal });
+        return { ok: result.ok, changed: result.changed, committed: result.committed, conflict: result.conflict, code: result.code, warning: result.warning, message: result.message, maintenance: result.maintenance };
+      }));
     },
   });
 
-  pi.on("before_agent_start", (event, ctx) => {
-    const audit = coordinator.observeProposalResponse(ctx, event.prompt);
-    if (audit) recordProposalAudit(audit, ctx);
-    const continuity = coordinator.newWorkflowContinuity?.(ctx);
-    if (!continuity) return;
-    const selectedIntent = continuity.newWorkflowIntent
-      ? ` The user selected ${continuity.newWorkflowIntent}.`
-      : continuity.pendingNewWorkflowIntent
-        ? ` The user directly selected ${continuity.pendingNewWorkflowIntent}; record only that matching intent.`
-        : continuity.newWorkflowIntentRequired
-          ? " Existing-architecture intent selection is pending."
-          : "";
-    return {
-      message: {
-        customType: "picm-new-intent-continuity",
-        content: `Continue the active PiCM workflow from the initiating request: ${continuity.initialIntent}.${selectedIntent} Preserve this intent and its accepted constraints unless the user directly revises them. A continuation, preview, or approval reply does not itself authorize scaffold writes.`,
-        display: false,
-      },
-    };
+  pi.registerTool({
+    name: "picm_decision",
+    label: "PiCM Decision",
+    description: "Offer a non-authoritative choice when an interactive selection is useful",
+    parameters: Type.Object({
+      question: Type.String({ minLength: 1 }),
+      choices: Type.Array(Type.String({ minLength: 1 }), { minItems: 2 }),
+    }),
+    async execute(_id, params, _signal, _onUpdate, ctx) {
+      if (!ctx.hasUI) return response({ status: "unavailable" });
+      const choice = await ctx.ui.select(params.question, params.choices);
+      return response(choice ? { status: "selected", choice } : { status: "dismissed" });
+    },
   });
 
-  pi.on("input", (event, ctx) => {
-    if (event.source === "extension") return;
-    const observedIntent = coordinator.observeInput(ctx, event.text);
-    if (observedIntent) {
-      const serialized = coordinator.serializeWorkflow(ctx, "authorized");
-      if (serialized) pi.appendEntry(scanWorkflowEntryType, serialized);
-    }
-  });
-
-  pi.on("tool_call", async (event, ctx) => {
-    const decision = await coordinator.checkToolCall(event, ctx);
-    if (!decision.allowed) {
-      const reason = `[picm-factory] Blocked by PiCM scan gate: ${decision.reason}`;
-      if (ctx.hasUI) ctx.ui.notify(reason, "warning");
-      return { block: true, reason };
-    }
-  });
-
-  pi.on("tool_execution_end", (event, ctx) => {
-    coordinator.endToolExecution(event, ctx);
-  });
-
-  async function selectMaintenanceDepth(ctx: ExtensionContext) {
-    if (ctx.mode !== "tui") return "strict" as const;
-    const selected = await ctx.ui.select(
-      "Choose maintenance depth for this run (stored preset will not change)",
-      MAINTENANCE_DEPTH_CHOICES,
-    );
-    if (!selected) return undefined;
-    return selected === BALANCED_MAINTENANCE_GUIDANCE ? "balanced" as const : "strict" as const;
+  async function chooseDepth(ctx: any, args: string) {
+    const parsed = maintenanceRequest(args);
+    if (parsed.depth) return parsed;
+    if (ctx.mode !== "tui") return { ...parsed, depth: "strict" };
+    const choice = await ctx.ui.select("Choose maintenance depth for this run (stored preset will not change)", MAINTENANCE_DEPTH_CHOICES);
+    if (choice !== BALANCED_MAINTENANCE_GUIDANCE && choice !== STRICT_MAINTENANCE_GUIDANCE) return undefined;
+    return { ...parsed, depth: choice === BALANCED_MAINTENANCE_GUIDANCE ? "balanced" : "strict" };
   }
-
-  async function completeAdoption(ctx: ExtensionContext, toolCallId: string, signal: AbortSignal | undefined) {
-    const finish = async (initialMaintenance: "finished" | "cancelled") => ({
-      ...await coordinator.scanControl(ctx, { action: "complete" }, { toolCallId, signal }),
-      action: "adoption-complete",
-      initialMaintenance,
-    });
-    if (ctx.mode !== "tui") return finish("finished");
-    const claimedWorkflow = await coordinator.claimInitialMaintenanceOffer(ctx);
-    if (!claimedWorkflow) return finish("finished");
-    const serializedClaim = coordinator.serializeWorkflow(ctx, "authorized");
-    if (serializedClaim) pi.appendEntry(scanWorkflowEntryType, serializedClaim);
-
-    const choice = await ctx.ui.select(
-      "Would you like to run an initial maintenance pass now (recommended)?",
-      ["Run maintenance now", "Finish"],
-    );
-    if (choice !== "Run maintenance now") return finish(choice ? "finished" : "cancelled");
-
-    const depth = await selectMaintenanceDepth(ctx);
-    if (!depth) return finish("cancelled");
-
-    const continuation = await coordinator.continueAdoptionAsMaintenance(ctx);
-    try {
-      pi.sendUserMessage(buildMaintenanceContinuationPrompt(depth), { deliverAs: "steer" });
-    } catch (error) {
-      coordinator.clearWorkflow(ctx);
-      recordClearedWorkflow(ctx);
-      throw error;
-    }
-    return {
-      ok: true,
-      action: "adoption-complete",
-      authorized: true,
-      active: false,
-      initialMaintenance: "started",
-      ...continuation,
-    };
-  }
-
-  async function executeMaintain(ctx: ExtensionContext, args = "", waitForIdle = true) {
-    if (waitForIdle) await ctx.waitForIdle();
-    const parsed = parseMaintenanceDepthArgument(args);
-    const depth = parsed.depth ?? await selectMaintenanceDepth(ctx);
-    const promptArgs = parsed.remainingArgs;
-    if (!depth) {
-      ctx.ui.notify("PiCM maintenance cancelled before scan authorization.", "info");
-      return;
-    }
-    const maintenanceDepthContext = `\n\nMaintenance run depth: ${depth}. Apply this depth to this run only. Do not mutate \`capabilities.codebaseMap.maintenancePreset\`.`;
-    coordinator.authorizeWorkflow(ctx, "picm-maintain");
-    const serializedAuthorization = coordinator.serializeWorkflow(ctx, "authorized");
-    if (serializedAuthorization) pi.appendEntry(scanWorkflowEntryType, serializedAuthorization);
-    try {
-      pi.sendUserMessage(`${buildPrompt(
-        "picm-maintain",
-        promptArgs,
-        false,
-      )}${maintenanceDepthContext}`);
-    } catch (error) {
-      coordinator.clearWorkflow(ctx);
-      recordClearedWorkflow(ctx);
-      throw error;
-    }
-  }
-
-  pi.on("session_start", async (_event, ctx) => {
-    restoreScanWorkflow(ctx);
-    await coordinator.startup(ctx, {
-      appendEntry: pi.appendEntry.bind(pi),
-      promptMaintenanceWorkflow: () => executeMaintain(ctx, "", false),
-    });
-  });
-
-  pi.on("session_tree", async (_event, ctx) => {
-    restoreScanWorkflow(ctx);
-  });
-
-  pi.on("agent_settled", async (_event, ctx) => {
-    const workflowCompleted = coordinator.settle(ctx);
-    if (workflowCompleted) recordClearedWorkflow(ctx);
-  });
-
-  pi.on("session_shutdown", async (_event, ctx) => {
-    if (ctx.hasUI) {
-      ctx.ui.setWidget("picm-maintenance-reminder", undefined);
-    }
-    const completed = coordinator.isWorkflowCompleted(ctx);
-    let cleanupError: unknown;
-    let cleanupFailed = false;
-    try {
-      await coordinator.dispose(ctx);
-    } catch (error) {
-      cleanupError = error;
-      cleanupFailed = true;
-    }
-    let persistenceError: unknown;
-    let persistenceFailed = false;
-    if (completed) {
-      try {
-        recordClearedWorkflow(ctx);
-      } catch (error) {
-        persistenceError = error;
-        persistenceFailed = true;
-      }
-    }
-    if (cleanupFailed && persistenceFailed) {
-      throw new AggregateError(
-        [cleanupError, persistenceError],
-        "PiCM shutdown cleanup and terminal-state persistence both failed",
-      );
-    }
-    if (cleanupFailed) throw cleanupError;
-    if (persistenceFailed) throw persistenceError;
-  });
 
   for (const command of Object.keys(commandDescriptions) as CommandName[]) {
     pi.registerCommand(command, {
       description: commandDescriptions[command],
       ...(command === "picm-adopt" || command === "picm-maintain" ? {
         getArgumentCompletions: (prefix: string) => {
-          const normalizedPrefix = prefix.trimStart().toLowerCase();
           const items = command === "picm-adopt" ? adoptArgumentCompletions : maintainArgumentCompletions;
-          const completions = items.filter((item) => item.value.toLowerCase().startsWith(normalizedPrefix));
-          return completions.length > 0 ? completions : null;
+          const matches = items.filter((item) => item.value.toLowerCase().startsWith(prefix.trimStart().toLowerCase()));
+          return matches.length ? matches : null;
         },
       } : {}),
       handler: async (args, ctx) => {
+        await ctx.waitForIdle();
         if (command === "picm-maintain") {
-          await executeMaintain(ctx, args);
+          const selected = await chooseDepth(ctx, args);
+          if (!selected) return;
+          pi.sendUserMessage(commandPrompt(command, selected.args, { depth: selected.depth }));
           return;
         }
-        await ctx.waitForIdle();
-        let promptArgs = args;
-        if (command !== "picm-help") {
-          coordinator.authorizeWorkflow(
-            ctx,
-            command,
-            command === "picm-new" ? { initialIntent: args } : undefined,
-          );
-          const serializedAuthorization = coordinator.serializeWorkflow(ctx, "authorized");
-          if (serializedAuthorization) pi.appendEntry(scanWorkflowEntryType, serializedAuthorization);
-        } else if (coordinator.clearWorkflow(ctx)) {
-          recordClearedWorkflow(ctx);
-        }
-        try {
-          pi.sendUserMessage(`${buildPrompt(
-            command,
-            promptArgs,
-            command === "picm-adopt" || command === "picm-optimize" ||
-              (command === "picm-new" && ctx.mode === "tui"),
-          )}`);
-        } catch (error) {
-          if (command !== "picm-help") {
-            coordinator.clearWorkflow(ctx);
-            recordClearedWorkflow(ctx);
-          }
-          throw error;
-        }
+        pi.sendUserMessage(commandPrompt(command, args));
       },
     });
   }
+
+  pi.on("session_start", async (event, ctx) => {
+    if (event.reason === "reload") return;
+    reminder.reset();
+    if (ctx.mode !== "tui") return;
+    let result;
+    try {
+      result = await reminder.offer({
+        cwd: ctx.cwd,
+        mode: ctx.mode,
+        present: async (maintenance: { nextDueAt: string }) => {
+          if (!ctx.hasUI) return "later";
+          ctx.ui.setWidget("picm-maintenance-reminder", [`PiCM maintenance due: ${maintenance.nextDueAt}`]);
+          try {
+            const choice = await ctx.ui.select("PiCM maintenance is due", ["Run Now", "Later"]);
+            return choice === "Run Now" ? "run-now" : "later";
+          } finally {
+            ctx.ui.setWidget("picm-maintenance-reminder", undefined);
+          }
+        },
+      });
+    } catch {
+      if (ctx.hasUI) ctx.ui.notify("PiCM reminder could not be presented; it may be offered again.", "warning");
+      return;
+    }
+    if (result.action === "run-now") {
+      const selected = await chooseDepth(ctx, "");
+      if (selected) pi.sendUserMessage(commandPrompt("picm-maintain", selected.args, { depth: selected.depth }), { deliverAs: "followUp" });
+    } else if (!result.ok && ctx.hasUI) {
+      ctx.ui.notify(`PiCM reminder unavailable: ${result.code ?? "configuration error"}`, "warning");
+    }
+  });
+  pi.on("session_shutdown", (event, ctx) => {
+    if (event.reason !== "reload") reminder.reset();
+    if (ctx.hasUI) ctx.ui.setWidget("picm-maintenance-reminder", undefined);
+  });
 }

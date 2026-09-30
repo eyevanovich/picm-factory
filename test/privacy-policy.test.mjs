@@ -6,6 +6,7 @@ import {
   mergePrivacyExcludedPaths,
   normalizePrivacyExcludedPaths,
   privacyPathMatches,
+  projectStoredPrivacyPolicy,
   validatePrivacyPolicy,
 } from "../extensions/runtime/privacy-policy.mjs";
 
@@ -44,4 +45,13 @@ test("validates the persisted privacy policy shape", () => {
   });
   assert.throws(() => validatePrivacyPolicy({}, root), /privacy.excludedPaths is required/);
   assert.throws(() => validatePrivacyPolicy({ excludedPaths: "secrets" }, root), /must be an array/);
+});
+
+test("projects only normalized exclusions from stored privacy settings", () => {
+  assert.deepEqual(projectStoredPrivacyPolicy({
+    excludedPaths: ["private/nested", "private"],
+    owner: "preserve-without-exposure",
+  }, root), { excludedPaths: ["private"] });
+  assert.equal(projectStoredPrivacyPolicy({ owner: "legacy" }, root), undefined);
+  assert.equal(projectStoredPrivacyPolicy(undefined, root), undefined);
 });

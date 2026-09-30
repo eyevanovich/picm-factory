@@ -24,7 +24,7 @@ Omit the coding-task row unless coding mapping is enabled. If the map is small a
 ## Rules
 - Keep context files concise and useful.
 - Do not copy secrets or sensitive source material into instructions/examples unless explicitly approved.
-- For `/picm-new`, `/picm-adopt`, `/picm-maintain`, and `/picm-optimize`, complete PiCM privacy review before scanning and use protected inventory; never inspect Git-ignored or PiCM-excluded contents. This rule does not restrict ordinary Pi work or user-typed `!bash`.
-- Ask before overwriting, moving, renaming, or deleting files.
+- Honor Git ignores, persisted PiCM exclusions, session exclusions, and known sensitive paths as discovery defaults. These are agent-followed boundaries, not a claim that every host tool is a privacy sandbox.
+- For `/picm-new`, `/picm-adopt`, `/picm-maintain`, and `/picm-optimize`, inspect first, state a concise final direction with material effects, and wait for conversational sign-off before edits. Routine aligned edits do not need repeated approval; seek renewed alignment for material departures, destructive actions, or external writes.
 - Prefer small iterative improvements over rebuilding the whole system.
 - Use only user-named scripts/tools for deterministic mechanics; keep judgment, side-effect approval, and review visible.

@@ -1,18 +1,6 @@
-import { execFileSync, spawnSync } from "node:child_process";
-import {
-  existsSync,
-  mkdtempSync,
-  readFileSync,
-  rmSync,
-  symlinkSync,
-  writeFileSync,
-} from "node:fs";
-import { tmpdir } from "node:os";
+import { execFileSync } from "node:child_process";
+import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import {
-  BALANCED_MAINTENANCE_GUIDANCE,
-  STRICT_MAINTENANCE_GUIDANCE,
-} from "../extensions/runtime/coding-maintenance-depth.mjs";
 import { hasCurrentPinnedInstallVersions } from "./prepare-release.mjs";
 
 const root = process.cwd();
@@ -28,31 +16,28 @@ const required = [
   ".github/workflows/release.yml",
   "scripts/prepare-release.mjs",
   "test/release-preparer.test.mjs",
-  "test/git-read-gate.test.mjs",
   "test/maintenance-policy.test.mjs",
   "test/maintenance-config-store.test.mjs",
   "test/maintenance-controller.test.mjs",
+  "test/maintenance-reminder.test.mjs",
   "test/maintenance-extension.test.mjs",
+  "test/command-dispatch.test.mjs",
+  "test/methodology-fixtures.test.mjs",
+  "test/collaborative-contract.test.mjs",
+  "test/decision-tool.test.mjs",
   "test/preview-review-contract.test.mjs",
   "test/stage-pipeline-placement-contract.test.mjs",
   "test/optimization-contract.test.mjs",
   "test/specialist-folder-maintenance-contract.test.mjs",
   "test/privacy-policy.test.mjs",
   "extensions/picm-factory.ts",
-  "extensions/runtime/approval-runtime.mjs",
   "extensions/runtime/coding-maintenance-depth.mjs",
-  "extensions/runtime/git-read-gate.mjs",
-  "extensions/runtime/layout-profile.mjs",
+  "extensions/runtime/command-dispatch.mjs",
   "extensions/runtime/maintenance-policy.mjs",
   "extensions/runtime/privacy-policy.mjs",
   "extensions/runtime/maintenance-config-store.mjs",
   "extensions/runtime/maintenance-controller.mjs",
-  "extensions/runtime/path-execution-binding.mjs",
-  "extensions/runtime/proposal-batch.mjs",
-  "extensions/runtime/runtime-coordinator.mjs",
-  "extensions/runtime/scaffold-approval.mjs",
-  "extensions/runtime/workflow-lifecycle.mjs",
-  "extensions/runtime/specialist-first-run-guidance.mjs",
+  "extensions/runtime/maintenance-reminder.mjs",
   "skills/picm-factory/SKILL.md",
   "skills/picm-factory/references/optimization-guide.md",
   "skills/picm-factory/references/preview-review-protocol.md",
@@ -129,20 +114,13 @@ const requiredPackageFiles = [
   "README.md",
   "LICENSE",
   "extensions/picm-factory.ts",
-  "extensions/runtime/approval-runtime.mjs",
   "extensions/runtime/coding-maintenance-depth.mjs",
-  "extensions/runtime/git-read-gate.mjs",
-  "extensions/runtime/layout-profile.mjs",
+  "extensions/runtime/command-dispatch.mjs",
   "extensions/runtime/maintenance-policy.mjs",
   "extensions/runtime/privacy-policy.mjs",
   "extensions/runtime/maintenance-config-store.mjs",
   "extensions/runtime/maintenance-controller.mjs",
-  "extensions/runtime/path-execution-binding.mjs",
-  "extensions/runtime/proposal-batch.mjs",
-  "extensions/runtime/runtime-coordinator.mjs",
-  "extensions/runtime/scaffold-approval.mjs",
-  "extensions/runtime/workflow-lifecycle.mjs",
-  "extensions/runtime/specialist-first-run-guidance.mjs",
+  "extensions/runtime/maintenance-reminder.mjs",
   "skills/picm-factory/SKILL.md",
   "skills/picm-factory/references/adoption-guide.md",
   "skills/picm-factory/references/coding-adoption-guide.md",
@@ -196,277 +174,38 @@ if (!skill.includes("description:")) {
   process.exit(1);
 }
 
-const firstRunGuidanceFiles = [
-  "skills/picm-factory/SKILL.md",
-  "skills/picm-factory/references/interview-guide.md",
-  "skills/picm-factory/references/layout-profiles.md",
-  "docs/layout-fixture-qa.md",
-  "docs/picm-new-scenarios.md",
-];
-const firstRunSignals = [
-  "first-run",
-  "stage pipeline",
-  "team / role os",
-  "gaps/unknowns",
-  "/picm-maintain",
-];
-for (const file of firstRunGuidanceFiles) {
-  const text = readFileSync(join(root, file), "utf8").toLowerCase();
-  for (const signal of firstRunSignals) {
-    if (!text.includes(signal)) {
-      console.error(`First-run review-gate guidance ${file} missing signal: ${signal}`);
-      process.exit(1);
-    }
-  }
-}
-
-const minimumViableGuidanceFiles = [
-  "skills/picm-factory/SKILL.md",
-  "skills/picm-factory/references/interview-guide.md",
-  "docs/picm-new-scenarios.md",
-];
-const minimumViableSignals = [
-  "what will you run first?",
-  "first real run",
-  "unused roles",
-  "after the first real use",
-];
-for (const file of minimumViableGuidanceFiles) {
-  const text = readFileSync(join(root, file), "utf8").toLowerCase();
-  for (const signal of minimumViableSignals) {
-    if (!text.includes(signal)) {
-      console.error(`Minimum viable scaffold guidance ${file} missing signal: ${signal}`);
-      process.exit(1);
-    }
-  }
-}
-
-const mechanicalWorkGuidance = {
-  "skills/picm-factory/SKILL.md": [
-    "deterministic fetching, file movement, formatting, sending, or API work",
-    "do not turn the extension into an executor or orchestrator",
-    "user-named scripts/tools",
-  ],
-  "skills/picm-factory/references/interview-guide.md": [
-    "fetch data, move files, format output, send messages/files, or call an API",
-    "local script or MCP/tool integration",
-    "without inventing one for the scaffold",
-  ],
-  "skills/picm-factory/references/maintenance-rubric.md": [
-    "repeated deterministic instructions",
-    "script/tool extraction",
-    "do not invent, implement, or execute an integration",
-  ],
-  "skills/picm-factory/templates/root-agents.md": [
-    "unless the user has named the relevant script or tool",
-  ],
-  "skills/picm-factory/templates/root-context.md": [
-    "only when the user has named a relevant local script",
-  ],
-  "skills/picm-factory/templates/stage-context.md": [
-    "only when the user has named a relevant local script",
-  ],
-};
-for (const [file, signals] of Object.entries(mechanicalWorkGuidance)) {
-  const text = readFileSync(join(root, file), "utf8");
-  for (const signal of signals) {
-    if (!text.includes(signal)) {
-      console.error(`Mechanical-work boundary guidance ${file} missing signal: ${signal}`);
-      process.exit(1);
-    }
-  }
-}
-
-const codingGuidance = {
-  "skills/picm-factory/SKILL.md": [
-    "Every explicit workflow starts privacy-pending",
-    "repository-local `.git/info/exclude`",
-    "`.picm/config.json` privacy exclusions",
-    "User-typed `!bash` is an explicit human action and is never intercepted",
-    "transient isolated Git metadata only after privacy review",
-    "stop rather than weakening the read boundary",
-    "/picm-adopt coding",
-    "Coding Repository",
-    "codebase-map capability",
-    "`maintenancePreset: \"strict\"`.",
-  ],
-  "skills/picm-factory/references/coding-adoption-guide.md": [
-    "git check-ignore --no-index",
-    "repository-local `.git/info/exclude`",
-    "User-typed `!bash` is an explicit human action and is never intercepted",
-    "temporary bare Git metadata only after privacy review",
-    "picm_scan_control preflight",
-    "Root map",
-    "Distributed map",
-    "Scan and recommend",
-    "Additive",
-    "Curated",
-    "CONTEXT-MAP.md",
-    "Do not follow symlinks during protected scans",
-    "Treat each submodule as a separate repository boundary",
-    "blocks every agent Bash command and unrecognized agent tool",
-    "`inventory` for candidate discovery",
-  ],
-  "skills/picm-factory/references/coding-maintenance-rubric.md": [
-    "### Balanced",
-    "### Strict",
-    "Strict (recommended): broader systematic coverage across declared roots and mapped contexts; higher cost.",
-    "Balanced: representative coverage of major boundaries and one coding path; lower cost.",
-    "Coding cold-agent walk",
-    "Future automation boundary",
-    "`.git/info/exclude`",
-    "picm_scan_control inventory",
-  ],
-  "skills/picm-factory/references/layout-profiles.md": [
-    "## Coding Repository",
-    "composable codebase-map capability",
-    "CONTEXT-MAP.md",
-  ],
-  "skills/picm-factory/templates/context-map.md": [
-    "# Repository Context Map",
-    "## Context boundaries",
-    "## Unknowns",
-  ],
-  "skills/picm-factory/templates/code-boundary-context.md": [
-    "# Component Context",
-    "## Verification",
-    "## Known unknowns",
-  ],
-};
-for (const [file, signals] of Object.entries(codingGuidance)) {
-  const text = readFileSync(join(root, file), "utf8");
-  for (const signal of signals) {
-    if (!text.includes(signal)) {
-      console.error(`Coding-repository guidance ${file} missing signal: ${signal}`);
-      process.exit(1);
-    }
-  }
-}
-
-const maintenanceDepthGuidanceFiles = [
-  "README.md",
-  "prompts/picm-help.md",
-  "prompts/picm-maintain.md",
-  "skills/picm-factory/SKILL.md",
-  "skills/picm-factory/references/coding-maintenance-rubric.md",
-  "docs/layout-fixture-qa.md",
-];
-for (const file of maintenanceDepthGuidanceFiles) {
-  const text = readFileSync(join(root, file), "utf8");
-  for (const signal of [STRICT_MAINTENANCE_GUIDANCE, BALANCED_MAINTENANCE_GUIDANCE]) {
-    if (!text.includes(signal)) {
-      console.error(`Maintenance depth guidance ${file} missing exact copy: ${signal}`);
-      process.exit(1);
-    }
-  }
-}
 const extension = readFileSync(join(root, "extensions/picm-factory.ts"), "utf8");
-const exactAdoptionPrivacyQuestion = [
-  "PiCM automatically protects:",
-  "- paths covered by root, nested, and repository-local Git ignore rules;",
-  "- Git internals;",
-  "- symlinks and nested repository/submodule boundaries; and",
-  "- paths outside this project.",
-  "",
-  "Before scanning any workspace files, does this workspace contain secrets, regulated data, client data, or personal/private material that must be excluded? If so, name each exact project-relative file or directory to exclude. Name any other project-relative exclusions too, or reply \\`none\\` if there are none.",
-].join("\n");
-const exactConcisePrivacyQuestion =
-  "Name any additional project-relative files or directory that should be excluded from reads, or reply `none` to continue.";
-const adoptionPrivacyQuestion = extension.match(
-  /const adoptionPrivacyQuestion = `((?:\\`|[^`])*)`;/,
-)?.[1];
-const concisePrivacyQuestion = extension.match(
-  /const concisePrivacyQuestion\s*=\s*"((?:\\"|[^"])*)";/,
-)?.[1];
-if (adoptionPrivacyQuestion !== exactAdoptionPrivacyQuestion) {
-  console.error("PiCM extension adoption privacy question must retain exact UI copy");
-  process.exit(1);
-}
-if (concisePrivacyQuestion !== exactConcisePrivacyQuestion) {
-  console.error("PiCM extension concise privacy question must retain exact UI copy");
-  process.exit(1);
-}
-const buildPromptSource = extension.match(
-  /function buildPrompt\([\s\S]*?\n}\n\ntype PicmFactoryExtensionOptions/,
-)?.[0];
-const concisePrivacyPromptDispatch = buildPromptSource?.match(
-  /if \(command === "picm-maintain" \|\| command === "picm-optimize"\) \{([\s\S]*?)\n  }\n  if \(privacyBootstrap\)/,
-)?.[1];
-const adoptionPrivacyPromptDispatch = buildPromptSource?.match(
-  /if \(privacyBootstrap\) \{([\s\S]*?)\n  }\n  return `Use the picm-factory skill/,
-)?.[1];
-if (!/ask exactly:\\n\\n\$\{concisePrivacyQuestion\}\\n\\nThen call/.test(concisePrivacyPromptDispatch)) {
-  console.error("PiCM concise privacy question must be used by established-workspace prompt dispatch");
-  process.exit(1);
-}
-if (!/ask the user:\\n\\n\$\{adoptionPrivacyQuestion\}\\n\\n3\. Prepare the privacy call/.test(adoptionPrivacyPromptDispatch)) {
-  console.error("PiCM adoption privacy question must be used by adoption prompt dispatch");
-  process.exit(1);
-}
-const gitReadGate = readFileSync(
-  join(root, "extensions/runtime/git-read-gate.mjs"),
-  "utf8",
-);
 const forbiddenExtensionRuntimeSignals = [
   "node:child_process",
   "executePipeline",
   "runPipeline",
   "orchestrateWorkflow",
+  'pi.on("tool_call"',
+  'pi.on("input"',
+  'pi.on("agent_settled"',
+  'name: "picm_scan_control"',
+  'name: "picm_scaffold_proposal"',
+  'name: "picm_proposal_batch"',
 ];
 for (const signal of forbiddenExtensionRuntimeSignals) {
   if (extension.includes(signal)) {
-    console.error(`PiCM extension must remain thin; found runtime signal: ${signal}`);
+    console.error(`PiCM extension must remain a thin non-authoritative dispatcher; found: ${signal}`);
     process.exit(1);
   }
 }
-if (extension.includes('pi.on("user_bash"')) {
-  console.error("PiCM extension must not intercept user-typed Bash");
-  process.exit(1);
-}
 for (const signal of [
-  'pi.on("tool_call"',
   'pi.on("session_start"',
-  'name: "picm_scan_control"',
+  'name: "picm_settings"',
   'name: "picm_maintenance_policy"',
+  'name: "picm_decision"',
+  'commandPrompt(',
 ]) {
   if (!extension.includes(signal)) {
-    console.error(`PiCM extension missing deterministic read-gate signal: ${signal}`);
+    console.error(`PiCM extension missing retained command utility: ${signal}`);
     process.exit(1);
   }
 }
-const runtimeCoordinator = readFileSync(
-  join(root, "extensions/runtime/runtime-coordinator.mjs"),
-  "utf8",
-);
-for (const signal of [
-  "createWorkflowLifecycle",
-  "createGitReadGate",
-  "createMaintenanceController",
-  "resetCycle",
-]) {
-  if (!runtimeCoordinator.includes(signal)) {
-    console.error(`PiCM runtime coordinator missing deterministic policy signal: ${signal}`);
-    process.exit(1);
-  }
-}
-for (const signal of [
-  'execFileAsync("git", ["-C", cwd, ...args]',
-  '"ls-files"',
-  '"init", "--bare", "--quiet"',
-  '"--work-tree"',
-  "async function dispose()",
-  "trusted packaged PiCM resource",
-  "Git read gate failed closed",
-]) {
-  if (!gitReadGate.includes(signal)) {
-    console.error(`PiCM Git read gate missing signal: ${signal}`);
-    process.exit(1);
-  }
-}
-if (!/"check-ignore",\s*"--no-index"/.test(gitReadGate)) {
-  console.error('PiCM Git read gate missing signal: "check-ignore", "--no-index"');
-  process.exit(1);
-}
+
 const privacyPolicy = readFileSync(join(root, "extensions/runtime/privacy-policy.mjs"), "utf8");
 for (const signal of ["normalizePrivacyExcludedPaths", "privacyPathMatches", "validatePrivacyPolicy"]) {
   if (!privacyPolicy.includes(signal)) {
@@ -696,526 +435,6 @@ const referencesDoc = readFileSync(join(root, "docs/references.md"), "utf8");
 if (/Cellar\/pi-coding-agent\/\d+\.\d+\.\d+/.test(referencesDoc)) {
   console.error("docs/references.md must not pin a versioned Homebrew Cellar path");
   process.exit(1);
-}
-
-const commandDecisionGuidanceFiles = [
-  "README.md",
-  "prompts/picm-help.md",
-  "skills/picm-factory/SKILL.md",
-  "docs/layout-fixture-qa.md",
-];
-const commandDecisionSignals = [
-  "/picm-new",
-  "/picm-adopt",
-  "/picm-maintain",
-  "/picm-maintain trace",
-  "/picm-optimize",
-  "mostly empty",
-  "existing",
-  "project-local",
-  ".pi/",
-  ".picm/",
-  "preview",
-  "non-destructive",
-  "type a space",
-  "/picm-new [workflow description]",
-  "/picm-adopt [coding | adoption request]",
-  "/picm-maintain [strict | balanced",
-  "/picm-optimize",
-];
-for (const file of commandDecisionGuidanceFiles) {
-  const text = readFileSync(join(root, file), "utf8").toLowerCase();
-  for (const signal of commandDecisionSignals) {
-    if (!text.includes(signal)) {
-      console.error(`Command decision guidance ${file} missing signal: ${signal}`);
-      process.exit(1);
-    }
-  }
-  for (const signal of ["/picm-adopt coding", "coding repository"]) {
-    if (!text.includes(signal)) {
-      console.error(`Coding command guidance ${file} missing signal: ${signal}`);
-      process.exit(1);
-    }
-  }
-}
-
-const readme = readFileSync(join(root, "README.md"), "utf8").toLowerCase();
-if (!readme.includes("you do not need to know")) {
-  console.error("README command decision guide must avoid requiring PiCM/ICM jargon");
-  process.exit(1);
-}
-if (!readme.includes("/picm-maintain [strict | balanced] [coding | routing | handoffs | stale-context | security | trace")) {
-  console.error("README must distinguish optional maintenance depth from its optional focus");
-  process.exit(1);
-}
-
-const fixtureRoot = "test/fixtures/layout-profiles";
-const codingFixtureRoot = "test/fixtures/coding-repository";
-const maintainableFixtures = [
-  "stage-pipeline/newsletter-production",
-  "stage-pipeline/workshop-planning",
-  "stage-pipeline/source-integrity-trace",
-  "specialist-folder/product-voice-reviewer",
-  "specialist-folder/faq-polisher",
-  "team-role-os/event-ops",
-  "team-role-os/volunteer-program",
-  "custom-existing-structure/adopted-custom-picm",
-  "security-red-team/maintain-sensitive-boundaries",
-];
-
-for (const fixture of maintainableFixtures) {
-  for (const file of ["AGENTS.md", "CONTEXT.md"]) {
-    const path = join(root, fixtureRoot, fixture, file);
-    if (!existsSync(path)) {
-      console.error(`Maintainable fixture missing ${file}: ${fixture}`);
-      process.exit(1);
-    }
-  }
-}
-
-const stageContractFiles = [
-  "stage-pipeline/newsletter-production/01_intake/CONTEXT.md",
-  "stage-pipeline/newsletter-production/02_draft/CONTEXT.md",
-  "stage-pipeline/newsletter-production/03_review/CONTEXT.md",
-  "stage-pipeline/workshop-planning/stages/01_discovery/CONTEXT.md",
-  "stage-pipeline/workshop-planning/stages/02_design/CONTEXT.md",
-  "stage-pipeline/workshop-planning/stages/03_followup/CONTEXT.md",
-];
-const stageContractSignals = [
-  "## Purpose",
-  "## Inputs",
-  "Stable reference",
-  "Working artifact",
-  "## Process",
-  "## Outputs",
-  "Downstream consumer",
-  "## Verify",
-  "## Handoff / review gate",
-  "Human review",
-];
-for (const file of stageContractFiles) {
-  const path = join(root, fixtureRoot, file);
-  if (!existsSync(path)) {
-    console.error(`Stage pipeline fixture missing stage contract: ${file}`);
-    process.exit(1);
-  }
-  const text = readFileSync(path, "utf8");
-  for (const signal of stageContractSignals) {
-    if (!text.includes(signal)) {
-      console.error(`Stage contract ${file} missing signal: ${signal}`);
-      process.exit(1);
-    }
-  }
-}
-
-const traceFixture = "stage-pipeline/source-integrity-trace";
-const traceFixtureFiles = [
-  "AGENTS.md",
-  "CONTEXT.md",
-  "source/event-request.md",
-  "01_approval/CONTEXT.md",
-  "01_approval/output/approved-event-brief.md",
-  "02_publish/CONTEXT.md",
-  "02_publish/output/final-announcement.md",
-];
-for (const file of traceFixtureFiles) {
-  const path = join(root, fixtureRoot, traceFixture, file);
-  if (!existsSync(path)) {
-    console.error(`Source-integrity trace fixture missing ${file}`);
-    process.exit(1);
-  }
-}
-
-const approvedBrief = readFileSync(
-  join(root, fixtureRoot, traceFixture, "01_approval/output/approved-event-brief.md"),
-  "utf8",
-);
-const finalAnnouncement = readFileSync(
-  join(root, fixtureRoot, traceFixture, "02_publish/output/final-announcement.md"),
-  "utf8",
-);
-if (!approvedBrief.includes("Status: approved") || !approvedBrief.includes("September 18, 2026")) {
-  console.error("Source-integrity trace fixture must contain an approved September 18 brief");
-  process.exit(1);
-}
-if (!finalAnnouncement.includes("September 28, 2026") || finalAnnouncement.includes("September 18, 2026")) {
-  console.error("Source-integrity trace fixture final output must contain the intentional September 28 drift");
-  process.exit(1);
-}
-
-const maintenanceRubric = readFileSync(
-  join(root, "skills/picm-factory/references/maintenance-rubric.md"),
-  "utf8",
-);
-const coldWalkGuidance = [skill, maintenanceRubric]
-  .join("\n")
-  .toLowerCase()
-  .replaceAll("*", "");
-const coldWalkSignals = [
-  "read each named input, output, review, or equivalent visible artifact",
-  "report a warning when the local contract does not name",
-  "artifact presence separately from correctness and human approval",
-  "do not pass a criterion that was not inspected",
-];
-for (const signal of coldWalkSignals) {
-  if (!coldWalkGuidance.includes(signal)) {
-    console.error(`Cold-agent walk guidance missing signal: ${signal}`);
-    process.exit(1);
-  }
-}
-
-const traceQaDoc = readFileSync(join(root, "docs/layout-fixture-qa.md"), "utf8");
-const codingFixtures = {
-  "small-service": [
-    ".gitignore",
-    ".picm/config.json",
-    "AGENTS.md",
-    "CONTEXT.md",
-    "package.json",
-    "src/greeting.js",
-    "test/greeting.test.js",
-  ],
-  "monorepo-distributed": [
-    ".gitignore",
-    ".picm/config.json",
-    "AGENTS.md",
-    "CONTEXT.md",
-    "CONTEXT-MAP.md",
-    "package.json",
-    "apps/api/CONTEXT.md",
-    "packages/shared/CONTEXT.md",
-  ],
-  "hybrid-release-code": [
-    ".gitignore",
-    ".picm/config.json",
-    "AGENTS.md",
-    "CONTEXT.md",
-    "CONTEXT-MAP.md",
-    "package.json",
-    "packages/core/CONTEXT.md",
-    "workflows/release/CONTEXT.md",
-  ],
-  "existing-doc-duplication": [
-    ".gitignore",
-    "AGENTS.md",
-    "CLAUDE.md",
-    "README.md",
-    "docs/ARCHITECTURE.md",
-    "docs/development.md",
-    "package.json",
-    "src/main.js",
-  ],
-  "ignored-secrets-existing": [
-    ".gitignore",
-    "AGENTS.md",
-    "README.md",
-    "package.json",
-    "src/status.js",
-  ],
-};
-for (const [fixture, files] of Object.entries(codingFixtures)) {
-  const fixturePath = join(root, codingFixtureRoot, fixture);
-  if (!existsSync(fixturePath)) {
-    console.error(`Missing coding-repository fixture: ${fixture}`);
-    process.exit(1);
-  }
-  if (!traceQaDoc.includes(`coding-repository/${fixture}`)) {
-    console.error(`Coding-repository fixture missing QA doc reference: ${fixture}`);
-    process.exit(1);
-  }
-  for (const file of files) {
-    if (!existsSync(join(fixturePath, file))) {
-      console.error(`Coding-repository fixture ${fixture} missing ${file}`);
-      process.exit(1);
-    }
-  }
-  try {
-    execFileSync("npm", ["test"], {
-      cwd: fixturePath,
-      encoding: "utf8",
-      stdio: "pipe",
-    });
-  } catch (error) {
-    console.error(`Coding-repository fixture tests failed: ${fixture}`);
-    console.error(error.stdout ?? error.message);
-    process.exit(1);
-  }
-}
-
-const codingMapSignals = {
-  "small-service": ["src/greeting.js", "test/greeting.test.js"],
-  "monorepo-distributed": [
-    "apps/api/src/server.js",
-    "apps/api/test/",
-    "packages/shared/src/format.js",
-    "packages/shared/test/",
-  ],
-  "hybrid-release-code": [
-    "packages/core/src/version.js",
-    "packages/core/test/",
-    "workflows/release/CONTEXT.md",
-  ],
-};
-for (const [fixture, mapSignals] of Object.entries(codingMapSignals)) {
-  const fixturePath = join(root, codingFixtureRoot, fixture);
-  const config = JSON.parse(
-    readFileSync(join(fixturePath, ".picm/config.json"), "utf8"),
-  );
-  const codebaseMap = config.capabilities?.codebaseMap;
-  if (!codebaseMap) {
-    console.error(`Coding-repository fixture missing codebaseMap capability: ${fixture}`);
-    process.exit(1);
-  }
-  if (!["root", "distributed"].includes(codebaseMap.shape)) {
-    console.error(`Coding-repository fixture has invalid map shape: ${fixture}`);
-    process.exit(1);
-  }
-  if (codebaseMap.maintenancePreset !== "strict") {
-    console.error(`Newly adopted coding-repository fixture must use the strict maintenance preset: ${fixture}`);
-    process.exit(1);
-  }
-  for (const path of [codebaseMap.map, ...codebaseMap.roots, ...codebaseMap.localContexts]) {
-    if (!existsSync(join(fixturePath, path))) {
-      console.error(`Coding-repository fixture ${fixture} config points to missing path: ${path}`);
-      process.exit(1);
-    }
-  }
-  const mapText = readFileSync(join(fixturePath, codebaseMap.map), "utf8");
-  for (const signal of mapSignals) {
-    if (!mapText.includes(signal)) {
-      console.error(`Coding-repository fixture ${fixture} map missing pointer: ${signal}`);
-      process.exit(1);
-    }
-  }
-}
-
-const ignoreBoundary = readFileSync(
-  join(root, codingFixtureRoot, "ignored-secrets-existing", ".gitignore"),
-  "utf8",
-);
-for (const signal of [".env", "secrets/", "*.pem"]) {
-  if (!ignoreBoundary.includes(signal)) {
-    console.error(`Coding ignore-boundary fixture missing pattern: ${signal}`);
-    process.exit(1);
-  }
-}
-
-const ignoreSmokeRoot = mkdtempSync(join(tmpdir(), "picm-ignore-check-"));
-try {
-  writeFileSync(join(ignoreSmokeRoot, ".gitignore"), ".env\n.env.*\n", "utf8");
-  writeFileSync(join(ignoreSmokeRoot, ".env"), "SYNTHETIC_ONLY=do-not-read\n", "utf8");
-  writeFileSync(
-    join(ignoreSmokeRoot, ".env.tracked"),
-    "SYNTHETIC_TRACKED_IGNORED=do-not-read\n",
-    "utf8",
-  );
-  execFileSync("git", ["init", "-q"], { cwd: ignoreSmokeRoot });
-  execFileSync("git", ["add", ".gitignore"], { cwd: ignoreSmokeRoot });
-  execFileSync("git", ["add", "-f", ".env.tracked"], { cwd: ignoreSmokeRoot });
-
-  if (process.platform !== "win32") {
-    symlinkSync(".env", join(ignoreSmokeRoot, "ignored-target-link"));
-    execFileSync("git", ["add", "ignored-target-link"], { cwd: ignoreSmokeRoot });
-  }
-
-  execFileSync(
-    "git",
-    [
-      "-c",
-      "user.name=PiCM Fixture",
-      "-c",
-      "user.email=fixture@example.invalid",
-      "commit",
-      "-qm",
-      "fixture",
-    ],
-    { cwd: ignoreSmokeRoot },
-  );
-
-  const ignoreStatus = (path) =>
-    spawnSync("git", ["check-ignore", "--no-index", "-q", "--", path], {
-      cwd: ignoreSmokeRoot,
-    }).status;
-
-  for (const path of [".env", ".env.tracked"]) {
-    if (ignoreStatus(path) !== 0) {
-      throw new Error(`Git ignore smoke failed to exclude: ${path}`);
-    }
-  }
-
-  if (process.platform !== "win32") {
-    if (ignoreStatus("ignored-target-link") !== 1 || ignoreStatus(".env") !== 0) {
-      throw new Error("Git ignore smoke did not reproduce the symlink-target boundary");
-    }
-  }
-} finally {
-  rmSync(ignoreSmokeRoot, { recursive: true, force: true });
-}
-
-const antiPatternFixtures = {
-  "root-brain-dump": ["AGENTS.md", "CONTEXT.md"],
-  "no-task-routing": ["AGENTS.md", "CONTEXT.md", "research/CONTEXT.md", "publishing/CONTEXT.md"],
-  "missing-stage-outputs": [
-    "AGENTS.md",
-    "CONTEXT.md",
-    "source-notes.md",
-    "01_collect/CONTEXT.md",
-    "02_summarize/CONTEXT.md",
-  ],
-  "mixed-reference-working": [
-    "AGENTS.md",
-    "CONTEXT.md",
-    "reference/style-guide.md",
-    "reference/current-run-draft.md",
-  ],
-  "stale-contradictory-context": ["AGENTS.md", "CONTEXT.md", "deliverables/latest-summary.md"],
-  "picm-normal-routing": ["AGENTS.md", "CONTEXT.md", ".picm/maintenance-report.md"],
-  "incomplete-handoff": [
-    "AGENTS.md",
-    "CONTEXT.md",
-    "intake/CONTEXT.md",
-    "delivery/CONTEXT.md",
-    "handoffs/request.md",
-  ],
-};
-for (const [fixture, files] of Object.entries(antiPatternFixtures)) {
-  const fixturePath = join(root, fixtureRoot, "anti-patterns", fixture);
-  if (!existsSync(fixturePath)) {
-    console.error(`Missing maintenance anti-pattern fixture: ${fixture}`);
-    process.exit(1);
-  }
-  if (!traceQaDoc.includes(`anti-patterns/${fixture}`)) {
-    console.error(`Maintenance anti-pattern fixture missing QA doc reference: ${fixture}`);
-    process.exit(1);
-  }
-  for (const file of files) {
-    if (!existsSync(join(fixturePath, file))) {
-      console.error(`Maintenance anti-pattern fixture ${fixture} missing ${file}`);
-      process.exit(1);
-    }
-  }
-}
-
-const customVariantExpectations = [
-  ["existing-claude-only", { agents: false, claude: true }],
-  ["existing-agents-only", { agents: true, claude: false }],
-  ["existing-both-agent-files", { agents: true, claude: true }],
-  ["existing-no-agent-files", { agents: false, claude: false }],
-];
-
-for (const [fixture, expected] of customVariantExpectations) {
-  const fixturePath = join(root, fixtureRoot, "custom-existing-structure", fixture);
-  if (!existsSync(fixturePath)) {
-    console.error(`Missing custom adoption fixture: ${fixture}`);
-    process.exit(1);
-  }
-  const hasAgents = existsSync(join(fixturePath, "AGENTS.md"));
-  const hasClaude = existsSync(join(fixturePath, "CLAUDE.md"));
-  if (hasAgents !== expected.agents || hasClaude !== expected.claude) {
-    console.error(
-      `Custom adoption fixture has wrong agent-file combination: ${fixture} ` +
-        `(AGENTS.md=${hasAgents}, CLAUDE.md=${hasClaude})`,
-    );
-    process.exit(1);
-  }
-}
-
-const adoptionGuide = readFileSync(
-  join(root, "skills/picm-factory/references/adoption-guide.md"),
-  "utf8",
-).toLowerCase();
-const adoptionRoleSignals = [
-  "optional file-role inventory",
-  "path-to-role-to-rationale",
-  "routing",
-  "local contract",
-  "reusable context",
-  "working artifact",
-  "review / handoff",
-  "unclear / possible archive candidate",
-  "never move, rename, archive, delete, merge, or rewrite files from the inventory",
-];
-for (const signal of adoptionRoleSignals) {
-  if (!adoptionGuide.includes(signal)) {
-    console.error(`Adoption file-role guidance missing signal: ${signal}`);
-    process.exit(1);
-  }
-}
-
-const securityRedTeamFixtures = [
-  {
-    name: "security-red-team/adoption-sensitive-existing",
-    files: [
-      "CLAUDE.md",
-      "synthetic.env",
-      "intake/source-notes.md",
-      "examples/customer-response.md",
-      "reference/private-client-brief.md",
-    ],
-    requiredSignals: [
-      "synthetic fixture only",
-      "private/client material",
-      "token-looking",
-      "sensitive-looking examples",
-      "source notes",
-      "Do not copy",
-    ],
-  },
-  {
-    name: "security-red-team/maintain-sensitive-boundaries",
-    files: [
-      "AGENTS.md",
-      "CONTEXT.md",
-      "synthetic.env",
-      ".gitignore",
-      ".picm/config.json",
-      ".picm/adoption-report.md",
-      "source/private-source-notes.md",
-      "reference/public-style.md",
-      "workflows/public-memo.md",
-    ],
-    requiredSignals: [
-      "synthetic fixture only",
-      "private/client material",
-      "token-looking",
-      "source/",
-      "reference/",
-      "never copy",
-    ],
-  },
-];
-
-for (const fixture of securityRedTeamFixtures) {
-  const fixturePath = join(root, fixtureRoot, fixture.name);
-  if (!existsSync(fixturePath)) {
-    console.error(`Missing security red-team fixture: ${fixture.name}`);
-    process.exit(1);
-  }
-  if (!traceQaDoc.includes(fixture.name)) {
-    console.error(`Security red-team fixture missing QA doc reference: ${fixture.name}`);
-    process.exit(1);
-  }
-  const combinedText = [];
-  for (const file of fixture.files) {
-    const path = join(fixturePath, file);
-    if (!existsSync(path)) {
-      console.error(`Security red-team fixture missing ${file}: ${fixture.name}`);
-      process.exit(1);
-    }
-    combinedText.push(readFileSync(path, "utf8"));
-  }
-  const envText = readFileSync(join(fixturePath, "synthetic.env"), "utf8");
-  if (!envText.includes("NOT real secrets") && !envText.includes("NOT a real secret")) {
-    console.error(`Security red-team synthetic.env must be clearly synthetic: ${fixture.name}`);
-    process.exit(1);
-  }
-  const fixtureText = combinedText.join("\n");
-  for (const signal of fixture.requiredSignals) {
-    if (!fixtureText.includes(signal)) {
-      console.error(`Security red-team fixture missing signal ${JSON.stringify(signal)}: ${fixture.name}`);
-      process.exit(1);
-    }
-  }
 }
 
 console.log("PiCM Factory package check passed.");

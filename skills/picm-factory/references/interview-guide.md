@@ -1,187 +1,49 @@
 # Interview Guide
 
-Use this guide for `/picm-new`.
-
-The goal is not to fill a giant form. The goal is to gather enough context to recommend a strong minimal scaffold.
-
-If the user supplied `/picm-new` arguments, treat them as seed context. Do not make them repeat themselves; ask only the missing critical questions. If no arguments were supplied, run the full core interview.
+Use this guide for `/picm-new`. Gather enough context for a strong minimal scaffold, not a giant form. Treat command arguments as seed context and ask only missing critical questions.
 
 ## Core interview
 
-Ask these in plain language:
+Ask in plain language, combining related questions when the answer is already clear.
 
-1. **Workflow purpose**
-   - What repeatable work should this folder-agent help with?
-   - Who uses the final output?
-   - What business/personal value does it create?
-
-2. **Inputs**
-   - What does the user bring into the workflow?
-   - Examples: notes, transcripts, briefs, links, screenshots, datasets, client files.
-   - Which inputs are stable reusable reference/factory material (rules, examples, style, domain constraints)?
-   - Which inputs are per-run working artifacts (source material for this run, prior-stage outputs, drafts)?
-   - Are any inputs sensitive or private?
-
-3. **Outputs**
-   - What should the workflow produce?
-   - Which outputs are final deliverables vs inspectable working drafts?
-   - What format should outputs use?
-   - Which intermediate outputs will a downstream stage read after human review?
-
-4. **First executable use**
-   - What will you run first?
-   - What is the shortest useful path from its real input to a reviewed output?
-   - Which stages, roles, specialist recipes, references, or examples are required for that run, and which are only future ideas?
-
-5. **Process shape**
-   - Is the workflow mostly linear stages?
-   - Is it one reusable specialist?
-   - Does it involve multiple roles or handoffs?
-   - For each active stage, what does it read, what does it do, and what does it write?
-   - Where does human review happen before downstream work continues?
-
-6. **Mechanical work boundary**
-   - Does the workflow repeatedly fetch data, move files, format output, send messages/files, or call an API?
-   - Which of those steps are deterministic enough for a local script or MCP/tool integration instead of repeated AI instructions?
-   - Has the user already named an existing or planned script path, MCP server/tool, or other integration? If not, discuss the boundary without inventing one for the scaffold.
-   - What inputs/outputs and human approval apply, especially before moving files, sending anything, or changing external systems?
-
-7. **Quality bar**
-   - What makes an output good?
-   - What mistakes must the agent avoid?
-   - What should never be automated without review?
-
-8. **Reference material**
-   - What examples, style guides, policies, source docs, or domain rules should be reusable context?
-   - What should be background material rather than active instructions?
-   - What should stay out of reference/context because it is only a per-run artifact, private source, or output draft?
+1. **Purpose and first run** — What repeatable work should this workspace support, who uses the result, and what will run first? Identify the shortest useful path from real input to a reviewed output.
+2. **Inputs and outputs** — What material arrives, what is stable reusable reference versus per-run working material, and what deliverables or inspectable drafts should result? Which intermediate outputs are read downstream after review?
+3. **Process shape** — Is the work mainly sequential stages, one reusable specialist, or multiple roles and handoffs? For each active stage, what does it read, do, write, and send to review?
+4. **Quality and boundaries** — What makes the output good, what mistakes or invented claims must be avoided, and what requires human judgment? Ask about sensitive/private material when it affects scope or generated context.
+5. **Mechanical work** — Is repeated fetching, movement, formatting, sending, or API work better handled by a user-named local script or integration? Record its input/output and review boundary; do not invent one.
+6. **References and maintenance** — Which examples, policies, style guides, or domain rules are durable context, and what should remain outside reusable files? Ask when the user wants `/picm-maintain` and whether an optional reminder cadence is useful.
 
 ## Branching follow-ups
 
-Ask only when relevant.
+Ask only when relevant:
 
-### Stage Pipeline placement
+- **Stage Pipeline placement:** after that profile is chosen, use the **Placement decision** in `layout-profiles.md` before choosing paths.
+- **Operator profile:** for a non-technical or team operator, identify the day-to-day user and the needed level of guidance.
+- **Timing:** identify the real trigger when cadence or start conditions matter.
+- **Sensitive work:** identify local-only paths, whether repository visibility fits the material, and what must not be copied into context. Recommend exact `.gitignore` entries only when commit protection is useful; do not change Git configuration without sign-off.
+- **Branches and decisions:** establish how incomplete input, failed review, and backward flow work.
+- **Examples:** collect real golden examples or anti-examples only when available or requested.
 
-Use the **Placement decision** under Stage Pipeline in `layout-profiles.md` after the user confirms the profile and before choosing stage paths.
+## Scaffold direction
 
-### Operator profile
+Before editing:
 
-Use when the user is non-technical, team-based, or unsure how they will operate the workspace.
+1. Summarize the workflow in 5–10 bullets and recommend a primary layout, with alternatives or a secondary pattern only when useful.
+2. For an existing architecture, explain whether adoption is safer; do not move, overwrite, or replace existing material unless the final direction says so.
+3. Draft the smallest path set that supports the first real run, routing/safety, or an identified reusable constraint. Explain why each path exists.
+4. For a Stage Pipeline, show the chosen root-numbered or nested placement and each active contract's Purpose, Inputs, Process, Outputs, optional named script/tool, Verify, and Handoff/review sections.
+5. Do not create future-only stages, unused roles, or empty `references/`, `input/`, `output/`, or `examples/` areas. A contract can name a future artifact without creating its parent today.
+6. If reminders are requested, include the interval and `.picm/config.json` effect in the direction. Reminders offer work only; they do not authorize repairs or external effects.
+7. Present the concise final direction under `preview-review-protocol.md` and wait for conversational sign-off. Then write with ordinary tools. Ensure no unresolved `{{picm:...}}` token remains.
 
-- Who will run this day to day?
-- Are they comfortable editing markdown files?
-- Do they need step-by-step prompts?
+## First-run checklist
 
-### Trigger and cadence
+After creation, give a path-specific user-facing checklist that names where work starts, the first output/review/handoff artifact, what the human checks before downstream use, which gaps or uncertainty remain visible, and when to run `/picm-maintain`.
 
-Use when workflow timing matters.
+- **Stage Pipeline:** start in the first stage's `CONTEXT.md`; create the named output; stop for review before the next stage; keep gaps and unsupported claims visible; start the downstream stage from the reviewed artifact.
+- **Team / Role OS:** name the first role and handoff artifact. Human review checks summary, facts/decisions, confidence, blockers/risks, gaps/unknowns, and next action; the receiving role uses that reviewed handoff rather than chat memory.
+- **Specialist Folder:** use the visible recipe receipt in `layout-profiles.md` to name inputs, expected artifact, review, and next action. Keep its stated uncertainty visible. Distinguish one-off artifact edits from durable lessons for an existing approved `rules.md`, `examples.md`, or `reference/` route.
+- **Coding Repository:** the user states a normal coding task. The agent follows root routing to the map/equivalent, owning boundary, entry point, and authoritative checks; the user reviews the diff and check result while cross-boundary effects and unknowns remain visible.
+- **Custom / Existing Structure:** follow the visible routing and review/handoff convention. Mark a missing review surface as a maintenance suggestion rather than forcing a rewrite.
 
-- When does this workflow start?
-- Is it daily, weekly, per client, per artifact, or ad hoc?
-- What tells the user “start here”?
-
-### Boundaries and non-goals
-
-Use for legal, medical, financial, compliance, brand, publishing, or safety-sensitive work.
-
-- What should the agent not do?
-- What requires human approval?
-- What source claims must never be invented?
-
-### Decision points and branches
-
-Use when the workflow is not linear.
-
-- What happens when input is incomplete?
-- Can work move backward to an earlier stage?
-- What happens when review fails?
-
-### Golden examples and anti-examples
-
-Use when output quality is style-sensitive.
-
-- Give one good example and why it works.
-- Give one bad example and why it fails.
-
-### Sensitive information
-
-Always ask this baseline question before scaffold creation:
-
-- Will this workspace contain credentials, tokens, private keys, client/private data, regulated data, or sensitive personal material?
-
-If the answer is yes or unclear, deepen only as needed:
-
-- Should this repo be private?
-- Which paths should stay local-only or be ignored by git?
-- Should sensitive source material stay outside reusable context files and examples?
-- What requires explicit human approval before being copied into context?
-
-If the answer is no, record that plainly in `CONTEXT.md`. If unknown, record the uncertainty and recommend revisiting during `/picm-maintain`.
-
-### First-run path and maintenance needs
-
-Use near the end.
-
-- What tells the user “start here” for the first real run?
-- Where should the first output, draft, review surface, or handoff card land?
-- What must a human inspect/edit before the next stage or role consumes it?
-- Which gaps, unknowns, blockers, risks, or low-confidence points must remain visible downstream?
-- What will change over time?
-- What should PiCM help keep fresh?
-- When should the user run `/picm-maintain`?
-- Should maintenance stay manual, or do you want scheduled maintenance reminders with a cadence in days, weeks, or months (such as a monthly reminder)? Do not offer separate nudge versus automatic choices.
-- If the user wants scheduled reminders, accept a positive integer interval in days, weeks, or months. Explain that nothing runs while Pi is closed or in print/JSON/RPC/headless modes, that due maintenance presents Run Now and Defer options above the editor, and that maintenance cannot repair, write a report, commit, or cause external side effects without approval.
-- If skipped or declined, omit the maintenance policy. Otherwise explain that `.picm/config.json` must remain non-ignored and a regular non-symlink file under a regular non-symlink `.picm/` directory; then use `picm_maintenance_policy` preview to calculate exact timestamps and include that object in the final config preview. The cadence choice itself is not approval to write files.
-
-## Scaffold approval gates
-
-Before writing files:
-
-1. Confirm folder classification:
-   - empty enough: proceed after normal scaffold approval
-   - source-material-only: confirm building around existing material without moving/rewriting it
-   - existing architecture: recommend `/picm-adopt`; after ending discovery, require a direct choice of `adopt existing`, `add/replace scaffold`, or cancel; vague or preview-only input leaves the choice pending, and cancellation completes without writes
-   - do not begin another protected phase while that choice is pending; after a directly observed add/replace or adopt choice is recorded, begin a new protected phase before project reads or drafting
-2. Pair the current exact scaffold preview with the Git checkpoint recommendation from `preview-review-protocol.md`:
-   - strongly recommend a user-created Git commit covering current contents of affected existing files
-   - do not inspect Git status, history, or file contents to verify coverage; do not require a repository-wide clean state or ask the user to add sensitive or ignored material
-   - non-Git and new/empty workspaces remain supported; a first post-scaffold commit protects future contents only
-   - when the exact scaffold affects current existing content and coverage is absent or uncertain, obtain the protocol's explicit risk opt-out or a clear checkpoint report before normal direct scaffold approval; either is an unverified acknowledgment, not approval, while new-only scaffolds remain directly approvable
-3. Preview one current exact scaffold proposal:
-   - enumerate every create, append, update, and overwrite action
-   - create missing files/folders
-   - append/update existing safe files only with exact proposed changes
-   - no silent overwrites
-   - `preview only`, review/navigation requests, profile or cadence choices, vague assent (`continue`, `looks good`, `yes`, or `go ahead`), and a lone `.` are strict no-write replies; keep the proposal pending and state that nothing was written
-   - register all exact `write` and `edit` inputs with `picm_scaffold_proposal` before showing the preview
-   - write all and only the registered actions only after one of the explicit approval forms listed in the main skill
-   - a requested adjustment supersedes pending approval; refresh the proposal before accepting direct approval
-4. Ensure generated files contain no unresolved bracket placeholders.
-
-## End state
-
-After the interview:
-
-1. Summarize the workflow in 5-10 bullets.
-2. Recommend a primary layout profile and explain why.
-3. Present alternatives and any secondary pattern worth borrowing.
-4. Ask the user to confirm the profile before scaffolding.
-5. Preview the minimum viable scaffold plan and explain how every proposed path supports the first real run, required routing/safety, or a known reusable constraint. For Stage Pipeline, show the selected placement in the exact generated paths: root-numbered paths such as `01_intake/` or nested paths such as `stages/01_intake/`. Remove future-only stages, unused roles, and empty organizational areas.
-6. If no real references or examples exist, say to add them after the first real use reveals a durable rule or genuine golden example; do not create placeholder files or folders.
-7. For a Stage Pipeline, preview each generated stage contract with concise Purpose, Inputs, Process, Outputs, optional Named scripts/tools, Verify, and Handoff/review-gate sections. Include the scripts/tools section only when the user named a relevant script path, MCP server/tool, or integration during the interview.
-8. Ensure any stage output consumed downstream points to an inspectable review surface, usually a named file under that stage's `output/` when the workflow benefits from a dedicated output area.
-9. Do not create empty speculative `references/`, `input/`, `output/`, `examples/`, or role folders. A stage contract can name future paths without pre-creating empty directories. Create a directory only when writing a real seed file/reference/first-run artifact or when the user explicitly asks for physical directories now.
-10. After creation, end with a layout-tailored first-run checklist. It must name:
-   - where to start, using the actual generated folder/file path;
-   - what first output, draft, review surface, or handoff artifact to create/update;
-   - what the human should inspect/edit/approve before downstream work consumes it;
-   - what gaps, unknowns, blockers, risks, unsupported claims, or low-confidence points should remain visible;
-   - where the next stage/role/specialist action should read from; and
-   - when to run `/picm-maintain`.
-11. Use the selected layout's review gate:
-    - Stage Pipeline: review/edit each named intermediate output before the downstream stage consumes it. Tell the user to stop between stages, check Verify/Handoff notes, and run the next stage only from the approved edited artifact.
-    - Team / Role OS: review the handoff card or agreed handoff artifact before the receiving role acts. The review point should preserve summary, facts/decisions, confidence, blockers/risks, gaps/unknowns, and next action.
-    - Specialist Folder: derive the checklist from approved generated routes only: name the exact first workflow/task recipe path, its inputs, and expected artifact; require the user to inspect, edit, and explicitly approve that artifact before another specialist action; name the approved artifact as the route the next action reads from; and keep recipe-named uncertainty, unsupported claims, missing information, blockers, or low-confidence points visible in the artifact or review notes. After review, distinguish one-off artifact edits from durable lessons for an approved existing `rules.md`, `examples.md`, or `reference/` route; never invent optional folders, recipes, or operations. Recommend `/picm-maintain` after the first real use or when the specialist workflow, routing, or stable guidance changes.
-    - Coding Repository: tell the user to state one real coding task normally. The agent follows the auto-loaded root routing through the map/equivalent to the owning boundary, entry point, and authoritative tests/checks, then presents the diff and check result for the user to review while keeping cross-boundary effects and unknowns visible.
-    - Custom / Existing Structure: use the visible review/handoff convention actually present, and mark missing review surfaces as future maintenance suggestions.
-12. Recommend `/picm-maintain` after the first real workflow/use/handoff and whenever the process, stages, roles, routing, stable references, named scripts/tools, repository boundaries, manifests, or verification sources change. Do not present maintain as a required preflight or guaranteed provenance debugger.
+Recommend maintenance after the first real use and when stages, roles, routing, stable references, scripts/integrations, repository boundaries, manifests, or verification sources change. It is advisory, not a required preflight or provenance debugger.
