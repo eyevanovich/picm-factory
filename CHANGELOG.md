@@ -2,6 +2,19 @@
 
 All notable changes to PiCM Factory will be documented here.
 
+## [0.5.0] - 2026-09-30
+
+### Added
+
+- Simplify all five `/picm-*` commands around a shared conversational final-direction and sign-off contract.
+- Retain narrow project settings, conditional maintenance policy updates, and optional due reminders without an autonomous workflow executor.
+- Update skills, references, prompts, templates, public guidance, package checks, and focused tests to match the new behavior.
+- Preserve layout, coding-map, specialist, trace, and optimization methodology while retiring obsolete gate-specific runtime and tests.
+
+### Fixed
+
+- Update global install pin during release.
+
 ## [0.4.0] - 2026-09-24
 
 ### Added
