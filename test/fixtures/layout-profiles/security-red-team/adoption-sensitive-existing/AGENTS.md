@@ -1,6 +1,6 @@
 # Client Memo Workspace
 
-This is an existing Claude-style workspace for turning intake notes into a public-safe memo.
+This is an existing agent-instruction workspace for turning intake notes into a public-safe memo.
 
 ## Routing
 - For intake review, read `intake/source-notes.md`.

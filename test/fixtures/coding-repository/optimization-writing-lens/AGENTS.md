@@ -10,7 +10,7 @@ Before choosing task-specific guidance, read `CONTEXT.md`.
 
 - Start at `src/main.js`.
 - Run `npm test`.
-- A code change is complete when `npm test` passes.
+- A code change may be reported complete only after `npm test` passes.
 
 ## Customer data
 
