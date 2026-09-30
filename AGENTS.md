@@ -30,7 +30,7 @@ You are working on PiCM Factory, a project-local Pi package for creating, adopti
 | Task | Start here | Supporting files |
 | --- | --- | --- |
 | Change slash-command registration, tool wiring, or dispatch | `extensions/picm-factory.ts` | `extensions/runtime/`, Pi extension documentation |
-| Change scan, execution, session, scheduling, or maintenance-depth enforcement | `extensions/runtime/` | `extensions/picm-factory.ts`, focused runtime tests |
+| Change configuration integrity, privacy settings, reminders, dispatch, or maintenance-depth selection | `extensions/runtime/` | `extensions/picm-factory.ts`, focused runtime tests |
 | Change scaffold, adoption, maintenance, optimization, or help behavior | `skills/picm-factory/SKILL.md` | The relevant file under `skills/picm-factory/references/` |
 | Change coding adoption or context-map behavior | `skills/picm-factory/references/coding-adoption-guide.md` | `coding-maintenance-rubric.md`, `layout-profiles.md`, coding templates |
 | Change generated workspace content | `skills/picm-factory/templates/` | `skills/picm-factory/references/layout-profiles.md` |

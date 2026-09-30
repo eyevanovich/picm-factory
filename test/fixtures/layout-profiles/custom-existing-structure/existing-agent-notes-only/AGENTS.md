@@ -1,4 +1,4 @@
-# Claude Notes
+# Agent Notes
 
 - Use `README.md` for the project overview.
 - Do not invent resource metadata.

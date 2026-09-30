@@ -402,7 +402,6 @@ const publicTextFiles = [
   "CHANGELOG.md",
   "CONTRIBUTING.md",
   "AGENTS.md",
-  "CLAUDE.md",
   "CONTEXT.md",
   "skills/picm-factory/SKILL.md",
   "skills/picm-factory/references/coding-adoption-guide.md",
