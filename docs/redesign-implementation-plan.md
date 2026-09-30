@@ -1,6 +1,6 @@
 # Trusted-assistant redesign implementation plan
 
-**Status:** P0–P3 implemented and reviewed. P4 interactive QA has run on the approved disposable target `/tmp/picm-factory-redesign-qa-20260930`; automated checks and package dry-run pass. Text fallback and config-conflict edge cases remain test-only, not manual demonstrations. Real-user replay, deployment, and release/publication remain separate decisions.
+**Status:** P0–P3 implemented and reviewed. P4 interactive QA has run on the approved disposable target `/tmp/picm-factory-redesign-qa-20260930`; automated checks and package dry-run pass. Non-UI text fallback and a stale configuration conflict have also been observed in disposable QA; this does not prove atomicity against precisely timed external writes. Real-user replay, deployment, and release/publication remain separate decisions.
 **Behavior authority:** [redesign contract](redesign-contract.md), accepted in [ADR-0002](adr/0002-trusted-methodology-assistant.md).
 
 This plan follows the short design interview: plan before edits, user sign-off on the final direction, instructional boundaries, preserved methodology, less chatter, useful nudges, and selective native modals. Approval is an agent responsibility; this plan does not reintroduce a consent state machine.
