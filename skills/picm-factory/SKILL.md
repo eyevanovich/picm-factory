@@ -106,10 +106,14 @@ Explain plainly; do not inspect or edit the workspace.
 - `/picm-optimize` — reviews agent-facing documentation for outcome-preserving improvements.
 - `/picm-help` — shows syntax, setup, and behavior.
 
-Arguments are optional; bare commands remain valid. In interactive Pi, a space after `/picm-adopt` or `/picm-maintain` shows available completions.
+Arguments are optional; bare commands remain valid. In interactive Pi, a space after `/picm-adopt` or `/picm-maintain` shows available completions. Give one concrete example, such as `/picm-maintain trace "the final draft differs from the approved brief"`.
 
 Choose `/picm-new` for a new or mostly empty workflow; `/picm-adopt` for existing source, instructions, or workspace architecture; `/picm-maintain` for health, routing, handoff, or drift checks; and `/picm-optimize` for agent-facing documentation that is repetitive, diffuse, or difficult to navigate. `/picm-adopt coding` is a shortcut for known coding repositories.
 
 Install Pi project-locally with a pinned public package, for example `pi install -l npm:@eyevanovich/picm-factory@0.4.0`, or with a local checkout: `pi install -l /path/to/picm-factory`.
 
-Strict is broader systematic coding-map coverage; Balanced is representative coverage of major boundaries and one coding path. Both are recommendations for one run, not persistent security modes. `picm_settings` reports/conditionally saves project exclusions; `picm_maintenance_policy` reports/configures cadence and records a genuinely completed pass. Both affect only the current project's fixed `.picm/config.json` and preserve unrelated fields. PiCM uses ordinary tools and agent-followed scope/privacy discipline; it is not an execution sandbox.
+Strict is broader systematic coding-map coverage; Balanced is representative coverage of major boundaries and one coding path. Both are recommendations for one run, not persistent security modes.
+
+Explain that modification commands inspect and propose a final direction, then wait for conversational sign-off before edits; they preserve existing files by default, with a Git checkpoint as optional advice. `.pi/` holds Pi installation settings; `.picm/` holds small maintainer metadata outside normal routing.
+
+Include a short **Settings and reminders** explanation in the help answer: `picm_settings` can report or conditionally save project scan exclusions; `picm_maintenance_policy` can report or configure an optional cadence and record a completed pass. Both affect only the current project's `.picm/config.json` and preserve unrelated fields. When due, a reminder offers **Run Now** or **Later**; Run Now starts ordinary maintenance planning, not edits or automatic completion. Legacy automatic policies also only offer this choice. PiCM uses ordinary tools and agent-followed scope/privacy discipline; it is not an execution sandbox.

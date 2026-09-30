@@ -1,7 +1,7 @@
 # PiCM redesign: one collaborative behavior model
 
 **Decision:** accepted in [ADR-0002](adr/0002-trusted-methodology-assistant.md).
-**Delivery:** this document defines behavior, not a runtime bypass. The working-tree implementation has switched commands and removed the old gates; previously installed or already-running versions may still enforce them. Interactive task-completion QA remains pending. Follow the controls of the version actually running.
+**Delivery:** this document defines behavior, not a runtime bypass. The current implementation has switched commands and removed the old gates; previously installed or already-running versions may still enforce them. Interactive QA on an approved disposable workspace has exercised the five commands and due reminders; this does not prove every environment or publication path. Follow the controls of the version actually running.
 
 ## Product intent
 

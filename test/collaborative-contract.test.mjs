@@ -31,6 +31,14 @@ test("all modification prompts route through the shared final-direction sign-off
   assert.match(read("prompts/picm-help.md"), /Do not inspect or edit the workspace/);
 });
 
+test("help explicitly explains optional settings and non-autonomous reminders", () => {
+  const help = read("skills/picm-factory/SKILL.md").split("## Mode: help (`/picm-help`)")[1];
+  assert.ok(help, "help section is missing");
+  for (const signal of ["Settings and reminders", "`picm_settings`", "`picm_maintenance_policy`", "Run Now", "Later", "not an execution sandbox", "Give one concrete example"]) {
+    assert.ok(help.includes(signal), `help must mention ${signal}`);
+  }
+});
+
 test("configuration instructions use narrow conditional tools after sign-off", () => {
   const skill = read("skills/picm-factory/SKILL.md");
   for (const signal of ["`picm_settings` `status`", "`set-exclusions`", "`expectedExcludedPaths`", "`picm_maintenance_policy` `status`", "`configure`", "`expectedMaintenance`", "`complete` only after"]) {
