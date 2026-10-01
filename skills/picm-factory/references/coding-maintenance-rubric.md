@@ -47,6 +47,8 @@ Run Balanced, plus:
 - review relevant agent/developer/architecture documentation for consolidation opportunities; and
 - run representative walks across more than one materially different boundary when needed.
 
+Both depths apply the general rubric's redundancy review to their inspected instruction and pointer set. Balanced remains representative; Strict uses its broader coverage. Don't present either as an exhaustive workspace-wide duplicate scan.
+
 Strict does not mean exhaustive source comprehension, provenance, or authority to rewrite.
 
 ## Coding cold-agent walk

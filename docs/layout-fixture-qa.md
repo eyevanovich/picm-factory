@@ -78,6 +78,21 @@ Expected behavior:
 - Re-reads affected files when concurrent changes are apparent; reports a stale or changed source rather than blindly overwriting it.
 - If no useful change is justified, reports exactly `No worthwhile optimizations found`.
 
+## Instruction and pointer redundancy smoke checks
+
+Use an explicitly approved disposable copy of `test/fixtures/layout-profiles/anti-patterns/instruction-redundancy`. Run report-only `/picm-maintain` with optional optimization declined, then `/picm-optimize`. Repeat maintenance with optimization included; findings should remain consistent without duplicate reports. These are planned checks, not recorded interactive results.
+
+Expected behavior:
+
+- Finds the exact review-note rule repeated within root `AGENTS.md` and its paraphrase in `workflows/brief/AGENTS.md`. Names the locations and proposes the existing canonical `reference/review-rules.md` as the home without losing the workflow's reachable pointer.
+- Finds the duplicate root drafting pointer, but preserves the separate review trigger to the same target and the workflow pointer needed for independent entry.
+- Classifies the factual-claim rule as partial overlap, retaining the workflow's additional page-number requirement. Retains the explicitly intentional synthetic-example safety reminder.
+- Reports inspected coverage, dispositions, and evidence. Maintenance still checks redundancy when optimization is declined; optimization includes findings in its existing five-row audit. Neither writes without sign-off.
+
+Also run focused `/picm-maintain trace "brief citations omit page numbers"`; it should investigate the evidence rule without forcing unrelated workspace discovery. For coding Balanced and Strict, verify comparison is limited to each depth's inspected set and omitted boundaries aren't reported as duplicate-free.
+
+If a separate write-capable pass is approved, select one consolidation and give conversational sign-off on the final direction. Check that every affected entry point still reaches shared rules, the page-number qualifier and intentional safety reminder survive, and unrelated files remain unchanged. Record actual command, scope, sign-off, writes, and results separately from structural test results.
+
 ## Coding Repository smoke checks
 
 Fixtures:

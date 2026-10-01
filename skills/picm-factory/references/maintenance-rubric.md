@@ -18,6 +18,10 @@ For every non-trivial Warning or Suggestion, include likely cause, repair tier, 
 
 Maintenance reminders are optional and advisory. A due reminder offers a maintenance request; it does not start work or approve a report, repair, commit, or external effect. Only record completion when the agreed inspection or repairs are actually complete; report a conflict or partial result honestly.
 
+## Redundancy review
+
+During discovery, load and apply `redundancy-review.md` to compare instructions and pointers within and across the inspected agent-facing files. This check is required even when optional optimization is declined. For focused checks or trace, keep the comparison relevant to the requested scope. Include dispositions and coverage limits in the report before proposing repairs.
+
 ## Repair tiers
 
 ### Tier 1: Routing fixes

@@ -31,6 +31,10 @@ For each inspected document, record unique visible constraints in these categori
 
 This qualitative preservation ledger is a review aid, not an equivalence proof. Preserve each unique constraint in place or at a clearly reachable authoritative destination. A stated intentional duplication, transition case, fixture, or compatibility shim is itself a constraint; leave it or ask for a preservation mechanism.
 
+## Redundancy review
+
+After recording the preservation ledger, load and apply `redundancy-review.md` to compare instructions and pointers within and across the discovered agent-facing set. Complete this check before opportunities or a no-op conclusion; include its dispositions and coverage limits in the existing writing-lens audit.
+
 ## Finding useful opportunities
 
 An opportunity needs visible evidence and a concrete navigation, maintenance, consistency, or clarity benefit. Suitable changes include tightening prose without dropping qualifiers, removing true duplication after finding a supported canonical home, replacing copied details with a thin reachable pointer, consolidating related guidance while retaining local routing, or separating stable instruction from background/reference.

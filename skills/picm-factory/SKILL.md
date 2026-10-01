@@ -84,7 +84,7 @@ Maintain is a heuristic health report and focused drift investigation, not prove
 - `/picm-maintain trace "drift symptom"` investigates likely drift sources with confidence, not causal certainty.
 - Load `references/coding-maintenance-rubric.md` for a Coding Repository profile, codebase-map capability, or visible `CONTEXT-MAP.md`. Apply the supplied one-run Strict or Balanced depth; do not change stored metadata merely because of that selection.
 - At intake, offer optional agent-document optimization with **No** as the default; when included, load `references/optimization-guide.md` and keep its documentation-only scope and preservation checks. An already supplied answer needs no repeat question.
-- Apply `references/maintenance-rubric.md`, including profile identification, repair tiers, and the cold-agent walk for general checks. Trace mode need not run the broad walk.
+- Apply `references/maintenance-rubric.md`, including profile identification, repair tiers, required redundancy review of inspected instructions/pointers, and the cold-agent walk for general checks. Redundancy review applies even when optional optimization is declined; trace stays symptom-focused and need not run the broad walk.
 
 Report Pass, Warning, and Suggestion findings with likely cause, repair tier, and smallest safe healing path. Report-only is complete with no edits. If the user asks to repair findings, inspect the affected scope as needed, present one concise final direction, wait for sign-off, then implement and validate it. A maintenance report file is an edit and follows the same contract.
 
@@ -92,7 +92,7 @@ Report Pass, Warning, and Suggestion findings with likely cause, repair tier, an
 
 Load `references/optimization-guide.md` and follow it completely. Optimize only eligible agent-facing documentation: do not change source code, tests, manifests, runtime paths, generated artifacts, `.picm/` configuration, per-run artifacts, or unrelated material.
 
-Inspect the relevant agent documents, preserve every unique visible constraint, and show the required five-row writing-lens audit before opportunities or a no-op result. Use the shared final-direction/sign-off sequence for selected improvements. If no evidence-backed improvement exists, report exactly:
+Inspect the relevant agent documents, preserve every unique visible constraint, complete the guide's required redundancy review, and show the required five-row writing-lens audit before opportunities or a no-op result. Use the shared final-direction/sign-off sequence for selected improvements. If no evidence-backed improvement exists, report exactly:
 
 `No worthwhile optimizations found`
 
