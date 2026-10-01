@@ -53,4 +53,4 @@ Load the selected guide and its required branch references; complete its procedu
 | optimize | [documentation optimization](references/optimization-guide.md) | Required preservation ledger, redundancy review, and writing-lens audit are routed there. |
 | help | [help](references/help-guide.md) | Explain without inspecting or editing the workspace. |
 
-For help/setup only, the release-managed project-local install example is `pi install -l npm:@eyevanovich/picm-factory@0.5.0`. Load this skill only through its explicit command entry points, not during ordinary PiCM implementation discussion.
+For help/setup only, the release-managed project-local install example is `pi install -l npm:@eyevanovich/picm-factory@0.5.1`. Load this skill only through its explicit command entry points, not during ordinary PiCM implementation discussion.

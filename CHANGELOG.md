@@ -2,6 +2,17 @@
 
 All notable changes to PiCM Factory will be documented here.
 
+## [0.5.1] - 2026-10-01
+
+### Fixed
+
+- Put shared scope, privacy, approval, and recovery rules in one contract, with focused routes to mode-specific guidance.
+- Move help, settings/reminders, and specialist first-run detail behind required branch pointers; preserve stage reviews, coding depths, source integrity, and meaningful handoffs.
+- Put package guidance and eligibility before workspace prerequisites, bound discovery, and strengthen adoption/specialist completion criteria.
+- Validate packaged Markdown links and add routing, preservation, privacy, and completion contract coverage.
+- Move this repository's agent guidance to `AGENTS.md`: remove the root pointer, merge fixture instructions without losing the curated conflict or security boundaries, refresh QA expectations, and correct the runtime routing row. Adoption of other users' workspaces is unchanged; existing `CLAUDE.md` files there remain user-owned.
+- Rename the project-local `.pi/mcp.json` to `.pi/mcp-adapter.json` without changing its contents. This is a separate commit included at the maintainer's request; review filename-based discovery before merging.
+
 ## [0.5.0] - 2026-09-30
 
 ### Added
