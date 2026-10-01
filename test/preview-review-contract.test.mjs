@@ -11,7 +11,7 @@ test("review guidance preserves a conversational final direction rather than run
     "conversational sign-off",
     "affected areas",
     "material creates, replacements, moves, or deletions",
-    "ordinary tools",
+    "preserved behavior",
     "what changed",
   ]) assert.ok(protocol.toLowerCase().includes(signal.toLowerCase()), `missing ${signal}`);
   for (const obsolete of ["proposal ID", "approval token", "picm_scan_control", "picm_proposal_batch"]) {

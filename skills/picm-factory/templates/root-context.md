@@ -1,33 +1,26 @@
-# {{picm:workflow-name}} Context
+<!-- PiCM authoring: retain only needed sections and actual paths; omit Named mechanics if none were supplied. Remove this comment from generated output. -->
+# {{picm:workflow-name}} context
 
-## What this workspace helps with
+## Purpose and audience
 {{picm:repeatable-work-description}}
-
-## Users / audience
-- Primary operator: {{picm:primary-operator}}
+- Operator: {{picm:primary-operator}}
 - Output audience: {{picm:output-audience}}
 
 ## Inputs
-- {{picm:input-type}}
-- {{picm:input-type}}
+- {{picm:input-path-kind-and-use}}
 
 ## Outputs
-- {{picm:final-deliverable}}
-- {{picm:working-artifact-if-any}}
+- {{picm:final-deliverable-and-review}}
+- {{picm:working-artifact-if-needed}}
 
-## Named scripts / tools
-Include this section only when the user has named a relevant local script, MCP server/tool, or integration. Record its exact path/name, deterministic job, inputs/outputs, side effects, and required human review. Otherwise omit this section; do not invent tools to fill it.
-
-- {{picm:user-named-script-or-tool}}: {{picm:mechanical-job-and-review-boundary}}
+## Named mechanics
+- {{picm:exact-script-or-tool-name}}: {{picm:job-inputs-outputs-side-effects-and-human-review}}
 
 ## Quality bar
-- Good output: {{picm:quality-criteria}}
-- Avoid: {{picm:mistakes-or-non-goals}}
+{{picm:quality-criteria-mistakes-and-non-goals}}
 
 ## Security / privacy
-- Sensitive material: {{picm:sensitive-material-status}}
-- Handling rule: {{picm:handling-rule}}
-- Coding discovery rule, when applicable: honor Git ignores, PiCM exclusions, session exclusions, and known sensitive paths. Use bounded eligible paths and output; these are agent-followed boundaries rather than host-tool enforcement.
+{{picm:non-sensitive-path-boundaries-and-handling-rules}}
 
-## Maintenance notes
-Run `/picm-maintain` after the first real workflow or whenever the process changes.
+## Maintenance
+Consider `/picm-maintain` after first real use or process changes.

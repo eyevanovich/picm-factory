@@ -1,84 +1,60 @@
-# Coding Repository Maintenance Rubric
+# Coding maintenance
 
-Use inside `/picm-maintain` when `.picm/config.json` identifies `profile: "coding-repository"`, `capabilities.codebaseMap` is enabled, or visible routing points to `CONTEXT-MAP.md`.
+Load for initial coding adoption, or maintenance with a Coding Repository profile, `capabilities.codebaseMap`, or visible `CONTEXT-MAP.md`. Apply the [shared contract](../SKILL.md) and the general [maintenance rubric](maintenance-rubric.md) for severity, repair tiers, and reporting. During adoption, use those definitions plus the checks here; no separate broad workflow audit or optimization interview is required.
 
-Apply the general maintenance posture, severity labels, repair tiers, report format, and shared final-direction/sign-off guidance. This adds coding checks; it is not a deterministic validator or automatic rewrite system.
+Use bounded eligible inspection. Respect generated/do-not-edit and nested-repository boundaries; ask before following unclear symlink targets. Keep sensitive findings generic.
 
-## Scope and privacy
+## One-run depth
 
-Before coding inspection, use bounded context appropriate to the requested depth. Honor Git ignores, persisted `privacy.excludedPaths`, session exclusions, known sensitive paths, generated/do-not-edit areas, and nested-repository boundaries. Do not open excluded/private paths, follow an unclear symlink target, or claim ordinary tools comprehensively enforce those choices. Keep sensitive findings generic in reports.
+Use the supplied Strict/Balanced depth; initial adoption uses Strict. Strict gives broader systematic coverage across declared roots/mapped contexts at higher cost. Balanced samples major boundaries and one coding path at lower cost. Neither implies exhaustive source understanding, provenance, security authority, or automatic rewrite.
 
-## Maintenance depth
-
-Use the supplied one-run depth. A bare interactive command may offer Strict and Balanced with Strict preselected; explicit `strict` or `balanced` bypasses that choice. The selection applies only to the current run and does not mutate `capabilities.codebaseMap.maintenancePreset`.
-
-**Strict** (recommended) provides broader systematic coverage across declared roots and mapped contexts at higher cost. **Balanced** provides representative coverage of major boundaries and one coding path at lower cost.
-
-Stored `maintenancePreset` values, including historical `light`, `balanced`, and `strict`, remain readable legacy metadata; they do not select a run depth. Do not offer Light for new adoption or active run selection.
+Interactive maintenance offers Strict first; explicit depth bypasses the selector, and non-TUI commands default to Strict. Preserve `capabilities.codebaseMap.maintenancePreset`: legacy `light`, `balanced`, and `strict` values don't select later depth. Don't offer Light for adoption or active selection.
 
 ### Balanced
 
-Check:
+At manifest/documentation level, check:
 
-- canonical routing and configured map/equivalent paths;
-- declared code roots and local-context paths;
-- root routing to current map/equivalent;
-- map links that target deleted or excluded paths;
-- mapped entry-point, manifest, test, and verification pointers;
-- `.picm/` exclusion from normal coding routes;
-- visible workspace/manifests against mapped major boundaries;
-- likely new or removed meaningful components;
-- root/local responsibility conflicts;
-- verification guidance against authoritative manifests/scripts/tests;
+- canonical routing, configured map/equivalent, declared roots, and local-context paths;
+- map links to deleted/excluded paths and entry/manifest/test/verification targets;
+- `.picm/` exclusion and visible topology against mapped major boundaries;
+- likely new/removed meaningful components and root/local responsibility conflicts;
+- verification pointers against authoritative manifests/scripts/tests;
 - generated/do-not-edit and cross-boundary constraints for obvious staleness;
-- cited evidence for optional impact notes or operational status; and
+- evidence for optional impact/status notes;
 - one representative coding cold-agent walk.
 
-Keep discovery manifest/documentation-level; do not build a full semantic dependency graph.
+Avoid a full semantic dependency graph.
 
 ### Strict
 
-Run Balanced, plus:
+Run Balanced, then inventory meaningful boundaries across all declared roots; check independent apps/services/packages for context coverage; compare manifest-level internal dependencies with documented constraints; inspect mapped local contexts for stale paths, conflicting responsibilities, and duplicated facts; review relevant agent/developer/architecture docs for consolidation; and walk more than one materially different boundary when needed.
 
-- inventory meaningful boundaries across all declared roots;
-- check context coverage for independently operated apps/services/packages;
-- compare manifest-level internal dependencies with documented cross-boundary constraints;
-- inspect mapped local contexts for stale paths, responsibility conflicts, and duplicated durable facts;
-- review relevant agent/developer/architecture documentation for consolidation opportunities; and
-- run representative walks across more than one materially different boundary when needed.
-
-Both depths apply the general rubric's redundancy review to their inspected instruction and pointer set. Balanced remains representative; Strict uses its broader coverage. Don't present either as an exhaustive workspace-wide duplicate scan.
-
-Strict does not mean exhaustive source comprehension, provenance, or authority to rewrite.
+Both depths apply the general rubric's redundancy review to inspected instructions/pointers. Balanced remains representative; Strict uses broader coverage. Neither is an exhaustive workspace-wide duplicate scan. During initial adoption, load and apply [redundancy review](redundancy-review.md) directly after inventorying the inspected documents.
 
 ## Coding cold-agent walk
 
-Choose a representative coding task; ask the user when none is visible.
+Choose a visible representative task or ask the user. From root:
 
-1. Orient from root to the coding/workflow route and map/equivalent.
-2. Locate the component that owns the task without reading the whole repository.
-3. Recover supported entry/public surface, constraints, and adjacent dependencies. An optional impact note should expose a non-obvious effect, not restate imports/wiring.
-4. Identify authoritative tests/checks and where their commands are defined.
-5. Confirm generated/do-not-edit, security, migration, and coordination boundaries before editing.
-6. Confirm the review surface is a code diff plus test/check result with cross-boundary effects and unknowns.
+1. Reach coding/workflow routing and the map/equivalent, then locate the owner without whole-repo reading.
+2. Recover a supported entry/public surface, constraints, and adjacent dependencies. Impact notes expose non-obvious effects, not imports/wiring.
+3. Locate authoritative tests/checks and command definitions; identify generated, security, migration, and coordination boundaries.
+4. Confirm the review surface: code diff plus check result, with cross-boundary effects and unknowns.
 
-Warn when a normal task cannot reach an owner, entry point, or verification source without guesswork. A longer route is acceptable when each read narrows context.
+Warn when owner, entry, or checks require guesswork. A longer chain is acceptable when each read narrows context.
 
-## Drift checks
+## Drift and repair
 
-- **Routing:** removed map/component targets, coding routes through `.picm/`, unclear hybrid routing, or duplicated large maps. Typical repair: Tier 1.
-- **Topology:** stale roots/components, unmapped meaningful boundaries, split/merge responsibility drift, or trivial local contexts beside important unmapped boundaries. A new package is a candidate, not proof that it needs context. Typical repair: Tier 1 or Tier 2.
-- **Entry point and verification:** moved entry points, dead tests, copied commands that disagree with manifests, missing boundary checks, or generated code presented as ordinary. Prefer pointers to authoritative definitions. Typical repair: Tier 2.
-- **Responsibility and dependency:** conflicting ownership, documented dependency rules versus manifests, stale public APIs, or lost user-confirmed coupling. Do not infer architecture from imports alone. Typical repair: Tier 2, or Tier 3 for durable judgment.
-- **Impact/status:** unsupported or stale impact notes, unjustified known exclusions, status labels contradicted by evidence, or human-confirmed status presented as inference. Do not infer `leftover`/`ghost` from missing imports. Typical repair: Tier 2 or Tier 3.
-- **Documentation:** diverging repeated architecture facts, full compatibility files instead of pointers, or stale setup/history payload crowding routing. Recommend a supported canonical home; consolidation is optional unless routing is unsafe.
+| Finding | Typical repair |
+| --- | --- |
+| Removed map/component targets, `.picm/` coding routes, unclear hybrid routing, duplicated large maps | Tier 1 routing |
+| Stale roots, meaningful unmapped boundaries, split/merge drift, trivial context beside important gaps | Tier 1/2; a new package alone doesn't justify context |
+| Moved entry points, dead tests, stale copied commands, missing checks, generated code presented as ordinary | Tier 2; point to authoritative definitions |
+| Conflicting ownership/dependency rules, stale APIs, lost confirmed coupling | Tier 2, or Tier 3 for durable judgment; imports alone don't establish architecture |
+| Unsupported/stale impact, exclusions, or status; human confirmation disguised as inference | Tier 2/3; missing imports don't establish leftover/ghost |
+| Diverging architecture facts, full compatibility copies, setup/history crowding routing | Supported canonical home; consolidation optional unless routing is unsafe |
 
-## Report additions
+## Report and completion
 
-In the maintenance summary, state primary/composable codebase mapping, map shape and roots inspected, one-run depth, and areas deliberately not inspected. Coding findings cite evidence and confidence when inferred. Keep map presence, correctness, and human approval separate.
+Add mapping profile/capability, shape/roots, one-run depth, inspected areas, and omissions to the general report. Cite evidence and confidence for inferred findings. Keep map presence, correctness, and human approval separate.
 
-For each proposed map change, name whether it affects root routing, root map/equivalent, local context, maintainer metadata, or existing developer/architecture documentation. Preserve human knowledge and propose the smallest evidence-backed patch; never regenerate an entire map merely because drift exists.
-
-## Automation boundary
-
-This capability is manually invoked. Do not add watchers, scheduled scans, automatic commits, or automatic rewrites.
+Name whether each proposed patch affects root routing, map/equivalent, local context, metadata, or developer/architecture docs. Preserve human knowledge and use the smallest evidence-backed repair, not whole-map regeneration. No watchers, scheduled scans, automatic commits, or rewrites. Before cycle completion/configuration, load [settings guidance](settings-guide.md) and follow the calling workflow.

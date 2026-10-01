@@ -1,108 +1,49 @@
-# Coding Repository Adoption Guide
+# Coding adoption
 
-Use this guide for `/picm-adopt coding` or when ordinary adoption identifies a likely coding repository and the user selects coding adoption. Map agent-relevant context without documenting every file or claiming complete architecture knowledge.
+Load for `/picm-adopt coding`, selected coding adoption, or hybrid codebase mapping. Apply the [shared contract](../SKILL.md); map useful context without documenting every file or claiming complete architecture knowledge.
 
-## Scope and privacy
+## Entry and scope
 
-Use bounded, relevant inspection. Honor Git ignores, persisted `privacy.excludedPaths`, session exclusions, and known sensitive paths; do not open or summarize excluded/private material. Do not claim that ordinary tools enforce those boundaries universally. Avoid broad traversal of unrelated areas, symlink targets, nested repositories, generated/dependency trees, and history unless the user clearly scopes them and they are eligible.
+The shortcut skips classification only. Otherwise orient at path/manifest level: language/workspace manifests, source/tests, build/lint/test/CI definitions, and architecture/developer docs. Offer primary **Coding Repository**, composable codebase mapping alongside another profile, or normal adoption. Overlapping code/workflow scopes are valid; root routing says when to load either or both.
 
-A named external file, folder, or nested repository may be read as conversationally scoped context. It does not authorize writes there, initialization, fetching, or other repository changes. If a needed location is unclear or conflicts with a sensitive exclusion, ask about that specific conflict.
+Keep inspection bounded. Avoid unrelated/generated/dependency trees, history, unclear symlink targets, and nested repositories unless explicitly scoped and eligible. External/nested context grants no writes, initialization, or fetching. Ask about specific scope/exclusion conflicts. Private fixtures/local configuration/sensitive findings stay out of maps; other eligible files aren't automatically safe.
 
-Keep credentials, private fixtures, local configuration, and sensitive findings out of maps and reports. The boundary reduces exposure; it is not proof that every remaining file is safe.
+## Decisions and initial examination
 
-## Entry and profile choice
+Ask only decisions not safely recoverable from the repository:
 
-The explicit shortcut skips only classification. Otherwise use a shallow path-level orientation to identify language/workspace manifests, source/test areas, build/lint/test/CI configuration, and developer/architecture documentation; do not deep-scan merely to classify.
+| Decision | Options / evidence |
+| --- | --- |
+| Mapping approach | **Root map** for small/cohesive repos; **distributed map** at user-confirmed meaningful boundaries; **scan and recommend** for a broader bounded topology assessment before choosing. |
+| Adoption depth | **Additive:** preserve docs, add missing routing/maps, report overlap/conflict. **Curated:** inventory eligible agent/developer/architecture docs and propose consolidation. Neither authorizes edits. |
+| High-value hints | Meaningful apps/services/packages, local-context/no-context boundaries, legacy/do-not-extend/generated areas, coupled components, public surfaces, and verification gates. Check hints where eligible; retain disagreements/unknowns. |
 
-Offer:
+Scan and recommend is analysis, not a stored shape. Explain evidence, high-value boundaries, context cost, uninspected areas, and uncertain responsibilities; record the result as `root` or `distributed`.
 
-1. **Coding Repository** as the primary profile for code-first work;
-2. **codebase-map capability** alongside a Stage Pipeline, Specialist Folder, Team / Role OS, or Custom profile for hybrid work; or
-3. normal adoption.
+Initial adoption loads [coding maintenance](coding-maintenance-rubric.md) and performs its **Strict** examination. Record `capabilities.codebaseMap.maintenancePreset: "strict"` as legacy baseline metadata, not permission or future depth selection. Historical `light`, `balanced`, and `strict` remain readable; active depth choices exclude Light.
 
-Coding and workflow scopes can overlap. Root routing says when to load coding context, workflow context, or both; do not force exclusive directory ownership.
+## Map placement and ownership
 
-## Interview
+Keep a genuinely small map in root routing; use `CONTEXT-MAP.md` for a substantial/hybrid map; or reuse adequate `ARCHITECTURE.md`/developer guidance and add missing pointers. Link the chosen map from canonical `AGENTS.md`/`CLAUDE.md`.
 
-Ask only decisions not recoverable safely from the repository.
+Root routing owns behavior/task routes; the map indexes boundaries/responsibilities, authoritative context, entry/public surfaces, and verification sources. Local `CONTEXT.md` holds purpose, read-first files, dependencies/constraints, risks, checks, coordination, and unknowns. Supported maps also expose cross-boundary constraints and generated/do-not-edit areas.
 
-### Mapping approach
+Prefer pointers to manifests, scripts, tests, and decisions over copied commands/dependency lists. Ownership, coupling, and invariants need visible evidence or user confirmation. Add local context only for distinct ownership, independent entry/public/build/test contracts, material safety/operational constraints, frequent independent work, or coordination risk—not every package.
 
-- **Root map** — a bounded scan and concise map for a small/cohesive repository.
-- **Distributed map** — root routing plus local context at user-confirmed meaningful boundaries.
-- **Scan and recommend** — a broader, still bounded topology assessment before recommending root or distributed shape.
+When drafting, adapt [map](../templates/context-map.md) and [boundary](../templates/code-boundary-context.md) templates, omitting unused sections and authoring notes.
 
-`Scan and recommend` is analysis, not an output shape. Explain the evidence used, likely high-value boundaries, context-cost tradeoff, areas not inspected, and uncertain responsibilities needing confirmation. Record the resulting shape as `root` or `distributed`.
+## Optional impact and status
 
-### Adoption depth
+Omit by default. Impact notes serve recurring/high-risk non-local effects expensive to recover by navigation: external consumers, generated artifacts, migrations, configuration/reflection registration, deployment, or confirmed coupling. Cite affected surfaces, evidence/confirmation, confidence, and unknowns; avoid copied import graphs. Known exclusions also need evidence.
 
-- **Additive** — preserve existing documentation and add only missing routing/maps; report repetition or conflicts as optional findings.
-- **Curated** — inventory agent/developer/architecture documentation and draft a consolidation or restructure direction.
+Navigation-focused status may be **live** (active/authoritative), **leftover** (explicitly superseded/deprecated), **ghost** (planned/stubbed/named but visibly unwired), or **unknown**. Cite evidence or confirmation; ask about ambiguous/consequential labels. Missing imports alone prove neither leftover nor ghost.
 
-Curated is permission to analyze and propose, not to apply. Use `preview-review-protocol.md` before changes, and make linked moves or deletions clear in the final direction.
+## Curated direction and readiness
 
-### Initial Strict examination and user hints
+Keep file-role inventory separate from consolidation. Record each relevant eligible document's path, observed purpose, overlap/conflict, proposed role, and confidence. Distinguish repeated facts from intentional compatibility shims; propose a supported canonical home and thin reachable pointers. Preserve terminology/history; archive/dead status is a user decision. Keep source refactors outside documentation consolidation.
 
-Initial coding adoption applies the Strict checks from `coding-maintenance-rubric.md` and records `capabilities.codebaseMap.maintenancePreset: "strict"` as legacy baseline metadata. It does not select later maintenance depth or authorize changes.
+Coding is **Ready** when a cold agent can reach coding/hybrid context, root map/equivalent, relevant boundary, entry point, and verification source without whole-repo scanning, see generated/security boundaries, and skip `.picm/` in normal work.
 
-Ask for high-value hints only: meaningful apps/services/packages, boundaries that should or should not receive local context, legacy/do-not-extend areas, coupled components, real public surfaces, verification gates, and generated/do-not-edit areas. Treat hints as evidence to check where safely possible; retain disagreement or uncertainty for user correction.
+Minimal metadata may hold profile/routing/path hints, readiness/status, map shape/roots/equivalent/local contexts, and baseline preset. A hybrid preserves its workflow profile and adds the capability. Normalize persisted `privacy.excludedPaths`, preserving other valid privacy fields; load [settings guidance](settings-guide.md) before exclusion/cadence changes.
 
-## Map placement and content
-
-Use this order:
-
-1. keep a genuinely small map in existing root routing;
-2. use `CONTEXT-MAP.md` for substantial or hybrid maps, linked from canonical `AGENTS.md` or `CLAUDE.md`; or
-3. reuse adequate `ARCHITECTURE.md` or developer guidance and add only missing pointers.
-
-Responsibilities:
-
-- root `AGENTS.md`/canonical `CLAUDE.md`: behavior and task-to-context routing;
-- `CONTEXT-MAP.md` or equivalent: boundaries, responsibilities, context, entry/verification pointers;
-- local `CONTEXT.md`: boundary-specific purpose, read-first files, entry points, dependencies/constraints, risks, verification, coordination, and known unknowns.
-
-A useful map identifies, where supported by evidence: repository purpose and shape; meaningful boundaries; authoritative context/docs; entry points or public surfaces; tests and authoritative verification sources; cross-boundary constraints; generated/do-not-edit areas; and explicit unknowns. Prefer pointers to manifests, scripts, tests, and architecture decisions over copied dependency lists or command definitions. Do not claim ownership, coupling, or invariants unsupported by visible evidence or user confirmation.
-
-Use local context only for meaningful boundaries: distinct ownership, independent entry/public surface, independent build/test contract, material operational/safety constraints, frequent independent work, or cross-boundary coordination risk. Do not add `CONTEXT.md` to every package.
-
-## Optional impact notes and status
-
-Default to omission. An impact note is useful only for a recurring or high-risk change whose important non-local effects are not cheap to recover from ordinary navigation, such as external consumers, generated artifacts, migrations, configuration/reflection registration, deployment, or user-confirmed coupling. Include affected surfaces, cited evidence or confirmation, confidence, and unknowns—not copied import graphs.
-
-Operational status is optional and navigation-focused:
-
-- **live** — active and authoritative by evidence/confirmation;
-- **leftover** — present but explicitly superseded or deprecated;
-- **ghost** — planned/stubbed/named but visibly not wired;
-- **unknown** — evidence cannot support another status.
-
-Ask before changing an ambiguous or consequential classification. Missing imports alone do not prove a status.
-
-## Curated documentation analysis
-
-Keep the optional file-role inventory separate from a curated consolidation direction. For relevant eligible agent/developer/architecture documents, record:
-
-| Path | Observed purpose | Overlap/conflict | Proposed role | Confidence |
-| --- | --- | --- | --- | --- |
-
-Distinguish repeated facts from intentional compatibility shims; prefer one supported canonical home and thin pointers. Preserve terminology and useful history. Treat archive/dead status as a user decision. Do not mix source-code refactors into documentation consolidation.
-
-## Readiness and minimal config
-
-Coding adoption is **Ready** only when a cold agent can identify coding/hybrid context, reach a root map/equivalent, find the relevant boundary, entry point, and verification source without scanning the whole repo, see generated/security boundaries, and avoid `.picm/` in normal coding work.
-
-Minimal metadata may record adoption status/readiness, profile, routing source, path hints, and a codebase-map shape, roots, map/equivalent, local contexts, and `maintenancePreset: "strict"`. A hybrid preserves its workflow profile and adds the capability. Existing `light`, `balanced`, and `strict` preset values remain readable legacy metadata; they do not select a run depth. Persisted privacy exclusions stay normalized under `privacy.excludedPaths`, preserving other valid privacy fields.
-
-## Direction and first coding run
-
-Before edits, follow the shared contract: explain the map or documentation outcome, affected areas, material consolidation/move/delete effects, preserved routing, and uncertainty; wait for conversational sign-off; then use ordinary tools and validation. Do not regenerate or overwrite a whole map merely because drift exists.
-
-End with a user-facing checklist:
-
-1. state the coding task normally;
-2. the agent follows canonical root routing to the map/equivalent, local boundary, entry point, and verification source;
-3. it makes the smallest appropriate change and runs real checks;
-4. the user reviews the diff and check result; and
-5. cross-boundary effects and unknowns stay visible.
-
-Recommend `/picm-maintain` after the first real coding task and when boundaries, manifests, commands, or architecture documentation change.
+Before edits, present material consolidation/move/delete effects, preserved routing, and uncertainty; wait for sign-off under the shared contract. Patch evidence-backed drift rather than regenerating an entire map. Finish with the Coding Repository first-run checklist in [layout profiles](layout-profiles.md); recommend maintenance after first real coding use or changes to boundaries, manifests, commands, or architecture docs.

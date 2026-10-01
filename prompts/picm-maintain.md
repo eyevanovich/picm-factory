@@ -2,7 +2,7 @@
 description: Check and improve a PiCM/ICM workspace using the maintenance rubric
 argument-hint: '[strict | balanced | coding | trace "drift symptom" | routing | handoffs | stale-context | security]'
 ---
-Use the repository-only `picm-factory` skill. Load `SKILL.md` before proceeding.
+Load this package's `picm-factory` `SKILL.md` before following workspace read-first prerequisites. Apply its scope/privacy contract before workspace reads or searches; an excluded prerequisite needs an already-sanitized replacement, not an approval override.
 
 Mode: maintain
 Command: /picm-maintain
