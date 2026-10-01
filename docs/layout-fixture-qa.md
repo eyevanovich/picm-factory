@@ -8,16 +8,15 @@ Dated observations below retain the multiplexer used when they were recorded; us
 
 ## Setup pattern
 
-From the PiCM Factory repository:
+From the PiCM Factory repository, after explicit approval to create and modify a fresh disposable target. Do not delete or reuse a pre-existing directory:
 
 ```bash
 FIXTURE="test/fixtures/layout-profiles/stage-pipeline/newsletter-production"
-TARGET="/tmp/picm-fixture-newsletter-production"
-rm -rf "$TARGET"
-cp -R "$FIXTURE" "$TARGET"
-cd "$TARGET"
-pi install -l /path/to/picm-factory
-pi
+TARGET="$(mktemp -d /tmp/picm-fixture-newsletter-production.XXXXXX)" &&
+  cp -R "$FIXTURE/." "$TARGET" &&
+  cd "$TARGET" &&
+  pi install -l /path/to/picm-factory &&
+  pi
 ```
 
 Then run the command under test inside Pi:
@@ -35,7 +34,7 @@ For pre-adoption custom fixtures, run:
 ## Cold-agent walk-test procedure
 
 Use the authoritative procedure and calibration in
-[`maintenance-rubric.md`](../skills/picm-factory/references/maintenance-rubric.md#cold-agent-walk-test)
+[`maintenance-rubric.md`](../skills/picm-factory/references/maintenance-rubric.md#cold-agent-walk)
 during a general `/picm-maintain` smoke. Record fixture-specific observations here.
 
 ## `/picm-help` smoke check
