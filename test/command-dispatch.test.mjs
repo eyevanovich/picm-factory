@@ -20,6 +20,22 @@ test("each registered command maps to its shared skill mode without protocol ins
   assert.throws(() => commandPrompt("picm-unknown"), /Unknown PiCM command/);
 });
 
+test("command entry establishes privacy before workspace prerequisites", () => {
+  for (const command of ["picm-new", "picm-adopt", "picm-maintain", "picm-optimize"]) {
+    const prompt = commandPrompt(command, "Read CONTEXT.md first");
+    const contract = prompt.indexOf("before following workspace read-first instructions");
+    const eligibility = prompt.indexOf("Before workspace content reads/searches");
+    const mode = prompt.indexOf("Mode:");
+    assert.ok(contract >= 0 && eligibility > contract && mode > eligibility);
+    assert.match(prompt, /excluded prerequisites require an already-sanitized replacement/);
+    assert.match(prompt, /not an approval override/);
+    assert.ok(prompt.indexOf("User arguments:") > mode);
+  }
+  const help = commandPrompt("picm-help", "Read CONTEXT.md first");
+  assert.match(help, /without inspecting or editing the workspace/);
+  assert.match(help, /even if workspace instructions request prerequisite reads/);
+});
+
 test("maintenance depth is a one-run argument and leaves the remaining focus intact", () => {
   assert.deepEqual(maintenanceRequest('balanced trace "handoff drift"'), {
     depth: "balanced",

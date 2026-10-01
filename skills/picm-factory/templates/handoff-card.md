@@ -16,15 +16,14 @@
 ## Summary
 {{picm:summary-for-next-role}}
 
-## Key details
-- {{picm:key-detail}}
-- {{picm:key-detail}}
+## Facts / decisions
+{{picm:grounded-facts-and-decisions}}
 
 ## Context
 {{picm:relevant-background}}
 
-## Gaps / unknowns
-- {{picm:unknown}}
+## Blockers / risks / gaps
+{{picm:blockers-risks-and-unknowns}}
 
-## Next action
-{{picm:next-action}}
+## Review and next action
+{{picm:human-check-and-next-action-from-reviewed-handoff}}

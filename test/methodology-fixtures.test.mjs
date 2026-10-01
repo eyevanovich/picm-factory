@@ -79,7 +79,7 @@ test("repository fixtures keep migrated agent guidance and curated conflicts", (
 
 test("maintenance guidance distinguishes artifact presence, correctness and approval", () => {
   const guide = readFileSync(resolve("skills/picm-factory/references/maintenance-rubric.md"), "utf8");
-  assert.match(guide, /Read relevant artifact content when needed to spot unsupported assertions or an unmet review gate/);
+  assert.match(guide, /Read relevant eligible content to check unsupported claims or unmet review gates/);
   assert.match(guide, /report presence, correctness, and human approval separately/);
   assert.match(guide, /Trace mode|trace/i);
 });

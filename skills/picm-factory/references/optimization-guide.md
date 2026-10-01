@@ -1,74 +1,45 @@
-# Agent-Facing Documentation Optimization Guide
+# Documentation optimization
 
-Use this guide for `/picm-optimize`. Optimization is documentation-only and outcome-preserving: improve navigation and maintenance without silently weakening what agents are expected to do. It does not promise semantic equivalence or numeric token savings.
+Use for `/picm-optimize` or accepted maintenance-integrated optimization under the [shared contract](../SKILL.md). Improve navigation, clarity, and upkeep while preserving unique constraints and intended outcomes. This isn't a semantic-equivalence proof or a promise of token savings.
 
-## Maintenance-integrated use
+## Scope
 
-When maintenance includes optimization, use this guide as the optimization contract while retaining the normal maintenance report. Do not repeat questions already answered in that conversation. The documentation-only scope, preservation ledger, five-row audit, and final-direction/sign-off sequence remain the same.
+Discover eligible agent-facing instructions, maps, contracts, skills/prompts, routed references/recipes/handoffs/roles/stages/rules/examples/identity, and relevant pointed-to documents. Names are signals, not a schema. Follow relevant pointers within agreed scope, not every link; ask about an unclassifiable custom area. Read deliberately; revisit only for freshness, incomplete evidence, or uncertain operation results.
 
-## Scope and non-goals
+Edit documentation only. Keep source code, tests, manifests, build/runtime paths, executable scripts, `.picm/` policy/config/reports, generated docs, per-run artifacts, and unrelated material unchanged. Respect the shared pre-read privacy boundary and generated/do-not-edit exclusions. Build no crawler, optimizer/equivalence engine, orchestration layer, or custom TUI.
 
-Inspect eligible agent-facing documentation in the requested workspace scope: root/local `AGENTS.md` or `CLAUDE.md`, maps and contracts, agent-consumed references/workflows/handoffs/roles/stages/rules/examples/identity guidance, skills/prompts, and visible documents reached through relevant routing pointers. Path names are signals, not a schema.
+During maintenance, retain its report and reuse answered intake; the scope, ledger, audit, and sign-off requirements below still apply.
 
-Honor Git ignores, persisted `privacy.excludedPaths`, session exclusions, known sensitive paths, and generated/do-not-edit boundaries. Do not inspect or summarize excluded/private content. These are agent-followed boundaries, not a promise that tools provide a sandbox.
+## Preservation ledger and redundancy
 
-Do not edit source code, tests, manifests, build/runtime paths, executable scripts, `.picm/` policy/configuration/reporting, generated documentation, per-run artifacts, or unrelated workspace material. Do not build an optimization engine, semantic-equivalence system, crawler, orchestration layer, or custom TUI.
+For each inspected document, record unique constraints: privacy/safety, permissions/prohibitions, approval/review, commands/checks, behavior/routing, outputs/handoffs/uncertainty, domain facts/quality/terminology/exceptions, and authoritative/generated boundaries.
 
-## Discovery and preservation ledger
+Preserve each in place or at a clearly reachable authoritative home. Intentional repetition, transition cases, fixtures, and compatibility shims are also constraints; retain them or ask for a preservation mechanism. The ledger aids review, not proof of equivalence.
 
-Identify the relevant agent-document set from visible routing and document purpose, then inspect each identified document once. Follow relevant visible pointers, not every reference mechanically. If a likely custom area cannot be classified, ask rather than silently omitting it or opening unrelated material.
+Then load and apply [redundancy review](redundancy-review.md) within and across the discovered set before opportunities or a no-op conclusion. Include dispositions and coverage limits in the audit; compare authoritative-home claims across every inspected document. Contradictions or repeated claims without a supported canonical home need an opportunity or user decision.
 
-For each inspected document, record unique visible constraints in these categories:
+## Writing-lens audit and opportunities
 
-- safety and privacy;
-- permissions and prohibited actions;
-- approval and human-review boundaries;
-- required commands, checks, and verification;
-- behavioral and routing expectations;
-- handoff, output, and uncertainty requirements;
-- domain terminology, facts, quality bars, and exceptions; and
-- source-of-truth and generated/do-not-edit boundaries.
+Begin the first discovery response with `### Writing-lens audit` and these five ordered rows, before opportunities, direction, or no-op:
 
-This qualitative preservation ledger is a review aid, not an equivalence proof. Preserve each unique constraint in place or at a clearly reachable authoritative destination. A stated intentional duplication, transition case, fixture, or compatibility shim is itself a constraint; leave it or ask for a preservation mechanism.
+| Row | Examine |
+| --- | --- |
+| **Context pointers** | Target plus distinct read conditions; always-needed prerequisites remain reachable. |
+| **Information hierarchy** | Shared constraints near execution; conditional reference disclosed; definitions/rules/caveats co-located. |
+| **Canonical home** | Equivalent guidance at one supported reachable home; conflicts need a decision. |
+| **Completion criteria** | Recognizable existing results, without invented requirements/gates. |
+| **Pruning** | True duplication, stale cheap-lookup caches, and behavioral no-ops; retain intentional safety/review/local repetition. |
 
-## Finding useful opportunities
+For each row use **Pass**, **Opportunity**, or **Not applicable**, with inspected paths and evidence. An uninspected category isn't Pass or Not applicable. Reference one redundancy finding from multiple rows instead of repeating its payload.
 
-An opportunity needs visible evidence and a concrete navigation, maintenance, consistency, or clarity benefit. Suitable changes include tightening prose without dropping qualifiers, removing true duplication after finding a supported canonical home, replacing copied details with a thin reachable pointer, consolidating related guidance while retaining local routing, or separating stable instruction from background/reference.
+Each opportunity needs visible evidence and a concrete clarity/navigation/maintenance/consistency benefit. State paths, problem, proposed change, expected benefit, preserved constraints, risk/unknowns, and useful diff. Tighten prose with qualifiers intact, consolidate only equivalent clauses, replace expensive copies with reachable pointers, or separate reference from active steps. Leave short, clear, intentionally local, well-routed documents alone.
 
-Apply this writing lens after the ledger:
+## Selection, changes, and completion
 
-- **Context pointers:** name target and condition for reading it; do not hide stable prerequisites behind a weak pointer.
-- **Information hierarchy:** keep always-needed constraints near execution; progressively disclose conditional background.
-- **Canonical home:** consolidate only genuinely equivalent guidance at a visible reachable source.
-- **Completion criteria:** clarify an existing procedure's recognizable result without inventing requirements or gates.
-- **Pruning:** remove true duplication, stale easy-to-find caches, and behavioral no-ops while retaining intentional safety, review, and local-boundary repetition.
+Selections inform a direction; they aren't sign-off. Check selected edits against the ledger and affected routes. Revise or stop if a unique constraint becomes lost, unreachable, or uncertain. Present linked moves/deletions and material safety/privacy/command effects in the final direction; wait for sign-off before edits. Realign only for material departures, not every wording adjustment.
 
-Do not manufacture edits for short, clear, intentionally local, or already well-routed documents. Do not claim semantic equivalence or token savings.
+Validate touched pointers/local routes and every ledger constraint; confirm protected non-documentation/generated/per-run/`.picm/` material remains unchanged. Report qualitative results and uncertainty without claiming semantic equivalence or unmeasured token savings. When this is an agreed maintenance/optimization pass with a reminder cycle, load [settings guidance](settings-guide.md) before completion.
 
-## Required discovery report
-
-Before presenting opportunities, a direction, or a no-op result, begin the first discovery response with `### Writing-lens audit` and include these five ordered rows. Ground each in inspected document-specific evidence; an uninspected category is not Pass or Not applicable.
-
-- **Context pointers** — **Pass**, **Opportunity**, or **Not applicable**: inspected path(s) and evidence.
-- **Information hierarchy** — **Pass**, **Opportunity**, or **Not applicable**: inspected path(s) and evidence.
-- **Canonical home** — **Pass**, **Opportunity**, or **Not applicable**: inspected path(s) and evidence.
-- **Completion criteria** — **Pass**, **Opportunity**, or **Not applicable**: inspected path(s) and evidence.
-- **Pruning** — **Pass**, **Opportunity**, or **Not applicable**: inspected path(s) and evidence.
-
-Before a no-op conclusion, compare source-of-truth claims across all inspected agent-facing documents. A contradiction or a repeated claim with no visible canonical home is an opportunity for a canonical home, thin pointer, or user decision.
-
-For each opportunity, state affected paths, visible evidence/problem, qualitative optimization, expected benefit, preserved constraints, uncertainty/risk, and the most useful diff to inspect.
-
-## Selected changes
-
-Let the user select, combine, reject, or revise opportunities. Selection is design input, not sign-off. For selected work, check the proposed edits against the preservation ledger and relevant pointers; if a unique constraint would be lost, unreachable, or uncertain, revise or stop.
-
-Then apply `preview-review-protocol.md`: state one concise final direction, including linked reorganization/deletion and material safety/privacy/command effects, and wait for conversational sign-off. After sign-off, edit with ordinary tools, validate reachable pointers and local routing, and re-read affected documents only when freshness or an operation result is uncertain. A changed direction needs fresh sign-off.
-
-## Verification and completion
-
-After changes, compare edits against the preservation ledger; check that touched pointers remain visible and reachable; confirm no source/build/runtime, `.picm/`, generated, or unrelated files changed; and report qualitative results plus remaining uncertainty. This is not proof of semantic equivalence.
-
-If discovery produces no useful evidence-backed proposal, do not manufacture one. Report exactly:
+For a no-op, provide the required audit, then use exactly this conclusion:
 
 `No worthwhile optimizations found`

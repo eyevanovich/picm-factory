@@ -1,49 +1,36 @@
-# Repository Context Map
+<!-- PiCM authoring: keep meaningful evidence-backed boundaries only; omit impact/status when they add no navigation value. Remove this comment from generated output. -->
+# Repository context map
 
-## Purpose
-Explain how this map helps an agent locate the smallest authoritative context needed for a coding task. Keep behavioral rules in the canonical root `AGENTS.md` or `CLAUDE.md`.
-
-## Repository shape
-- Primary product/runtime areas:
-- Shared libraries or infrastructure:
-- Workflow/operations areas, if applicable:
+## Purpose and shape
+{{picm:repository-purpose-product-shared-and-workflow-areas}}
+Behavior and task routing live in {{picm:canonical-root-instructions}}.
 
 ## Context boundaries
-
-| Area | Responsibility | Read next | Entry point / authority | Verification source |
+| Area | Responsibility | Read next | Entry / authority | Verification source |
 | --- | --- | --- | --- | --- |
-| `path/` | What this boundary owns | Local context or authoritative docs | Public surface, manifest, or startup path | Test folder, manifest script, or check definition |
-
-Include only meaningful boundaries. Point to authoritative files rather than copying large command lists or dependency inventories. Do not restate relationships an agent can recover cheaply from ordinary imports, manifests, or wiring.
+| {{picm:boundary-path}} | {{picm:owned-responsibility}} | {{picm:local-context-or-authoritative-doc}} | {{picm:entry-public-surface-or-manifest}} | {{picm:authoritative-test-or-check-definition}} |
 
 ## Non-obvious change impact (optional)
-Use this only for high-friction boundaries where important effects are not cheap to recover from code navigation. Omit it when imports and wiring already answer the question.
-
-| Boundary | Potentially affected | Known exclusions | Evidence / confidence |
+| Boundary | Affected non-local surfaces | Known exclusions | Evidence / confidence |
 | --- | --- | --- | --- |
-| `path/` | External contract, generated artifact, migration, deployment step, or other non-local surface | Explicitly confirmed unaffected surface, if any | Source path, architecture decision, user confirmation, and confidence |
+| {{picm:high-friction-boundary}} | {{picm:external-consumer-generated-artifact-migration-or-deployment}} | {{picm:evidence-backed-unaffected-surface-if-any}} | {{picm:source-decision-or-user-confirmation}} |
 
-Treat an exclusion as known only when visible evidence or the user supports it. Put unsupported effects and exclusions in **Unknowns**.
+Use for recurring/high-risk effects expensive to recover from ordinary navigation, not copied import graphs. Unsupported effects/exclusions belong in Unknowns.
 
 ## Operational status (optional)
-Use status only when it changes how an agent should navigate or edit an area. Omit this section by default.
-
 | Area | Status | Evidence / confirmation |
 | --- | --- | --- |
-| `path/` | `live`, `leftover`, `ghost`, or `unknown` | Entry point, registration, deprecation notice, replacement path, user confirmation, or unresolved uncertainty |
+| {{picm:area}} | {{picm:live-leftover-ghost-or-unknown}} | {{picm:entry-registration-deprecation-replacement-or-user-confirmation}} |
 
-An agent may propose a status from cited evidence, but should request user confirmation when the classification is ambiguous or consequential. Absence of imports alone does not prove that an area is leftover or ghost.
+Use status only when it changes navigation/editing. Ask about ambiguous/consequential classifications; missing imports alone don't establish leftover/ghost.
 
 ## Cross-boundary constraints
-- Note confirmed coupling, dependency direction, shared schemas, migration order, or review requirements.
-- Keep unsupported inferences in **Unknowns** instead of presenting them as rules.
+{{picm:confirmed-coupling-dependency-direction-schemas-migration-or-review}}
 
 ## Generated and restricted areas
-- Generated/do-not-edit paths:
-- Security/private handling rules:
-- Submodule or external-repository boundaries:
-
-Never list ignored-file contents or secret details.
+{{picm:generated-security-and-external-repository-boundaries-without-sensitive-content}}
 
 ## Unknowns
-- Record responsibilities, entry points, ownership, or constraints that still require confirmation.
+{{picm:unverified-responsibilities-entries-ownership-constraints-and-impact}}
+
+Point to authoritative commands/manifests/docs rather than copying cheap lookups. Keep unsupported inferences visible, not presented as rules.

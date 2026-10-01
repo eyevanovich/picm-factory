@@ -1,127 +1,59 @@
-# Maintenance Rubric
+# Maintenance rubric
 
-Use this guide for `/picm-maintain`.
+Use for `/picm-maintain` under the [shared contract](../SKILL.md). Maintain is a heuristic health check or focused drift investigation, not provenance tracing or automatic repair.
 
-- **Pass** — good as-is.
-- **Warning** — likely issue that may hurt output quality, safety, or routing.
-- **Suggestion** — optional improvement.
+## Intake and discovery
 
-Use hard failures only when the project is unreadable or dangerous.
+1. Establish general health, focused check, or trace scope from supplied arguments. Identify the visible profile before the summary; custom layouts remain valid. Identity/rules/reference/workflows suggesting one helper indicate **Specialist Folder**; examples are optional. Check its actual routes, not a mandatory file set.
+2. Offer optional agent-document optimization with **No** as the default. Reuse an already supplied answer. When included, load [optimization](optimization-guide.md); keep its documentation-only scope, preservation checks, and audit within the normal maintenance report.
+3. Inspect eligible task-relevant context. Load [coding maintenance](coding-maintenance-rubric.md) for a Coding Repository profile, codebase-map capability, or visible `CONTEXT-MAP.md`; apply supplied one-run depth without mutating stored metadata.
+4. Load and apply [redundancy review](redundancy-review.md) to compare instructions/pointers within and across inspected files. This is required even when optional optimization is declined. Focused checks/trace keep it relevant to the requested scope; report dispositions and coverage before repair proposals.
 
-## Maintainer posture
+General health runs the rubric and a cold-agent walk. Focused checks limit both to relevant criteria; trace uses the symptom procedure below rather than forcing a broad walk. Report unknowns instead of passing uninspected criteria.
 
-Maintain is a heuristic health report and focused drift-investigation helper for folder-agent and coding-repository workspaces. It must not silently rewrite a user's system or imply provenance-grade causal tracing.
+## Severity and repair tiers
 
-Inspect a sensible, eligible scope. Honor Git ignores, persisted `privacy.excludedPaths`, session exclusions, and known sensitive paths; keep sensitive findings out of reports. These are agent-followed boundaries, not a sandbox claim. Load `coding-maintenance-rubric.md` when the Coding Repository profile, `capabilities.codebaseMap`, or visible `CONTEXT-MAP.md` is present.
+**Pass** means good as inspected; **Warning** means a likely output-quality, safety, or routing issue; **Suggestion** means optional improvement. Reserve hard failures for unreadable/dangerous workspaces.
 
-For every non-trivial Warning or Suggestion, include likely cause, repair tier, smallest safe repair, and files that could change. Report-only remains no-edit. If the user requests repair, use `preview-review-protocol.md`: inspect the affected scope, state one concise final direction, wait for conversational sign-off, then make ordinary-tool edits and validate them.
+For every non-trivial Warning/Suggestion, state likely cause, repair tier, smallest safe healing path, and files that could change.
 
-Maintenance reminders are optional and advisory. A due reminder offers a maintenance request; it does not start work or approve a report, repair, commit, or external effect. Only record completion when the agreed inspection or repairs are actually complete; report a conflict or partial result honestly.
+| Tier | Scope and caution |
+| --- | --- |
+| **1: Routing** | Task/folder/read-first paths, `.picm/` exclusion, root weight. Preserve language/style and unique history/constraints when splitting payload into reachable homes. |
+| **2: Contracts** | Purpose, inputs, process, outputs, named tool, verification/quality, handoff. Repair missing boundaries before rewriting; ask when the contract isn't inferable. |
+| **3: Judgment/source** | Tone/domain rules, examples, quality/source-grounding, durable corrections. Use highest caution; retain only already-sanitized, non-sensitive lessons through agreement. |
 
-## Repair tiers
+## Cold-agent walk
 
-### Tier 1: Routing fixes
+Choose a representative task or ask. Start from root without chat memory. Coding tasks use the coding guide's walk instead of workflow-artifact requirements.
 
-Root routing tables, task-to-folder routes, `.picm/` exclusion, and clearer `Go to`/`Read` paths. Preserve user language and style.
+1. Reach relevant local context through purposeful reads.
+2. Recover inputs, job, named output/review surface, and human check before downstream use.
+3. Inspect named artifacts enough to distinguish present, missing, blocked, or awaiting review. Read relevant eligible content to check unsupported claims or unmet review gates; report presence, correctness, and human approval separately. Presence doesn't establish execution history or causality.
+4. Check routing weight and fact ownership: focused reachable context, not payload/history in routers or diverging copies.
 
-### Tier 2: Contract fixes
-
-Purpose, Inputs, Process, Outputs, named script/tool boundaries, Verify, Quality checks, or Handoff sections. Prefer missing boundaries over a whole-file rewrite; ask when the correct contract cannot be inferred.
-
-### Tier 3: Judgment/source fixes
-
-Tone rules, domain constraints, examples, quality bars, source-grounding rules, or repeated corrections that should become durable context. Use highest caution and do not promote sensitive/private output without explicit approval and sanitization.
-
-## Trace mode
-
-For `trace` arguments or a concrete symptom, investigate likely drift sources rather than force a broad audit.
-
-1. Restate the symptom plainly.
-2. Identify relevant paths from the prompt, routing, contracts, outputs, handoffs, and references; ask when needed paths are unclear.
-3. Compare affected output with prior-stage artifacts, contracts, root routing, examples, and stable references.
-4. Report likely source(s) with high/medium/low confidence, not causal certainty.
-5. Recommend an output patch for this run, source healing for future runs, or both, using repair tiers.
-
-Natural-language symptoms and optional `@path` mentions are valid.
-
-## Profile identification
-
-Identify the visible profile before the report summary, but keep custom layouts valid. When `identity.md`, `rules.md`, `reference/`, and `workflows/` indicate one reusable helper, identify or strongly suggest **Specialist Folder**; `examples.md` is optional. Evaluate its route to identity, rules, reference, and workflow; recommend only the smallest repair needed for actual ambiguity.
-
-## Cold-agent walk test
-
-For a general health check, choose one representative task or ask the user. Approach from root without relying on chat memory:
-
-1. **Orient from root:** reach relevant local context in a few purposeful reads. Coding may route through a map/equivalent to an owning boundary.
-2. **Recover the contract:** identify exact inputs, job, named output/review surface, and human check before downstream use.
-3. **Read visible status:** inspect named outputs or equivalent artifacts enough to state present, missing, blocked, or awaiting review. Read relevant artifact content when needed to spot unsupported assertions or an unmet review gate; report presence, correctness, and human approval separately. Presence does not prove correctness, approval, execution history, or causality.
-4. **Check routing weight:** routers point to focused context rather than carrying payload/history/reference material.
-5. **Check fact ownership:** durable facts have one clear source with pointers instead of drifting copies.
-
-Read the artifacts needed for these judgments. Report unknowns rather than passing an uninspected criterion. A short routing chain is a diagnostic target, not a law; equivalent headings and custom layouts are valid.
+Report unknowns for unavailable evidence. Short chains are a diagnostic target, not a law; equivalent headings/custom layouts are valid.
 
 ## Rubric checks
 
-### 1. Routing clarity
+| Check | Look for / response |
+| --- | --- |
+| Routing | Root/task/local routes and separation from `.picm/` maintenance. Missing/unclear routes or normal work through metadata are Warnings; root overload depends on impact. |
+| Locality and contracts | Context near meaningful stages/roles/specialists/code boundaries; inputs/job/output/constraints/review; stable versus per-run trust; coding owner/entry/checks. Missing operational boundaries are Warnings; lighter clarity is a Suggestion. |
+| Folder legibility | Clear stage/role/reference/input/output/recipe homes; unclear buckets/flat directories/custom shapes. Naming is advisory unless routing breaks. |
+| Context weight and mechanics | Active instruction separate from background/examples; deterministic user-named scripts/integrations specify inputs, outputs, side effects, and review. Don't invent, implement, or execute integrations. Ask which conflicting rules are current. |
+| Living-system drift | Stale/contradictory context/config/maps, broken handoffs, uncaptured lessons, repeated corrections/mechanics, unresolved recommendations. Use the smallest evidence-backed tier. |
+| Outputs and handoffs | Final/intermediate review surfaces, working versus reusable material, intentional source handling, facts/decisions/confidence/gaps/next action. Missing handoffs are Warnings when quality/safety depends on them, otherwise Suggestions. |
+| Privacy | Intentional storage/sharing and commit protection; reusable context free of secrets/private/client data. Report suspected exposure generically, without quoting protected content. |
 
-Check for root routing, task-to-context paths, separation of normal work from PiCM maintenance, and `.picm/` exclusion from normal routing. Missing routing, materially unclear task paths, or routing into maintainer metadata are Warnings; excessive root payload is a Warning or Suggestion by impact.
+## Trace
 
-### 2. Context locality and contracts
+For `trace` or a concrete symptom, restate it; identify relevant prompt/routing/contract/output/handoff/reference paths; compare eligible affected output against prior artifacts and stable guidance; report likely sources with high/medium/low confidence, not causal certainty. Recommend this-run output patch, future source healing, or both, using repair tiers. Natural-language symptoms and `@path` mentions are valid.
 
-Check that meaningful stages, roles, specialists, or coding boundaries have nearby context when needed; contracts identify purpose, inputs, process, outputs, constraints, and review; sequential workflows distinguish stable reference from per-run material where useful; and coding tasks can locate owner, entry point, and verification source. Missing operational boundaries are Warnings; lighter clarity improvements are Suggestions.
+## Report and repairs
 
-### 3. Folder legibility
+Use `# PiCM Maintenance Report` with Summary (profile/signals, inspected/omitted scope), Pass, Warnings, Suggestions, redundancy dispositions, and recommended actions. Each finding names paths, problem/opportunity, evidence, likely cause, tier, and healing path. Offer `/picm-maintain trace "describe what drifted"` when useful.
 
-Look for understandable stage/role/specialist/reference/input/output/workflow areas, unclear buckets, giant flat directories, and unexplained custom shapes. Naming and organization are advisory unless routing breaks.
+Trace uses `# PiCM Trace Report`: Symptom, Files inspected, Likely drift source, Confidence, Output patch vs source healing, Suggested healing path, and Changes I can apply with your sign-off.
 
-### 4. Context size and mechanical-work discipline
-
-Check that root routing remains concise, background/reference is distinct from active instruction, examples are distinct from rules, and repeated deterministic work has a clear user-named script/integration boundary when appropriate. A referenced mechanism needs clear inputs, outputs, side effects, and review boundary. Do not invent, implement, or execute an integration.
-
-For root overload, prefer a Tier 1 split that preserves history and unique constraints while moving durable reference or task payload to focused reachable homes. Ask which conflicting rules are current before proposing substantive changes.
-
-### 5. Living-system hygiene and drift
-
-Check stale context risk, contradicting folders/config/maps, broken handoffs, uncaptured learnings, repeated corrections, repeated mechanical instructions, and unresolved prior recommendations. Suggest the smallest Tier 1 routing, Tier 2 contract, or Tier 3 judgment repair supported by evidence.
-
-### 6. Output boundaries and handoffs
-
-Check clear final-output homes, inspectable intermediate artifacts before downstream use, separation of working artifacts from reusable context, intentional treatment of source material, and handoffs that retain facts, decisions, confidence, gaps/unknowns, and next action. Missing handoffs are a Warning when quality or safety depends on them; otherwise a Suggestion.
-
-### 7. Security and privacy
-
-Check that sensitive material is handled intentionally, obvious secrets are protected from accidental commits where appropriate, and reusable context/examples do not unnecessarily contain credentials or private/client data. A suspected boundary failure is reported generically; do not quote protected content.
-
-## Output format
-
-```markdown
-# PiCM Maintenance Report
-
-## Summary
-- Primary profile:
-- Profile signals:
-- Scope inspected and deliberately not inspected:
-
-## Pass
-## Warnings
-### [Finding]
-- Path(s):
-- Problem:
-- Likely cause:
-- Repair tier:
-- Suggested healing path:
-
-## Suggestions
-### [Finding]
-- Path(s):
-- Opportunity:
-- Repair tier:
-- Suggested healing path:
-
-## Recommended next actions
-## Changes I can apply with your sign-off
-## Need to trace a specific symptom?
-Run `/picm-maintain trace "describe what drifted"` and mention `@path` if useful.
-```
-
-For trace mode use `# PiCM Trace Report` with Symptom, Files inspected, Likely drift source, Confidence, Output patch vs source healing, Suggested healing path, and Changes I can apply with your sign-off.
+Report-only is complete without edits. Requested repairs need a final direction and sign-off; saving a report also needs approval. Implement and validate aligned repairs, then load [settings and reminders](settings-guide.md) before recording any cycle completion. An agreed inspection-only pass may count; unfinished requested repair may not.

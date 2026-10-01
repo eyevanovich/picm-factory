@@ -74,7 +74,7 @@ PiCM Factory can also record optional maintenance reminders in `.picm/config.jso
 
 PiCM Factory is conservative by design:
 
-- **Privacy first.** Agents honor Git ignores, configured exclusions, session exclusions, and known sensitive paths as discovery defaults. These are agent-followed boundaries, not a claim that PiCM or arbitrary host tools sandbox every read.
+- **Privacy before reads.** Agents select eligible paths using Git ignores, configured/session exclusions, and known sensitive boundaries before reading or searching content. Secrets and sensitive material must stay out of model-visible reads, tool output, consultation, memory, and reusable context—even with approval. Uncertain sources need already-sanitized input; sanitizing after disclosure is too late. These are agent-followed rules, not a claim that PiCM or host tools sandbox every read.
 - **Non-destructive adoption.** Existing structure is preserved unless the signed-off direction changes it.
 - **Final direction before edits.** New, adopt, maintain, and optimize inspect first, state a concise direction and material effects, then wait for conversational sign-off. Optional diffs or file review can clarify consequential changes; routine implementation within the agreed direction does not require repeated approval.
 - **Checkpoint advice, not a gate.** A user-created Git checkpoint can help with substantial existing-content changes. PiCM never initializes, stages, commits, resets, cleans, or restores Git for you.

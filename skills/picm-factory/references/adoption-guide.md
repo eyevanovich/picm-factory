@@ -1,77 +1,55 @@
-# Adoption Guide
+# Adoption
 
-Use this guide for `/picm-adopt`. Adoption enables compatibility without automatic conversion: inspect existing material, preserve what works, and make the smallest signed-off changes that improve routing or maintainability.
+Use for `/picm-adopt` under the [shared contract](../SKILL.md). Inspect existing material, preserve what works, and propose the smallest compatibility/routing improvement. Adoption isn't automatic conversion.
 
-## Read-first scope and privacy
+## Read-first orientation
 
-Start with the workspace and the paths needed to understand its visible routing and structure. Honor Git ignores, persisted `privacy.excludedPaths`, session exclusions, and known sensitive paths; do not copy sensitive/private content into reports or config. A named external path is read scope, not write authority. These are deliberate agent practices, not a claim that tools form a sandbox.
+Inspect eligible routing/context: `AGENTS.md`, `CLAUDE.md`, `CONTEXT.md`, `REFERENCES.md`, identity/rules/examples, references, workflows, handoffs, stages, and relevant projected configuration. For a complex workspace, offer a representative path-to-role-to-rationale inventory; classification informs proposals, never migration authority.
 
-Look for routing and context such as `AGENTS.md`, `CLAUDE.md`, `CONTEXT.md`, `REFERENCES.md`, identity/rules/examples, references, workflows, handoffs, numbered stages, `.pi/settings.json`, and `.picm/config.json`. For a complex or unfamiliar workspace, offer a representative path-to-role-to-rationale inventory. It is orientation only: classification never authorizes a move, archive, merge, deletion, or rewrite.
+For sensitive non-Git material, recommend storage/sharing review and exact `.gitignore` patterns when future commits are plausible. Discovery exclusions aren't commit protection. Leave Git initialization to the user; ignore-file edits require sign-off. Describe sensitive findings generically, without opening or quoting protected content.
 
-If sensitive material appears in a non-Git workspace, recommend appropriate storage/sharing review and, when future commits are plausible, exact `.gitignore` patterns. Session or persisted exclusions protect discovery, not commits. Never initialize Git or edit `.gitignore` without sign-off.
+## Routing readiness and outcomes
 
-## Status model
+Adequate visible routing identifies purpose, core read-first context, common task starts, meaningful local boundaries, relevant privacy/coding rules, and `.picm/` exclusion. Classify it as **adequate**, **partial**, **placeholder/unrelated**, or **conflicting/risky**.
 
-Keep these outcomes distinct:
+Preserve an adequate `AGENTS.md` or `CLAUDE.md` as authoritative. If both exist, identify cooperation/conflicts; a canonical file plus compatibility pointer is optional. If neither exists, recommend minimal `AGENTS.md` and ask whether a `CLAUDE.md` shim is useful, rather than creating either automatically.
 
-- **Scanned only** — findings or optional `.picm/` metadata, but no full adoption.
-- **Needs routing before adoption** — root routing is absent, placeholder-only, partial, conflicting, or unsafe.
-- **Ready** — adequate visible routing exists or was added, with minimal adoption metadata if useful.
-- **Ready with warnings** — routing is adequate while non-blocking improvements remain.
+| Outcome | Meaning |
+| --- | --- |
+| **Scanned only** | Findings or agreed optional metadata; no full adoption. |
+| **Needs routing before adoption** | Routing absent, partial, placeholder, conflicting, or unsafe. |
+| **Ready** | Adequate visible routing exists or was added; minimal metadata only if useful. |
+| **Ready with warnings** | Adequate routing with non-blocking improvements remaining. |
 
-`adoption.status: "adopted"` requires adequate visible routing. `.picm/config.json` supports maintenance; it never replaces the human/agent-facing route map.
+Set `adoption.status: "adopted"` only with adequate visible routing. Metadata never replaces the route map. Where routing needs work, offer minimal compatibility, stronger ICM routing, or scanned-only reporting. Preserve existing names, examples, and conventions unless the direction changes them.
 
-## Routing readiness
+## Coding or hybrid branch
 
-Adequate visible routing identifies the workspace, tells the agent what core context to read, maps common tasks to a starting place, identifies meaningful local context boundaries, excludes `.picm/` from normal workflow routing, and carries relevant safety/privacy and coding boundaries.
+`coding` enters directly; otherwise offer coding adoption after shallow, bounded classification. Load [coding adoption](coding-adoption-guide.md) for this branch. It owns mapping approach, additive/curated depth, high-value hints, Strict baseline, and codebase-map metadata. A coding profile can be primary or complement an existing workflow profile.
 
-Classify routing as **adequate**, **partial**, **placeholder/unrelated**, or **conflicting/risky**.
+## Direction and result
 
-- If only `CLAUDE.md` or only `AGENTS.md` is adequate, preserve it as the source of truth.
-- If both exist, preserve both and identify cooperation or conflict; a canonical file plus compatibility pointer is an optional improvement.
-- If neither exists, recommend a minimal `AGENTS.md`; ask whether a small `CLAUDE.md` compatibility shim is useful, rather than creating either by default.
+Prepare a report covering profile, routing source/readiness, coding shape when relevant, evidence/unknowns, preserved material, optional improvements, and next steps. Keep optional inventory separate from consolidation proposals. Scanned-only/profile/map/depth/cadence choices are design input, not sign-off.
 
-When routing needs work, offer choices: minimal PiCM compatibility, stronger ICM routing, or scanned-only reporting. For coding work, use the coding guide's additive/curated choices too.
+Optional metadata is `.picm/config.json` and `.picm/adoption-report.md`: retain only useful profile/routing/path hints, readiness/status, mapping, cadence, and normalized privacy exclusions. Preserve unrelated fields; use [settings guidance](settings-guide.md) for privacy/cadence changes. Saving a report or config is an edit.
 
-## Coding adoption branch
-
-`/picm-adopt coding` enters this branch directly; ordinary adoption may offer it after a shallow, bounded classification. Offer a primary **Coding Repository** profile for code-first work, or a codebase-map capability alongside a workflow profile for hybrid work.
-
-Ask only the decisions not recoverable safely from the repository:
-
-1. **Mapping approach:** root map, distributed map, or scan and recommend.
-2. **Adoption depth:** additive (preserve docs and add missing routing/maps) or curated (analyze documentation and propose consolidation).
-3. **High-value hints:** meaningful boundaries, do-not-extend areas, public surfaces, generated files, components that change together, and verification gates.
-
-Initial coding adoption uses the Strict examination from `coding-maintenance-rubric.md`; it records `maintenancePreset: "strict"` as legacy baseline metadata, not permission or a future run choice. Curated analysis may recommend canonical documents, pointers, merges, moves, archives, rewrites, or deletions, but every material effect belongs in the final direction.
-
-## Adoption direction and result
-
-Prepare an adoption report with the inferred profile, routing source/readiness, coding shape where relevant, evidence/unknowns, preserved-as-is material, optional improvements, and next steps. A representative inventory may remain separate from readiness and proposals.
-
-Typical optional metadata is `.picm/config.json` and `.picm/adoption-report.md`. Keep config minimal: profile, routing, useful path hints, adoption status/readiness, optional codebase-map shape/roots/map/local contexts, optional cadence, and normalized privacy exclusions. Preserve unrelated fields. Do not expose sensitive content in metadata.
-
-For all changes, apply `preview-review-protocol.md`: state a concise final direction and wait for conversational sign-off before ordinary edits. Option, mapping, cadence, or scanned-only selection is design input, not write authority. A selected curated direction must explicitly name material consolidation or deletion effects. After an adopted result, offer an initial maintenance pass; it is optional.
+Present the final direction before changes. Explicitly name curated merge/move/archive/rewrite/delete effects. Avoid labeling ambiguous content dead or marking inadequate routing adopted. Completion includes an optional initial maintenance offer after successful adoption; state it in the closing response. Adoption is complete without accepting or running that pass.
 
 ## Optional ICM improvements
 
-Suggest, rather than impose, concise root routing, local contracts, stable reference versus working-artifact separation, reviewable outputs, handoffs that retain gaps/unknowns/next actions, and safety boundaries. Custom layouts remain valid when they route work clearly.
+Recommend concise root routing, local contracts, stable-reference/working-artifact separation, reviewable outputs, and handoffs retaining gaps, uncertainty, and next action. Preserve custom layouts that route clearly. Profile-specific first-run guidance lives in [layout profiles](layout-profiles.md).
 
 ## Report shape
 
+Use relevant sections rather than empty headings:
+
 ```markdown
 # PiCM Adoption Report
-
 ## Summary
-- PiCM compatibility: Ready / Ready with warnings / Needs routing before adoption / Scanned only
-- Inferred layout profile:
-- Existing routing source:
-- Adoption status:
-
-## Existing structure detected
-## Routing readiness
-## PiCM compatibility
-## Coding adoption
+- Compatibility: Ready / Ready with warnings / Needs routing before adoption / Scanned only
+- Inferred profile, routing source, and adoption status:
+## Existing structure and routing readiness
+## PiCM compatibility and coding adoption
 ## Evidence and unknowns
 ## Optional file-role inventory
 ## Security/privacy notes
@@ -79,5 +57,3 @@ Suggest, rather than impose, concise root routing, local contracts, stable refer
 ## Optional changes requiring sign-off
 ## Next steps
 ```
-
-Do not rewrite routing files, rename/move/delete content, mark inadequate routing adopted, label unclear material dead, or copy sensitive source into reusable context unless the signed-off final direction explicitly supports it.

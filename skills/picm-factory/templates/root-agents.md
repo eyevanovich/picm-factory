@@ -1,30 +1,27 @@
-# Project Instructions
+<!-- PiCM authoring: replace tokens with justified existing/scaffolded/per-run paths; omit unused rows. Preserve the complete pre-read and disclosure boundaries, including consultation and memory. Remove this comment from generated output. -->
+# Project instructions
 
-## Identity
-You are helping with {{picm:workflow-name}}, a PiCM folder-agent workspace for {{picm:audience-or-user}}.
-
-## Folder Structure
-- `CONTEXT.md` — project/workflow context and constraints.
-- `REFERENCES.md` or `reference/` — reusable background material.
-- `{{picm:layout-folders}}` — stages, specialists, roles, or workflows.
-- `.picm/` — PiCM metadata/reports; read only for maintenance/adoption tasks.
+## Purpose
+Help {{picm:audience-or-user}} with {{picm:workflow-name}}.
 
 ## Routing
 
-| Task | Read | Skip |
-|------|------|------|
-| Normal workflow execution | `CONTEXT.md`, relevant local context/workflow file | `.picm/`, unrelated outputs |
-| Add or update reusable context | `CONTEXT.md`, relevant references/examples | final outputs unless needed |
-| Coding task, only for Coding Repository/codebase-map workspaces | `CONTEXT-MAP.md` or the reused architecture map, then the relevant local context/entry point | unrelated components, Git-ignored paths |
-| PiCM maintenance | `.picm/config.json` if present, root routing file, relevant context files | large source/output files unless relevant |
-| {{picm:user-named-mechanical-task-if-applicable}} | {{picm:exact-local-script-path-or-mcp-tool-name}} | {{picm:ai-recreation-of-deterministic-mechanics}} |
+| Task | Read first | Skip |
+| --- | --- | --- |
+| Normal workflow | `CONTEXT.md`, {{picm:local-contract-or-recipe}} | `.picm/`, unrelated artifacts |
+| Reusable-context change | {{picm:authoritative-rules-reference-or-examples}} | per-run outputs unless relevant |
+| {{picm:coding-task-if-enabled}} | {{picm:authoritative-map-and-local-entry-route}} | unrelated components |
+| PiCM adoption/maintenance | Root routing, relevant context, projected settings when available | unrelated source/output and opaque config |
+| {{picm:named-mechanical-task-if-applicable}} | {{picm:exact-script-or-tool-name}} | recreating its deterministic mechanics |
 
-Omit the coding-task row unless coding mapping is enabled. If the map is small and embedded here or an existing architecture document is reused, replace `CONTEXT-MAP.md` with that authoritative location. Omit the mechanical-task row unless the user has named the relevant script or tool. State required human approval for file moves, sends, or external side effects.
+## Boundaries
 
-## Rules
-- Keep context files concise and useful.
-- Do not copy secrets or sensitive source material into instructions/examples unless explicitly approved.
-- Honor Git ignores, persisted PiCM exclusions, session exclusions, and known sensitive paths as discovery defaults. These are agent-followed boundaries, not a claim that every host tool is a privacy sandbox.
-- For `/picm-new`, `/picm-adopt`, `/picm-maintain`, and `/picm-optimize`, inspect first, state a concise final direction with material effects, and wait for conversational sign-off before edits. Routine aligned edits do not need repeated approval; seek renewed alignment for material departures, destructive actions, or external writes.
-- Prefer small iterative improvements over rebuilding the whole system.
-- Use only user-named scripts/tools for deterministic mechanics; keep judgment, side-effect approval, and review visible.
+Apply these boundaries before every read-first route, including an explicitly named prerequisite. Keep discovery inside the workspace or named external context; resolve ancestor/global ignore policy through exact locations. Ask if policy can't be resolved safely.
+
+Before reads/searches, select task-relevant eligible paths using root/nested Git ignores, repository/global excludes, persisted PiCM exclusions, session exclusions, and known sensitive paths. Bound tool output; ordinary tools aren't a privacy sandbox.
+
+Keep secrets, credentials, private keys, regulated/private data, and sensitive client material out of model-visible reads, tool output, consultation, memory, instructions, examples, reports, and diagnostics—even with approval. If eligibility is unclear, request an already-sanitized, non-sensitive source. Unexpected exposure: stop inspecting, describe it generically without repeating values, and ask how to proceed safely.
+
+For PiCM modifications, inspect, state a concise final direction with material effects, and wait for conversational sign-off. Routine aligned edits need no repeated approval; realign for material departures, including destructive actions or external writes outside the direction. Preserve unrelated files/settings and existing routing. Reports/help are no-edit; saving a report is an edit. Cancellation stops future work; report known completed effects without automatic rollback.
+
+Use only user-named scripts/integrations for deterministic mechanics. Keep judgment, human review, and approval for moves/sends/external side effects visible. Stable references aren't per-run working artifacts; retain gaps and uncertainty through handoffs. `.picm/` is maintainer metadata, outside normal workflow routing.

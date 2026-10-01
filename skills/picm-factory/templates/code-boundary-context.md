@@ -1,42 +1,28 @@
-# Component Context
+<!-- PiCM authoring: omit unused optional impact/status sections; support claims with evidence or confirmation. Remove this comment from generated output. -->
+# {{picm:component-name}} context
 
 ## Purpose and ownership
-Describe the responsibility this boundary owns and what belongs elsewhere.
+{{picm:owned-responsibility-and-what-belongs-elsewhere}}
 
 ## Read first
-- Authoritative design/domain document:
-- Manifest or build definition:
-- Public API, startup path, or primary entry point:
+{{picm:authoritative-design-manifest-and-entry-paths-with-read-conditions}}
 
 ## Dependencies and coordination
-- Allowed or important dependencies:
-- Components that commonly change with this one:
-- Cross-boundary review or migration requirements:
+{{picm:allowed-dependencies-coupled-components-and-review-or-migration-needs}}
 
 ## Non-obvious change impact (optional)
-Omit this section when ordinary imports, manifests, and wiring already reveal the change surface.
-
-- Potentially affected non-local surfaces:
-- Known exclusions, only when supported by evidence:
-- Evidence / confidence:
+{{picm:non-local-effects-known-exclusions-and-evidence-confidence}}
+Omit when ordinary imports/manifests/wiring already reveal the surface; known exclusions need evidence.
 
 ## Operational status (optional)
-Include only when the status changes how an agent should navigate or edit this boundary.
-
-- Status: `live`, `leftover`, `ghost`, or `unknown`
-- Evidence / user confirmation:
+{{picm:navigation-relevant-live-leftover-ghost-or-unknown-with-evidence-confirmation}}
 
 ## Constraints
-- Invariants and compatibility requirements:
-- Generated/do-not-edit areas:
-- Legacy or intentionally frozen surfaces:
+{{picm:invariants-compatibility-generated-and-frozen-boundaries}}
 
 ## Verification
-- Authoritative test/check location:
-- Command source (manifest, script, task definition, or CI job):
-- Human review focus:
-
-Prefer pointers to authoritative command definitions over copied command lists.
+{{picm:authoritative-check-and-command-definition-paths-and-human-review-focus}}
+Point to command definitions, not copied command lists.
 
 ## Known unknowns
-- Keep unverified ownership, behavior, coupling, and risks visible for future correction.
+{{picm:unverified-ownership-behavior-coupling-and-risks}}

@@ -1,6 +1,6 @@
 import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
-import { join } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { hasCurrentPinnedInstallVersions } from "./prepare-release.mjs";
 
 const root = process.cwd();
@@ -128,8 +128,12 @@ const requiredPackageFiles = [
   "skills/picm-factory/references/interview-guide.md",
   "skills/picm-factory/references/layout-profiles.md",
   "skills/picm-factory/references/maintenance-rubric.md",
+  "skills/picm-factory/references/redundancy-review.md",
   "skills/picm-factory/references/optimization-guide.md",
   "skills/picm-factory/references/preview-review-protocol.md",
+  "skills/picm-factory/references/help-guide.md",
+  "skills/picm-factory/references/settings-guide.md",
+  "skills/picm-factory/references/specialist-guide.md",
   "skills/picm-factory/templates/code-boundary-context.md",
   "skills/picm-factory/templates/context-map.md",
   "skills/picm-factory/templates/handoff-card.md",
@@ -158,6 +162,19 @@ if (missingPackageFiles.length > 0) {
       missingPackageFiles.map((path) => `- ${path}`).join("\n"),
   );
   process.exit(1);
+}
+
+const packagedMarkdown = packedFiles.filter((path) => path.endsWith(".md"));
+for (const file of packagedMarkdown) {
+  const text = readFileSync(join(root, file), "utf8");
+  for (const [, target] of text.matchAll(/\]\(([^)]+\.md)\)/g)) {
+    if (/^[a-z]+:\/\//i.test(target)) continue;
+    const destination = resolve(root, dirname(file), target);
+    if (!packedFiles.some((path) => resolve(root, path) === destination)) {
+      console.error(`Packaged instruction ${file} links to an unpackaged target: ${target}`);
+      process.exit(1);
+    }
+  }
 }
 
 const skill = readFileSync(join(root, "skills/picm-factory/SKILL.md"), "utf8");
@@ -398,6 +415,7 @@ if (unpinnedAction) {
 }
 
 const publicTextFiles = [
+  ...packagedMarkdown,
   "README.md",
   "CHANGELOG.md",
   "CONTRIBUTING.md",
@@ -407,6 +425,7 @@ const publicTextFiles = [
   "skills/picm-factory/references/coding-adoption-guide.md",
   "skills/picm-factory/references/coding-maintenance-rubric.md",
   "skills/picm-factory/references/optimization-guide.md",
+  "skills/picm-factory/references/redundancy-review.md",
   "docs/layout-fixture-qa.md",
   "docs/picm-new-scenarios.md",
   "docs/release-tagging-actions-research.md",
@@ -420,7 +439,7 @@ const forbiddenPrivateSignals = [
   "clief-workspace",
   "bd prime",
 ];
-for (const file of publicTextFiles) {
+for (const file of new Set(publicTextFiles)) {
   const text = readFileSync(join(root, file), "utf8");
   for (const signal of forbiddenPrivateSignals) {
     if (text.includes(signal)) {
