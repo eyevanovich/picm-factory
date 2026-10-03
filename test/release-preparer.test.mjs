@@ -307,33 +307,7 @@ test("uses reviewed What Changed bullets for release notes", () => {
 test("leaves release files unchanged when post-tag commits are not merged pull requests", () => {
   const root = mkdtempSync(join(tmpdir(), "picm-release-direct-test-"));
   try {
-    const packageText = `${JSON.stringify({ name: "fixture", version: "0.1.2" }, null, 2)}\n`;
-    const changelogText =
-      "# Changelog\n\nFixture history.\n\n## [0.1.2] - 2026-07-21\n\n- Bootstrap.\n";
-    writeFileSync(join(root, "package.json"), packageText);
-    writeFileSync(join(root, "CHANGELOG.md"), changelogText);
-    writePinnedDocs(root, "0.1.2");
-    writePackageLock(root, packageLock("0.1.2"));
-    const lockText = readFileSync(join(root, "package-lock.json"), "utf8");
-    const readmeText = readFileSync(join(root, "README.md"), "utf8");
-    const skillText = readFileSync(join(root, "skills/picm-factory/SKILL.md"), "utf8");
-    git(root, "init", "-q");
-    git(root, "config", "user.name", "Release Test");
-    git(root, "config", "user.email", "release-test@example.invalid");
-    git(
-      root,
-      "add",
-      "package.json",
-      "package-lock.json",
-      "CHANGELOG.md",
-      "README.md",
-      "skills/picm-factory/SKILL.md",
-    );
-    git(root, "commit", "-qm", "chore: bootstrap");
-    git(root, "tag", "--no-sign", "v0.1.2");
-    writeFileSync(join(root, "direct.txt"), "direct\n");
-    git(root, "add", "direct.txt");
-    git(root, "commit", "-qm", "feat: direct commit");
+    const files = createTaggedReleaseFixture(root);
 
     assert.throws(
       () =>
@@ -346,11 +320,9 @@ test("leaves release files unchanged when post-tag commits are not merged pull r
         }),
       /No releasable feat, fix, or breaking commits/,
     );
-    assert.equal(readFileSync(join(root, "package.json"), "utf8"), packageText);
-    assert.equal(readFileSync(join(root, "package-lock.json"), "utf8"), lockText);
-    assert.equal(readFileSync(join(root, "CHANGELOG.md"), "utf8"), changelogText);
-    assert.equal(readFileSync(join(root, "README.md"), "utf8"), readmeText);
-    assert.equal(readFileSync(join(root, "skills/picm-factory/SKILL.md"), "utf8"), skillText);
+    for (const [path, text] of Object.entries(files)) {
+      assert.equal(readFileSync(join(root, path), "utf8"), text);
+    }
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
@@ -359,37 +331,10 @@ test("leaves release files unchanged when post-tag commits are not merged pull r
 test("prepares package, changelog, and release notes from commits after the latest tag", () => {
   const root = mkdtempSync(join(tmpdir(), "picm-release-test-"));
   try {
-    writeFileSync(
-      join(root, "package.json"),
-      `${JSON.stringify({ name: "fixture", version: "0.1.2" }, null, 2)}\n`,
-    );
-    writeFileSync(
-      join(root, "CHANGELOG.md"),
-      "# Changelog\n\nFixture history.\n\n## [0.1.2] - 2026-07-21\n\n- Bootstrap.\n",
-    );
-    writePinnedDocs(root, "0.1.2");
-    writePackageLock(root, packageLock("0.1.2"));
+    createTaggedReleaseFixture(root);
     const initialLock = JSON.parse(readFileSync(join(root, "package-lock.json"), "utf8"));
     const lockedDependencyGraph = { ...initialLock.packages };
     delete lockedDependencyGraph[""];
-    git(root, "init", "-q");
-    git(root, "config", "user.name", "Release Test");
-    git(root, "config", "user.email", "release-test@example.invalid");
-    git(
-      root,
-      "add",
-      "package.json",
-      "package-lock.json",
-      "CHANGELOG.md",
-      "README.md",
-      "skills/picm-factory/SKILL.md",
-    );
-    git(root, "commit", "-qm", "chore: bootstrap");
-    git(root, "tag", "--no-sign", "v0.1.2");
-
-    writeFileSync(join(root, "feature.txt"), "feature\n");
-    git(root, "add", "feature.txt");
-    git(root, "commit", "-qm", "feat: add fixture feature");
 
     writeFileSync(join(root, "fix.txt"), "fix\n");
     git(root, "add", "fix.txt");

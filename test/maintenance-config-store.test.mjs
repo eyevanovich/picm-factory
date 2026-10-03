@@ -30,7 +30,7 @@ test("creates only minimal metadata plus explicitly set maintenance", async (t) 
 test("persists and conditionally updates normalized privacy exclusions", async (t) => {
   const { cwd } = await repository(t);
   const store = createMaintenanceConfigStore({ cwd, randomId: () => "privacy" });
-  const first = await store.updatePrivacy({ excludedPaths: ["secrets/key.txt", "secrets/", ".env"] });
+  const first = await store.compareAndUpdatePrivacyExclusions(undefined, ["secrets/key.txt", "secrets/", ".env"]);
   assert.equal(first.ok, true);
   assert.deepEqual(first.privacy, { excludedPaths: [".env", "secrets"] });
   assert.deepEqual(JSON.parse(await fs.readFile(join(cwd, ".picm/config.json"), "utf8")), {
@@ -39,10 +39,7 @@ test("persists and conditionally updates normalized privacy exclusions", async (
     privacy: { excludedPaths: [".env", "secrets"] },
   });
 
-  const conflict = await store.compareAndUpdatePrivacy(
-    { excludedPaths: ["different"] },
-    { excludedPaths: ["private"] },
-  );
+  const conflict = await store.compareAndUpdatePrivacyExclusions(["different"], ["private"]);
   assert.equal(conflict.conflict, true);
   assert.equal(conflict.code, "PRIVACY_POLICY_CONFLICT");
   assert.deepEqual((await store.read()).privacy, { excludedPaths: [".env", "secrets"] });
@@ -114,7 +111,7 @@ test("stale exclusion updates do not recreate a removed config directory", async
 test("rejects malformed or outside privacy exclusions", async (t) => {
   const { cwd } = await repository(t);
   const store = createMaintenanceConfigStore({ cwd });
-  assert.equal((await store.updatePrivacy({ excludedPaths: ["../outside"] })).code, "PRIVACY_EXCLUDED_PATH_OUTSIDE");
+  assert.equal((await store.compareAndUpdatePrivacyExclusions(undefined, ["../outside"])).code, "PRIVACY_EXCLUDED_PATH_OUTSIDE");
 
   await fs.mkdir(join(cwd, ".picm"));
   await fs.writeFile(join(cwd, ".picm/config.json"), JSON.stringify({

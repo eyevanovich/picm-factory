@@ -78,7 +78,6 @@ printf '# Existing context\n' > CONTEXT.md
 Expected behavior:
 
 - detects existing architecture from files/folders such as `AGENTS.md`, `CLAUDE.md`, `CONTEXT.md`, `REFERENCES.md`, `identity.md`, `rules.md`, `examples.md`, `workflows/`, `reference/`, numbered stage folders, `stages/`, or `.picm/`
-- recommends `/picm-adopt`
 - recommends `/picm-adopt` and asks the user to choose adoption, an add/replace scaffold direction, or cancellation
 - after a clear add/replace direction, inspects only the needed architecture and drafts a concise final direction
 - waits for conversational sign-off on that final direction before any create, update, or overwrite action
@@ -104,9 +103,8 @@ touch changed.md
 
 Expected behavior:
 
-- strongly recommends a user-created Git commit covering current contents of affected existing files, but does not inspect Git status, history, or file contents to verify coverage
+- for substantial existing-content changes, strongly recommends a user-created Git checkpoint covering current contents of affected existing files; it does not inspect Git status, history, or file contents to verify coverage, or initialize, stage, commit, reset, clean, or restore Git automatically
 - keeps non-Git and new/empty workspaces supported; a first post-scaffold commit protects future contents only
-- for substantial existing-content changes, recommends a user-created Git checkpoint while keeping both non-Git and new/empty workspaces supported; PiCM never initializes, stages, commits, resets, cleans, or restores Git automatically
 
 ## Scenario 5: seeded command arguments
 

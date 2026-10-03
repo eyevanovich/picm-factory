@@ -114,7 +114,7 @@ export function createMaintenanceConfigStore({
     return { ok: true, exists: true, stat };
   }
 
-  async function readConfig() {
+  async function read() {
     const directoryDecision = await validateDirectory();
     if (!directoryDecision.ok) return directoryDecision;
     if (!directoryDecision.exists) {
@@ -146,10 +146,6 @@ export function createMaintenanceConfigStore({
         error instanceof SyntaxError ? "PiCM config is not valid JSON" : messageOf(error),
       );
     }
-  }
-
-  async function read() {
-    return readConfig();
   }
 
   async function recoverStaleLock() {
@@ -395,33 +391,6 @@ export function createMaintenanceConfigStore({
     };
   }
 
-  async function updatePrivacy(privacy) {
-    let validPrivacy;
-    try {
-      validPrivacy = privacy === undefined ? undefined : validatePrivacyPolicy(privacy, cwd);
-    } catch (error) {
-      return errorDecision(error.code ?? "INVALID_PRIVACY_POLICY", messageOf(error));
-    }
-    return mutateConfigField("privacy", validPrivacy);
-  }
-
-  async function compareAndUpdatePrivacy(expectedPrivacy, privacy) {
-    let validExpected;
-    let validPrivacy;
-    try {
-      validExpected = expectedPrivacy === undefined ? undefined : validateStoredPrivacyPolicy(expectedPrivacy, cwd);
-      validPrivacy = privacy === undefined ? undefined : validatePrivacyPolicy(privacy, cwd);
-    } catch (error) {
-      return errorDecision(error.code ?? "INVALID_PRIVACY_POLICY", messageOf(error));
-    }
-    return mutateConfigField("privacy", validPrivacy, {
-      expectedValue: validExpected,
-      conditional: true,
-      conflictCode: "PRIVACY_POLICY_CONFLICT",
-      conflictMessage: "privacy exclusions changed before the conditional update",
-    });
-  }
-
   async function compareAndUpdatePrivacyExclusions(expectedExcludedPaths, excludedPaths, { signal } = {}) {
     let expectedPrivacy;
     let nextPrivacy;
@@ -473,8 +442,6 @@ export function createMaintenanceConfigStore({
     readSettings,
     updateMaintenance,
     compareAndUpdateMaintenance,
-    updatePrivacy,
-    compareAndUpdatePrivacy,
     compareAndUpdatePrivacyExclusions,
   };
 }

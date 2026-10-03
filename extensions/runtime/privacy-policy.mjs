@@ -46,10 +46,6 @@ export function normalizePrivacyExcludedPaths(cwd, values) {
   ));
 }
 
-export function mergePrivacyExcludedPaths(cwd, ...sets) {
-  return normalizePrivacyExcludedPaths(cwd, sets.flat());
-}
-
 export function privacyPathMatches(exclusion, candidate) {
   return candidate === exclusion || candidate.startsWith(`${exclusion}/`);
 }

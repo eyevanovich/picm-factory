@@ -3,6 +3,11 @@ import { existsSync, readFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { hasCurrentPinnedInstallVersions } from "./prepare-release.mjs";
 
+function fail(message) {
+  console.error(message);
+  process.exit(1);
+}
+
 const root = process.cwd();
 const required = [
   "package.json",
@@ -54,53 +59,20 @@ const required = [
 ];
 
 const missing = required.filter((path) => !existsSync(join(root, path)));
-if (missing.length > 0) {
-  console.error("Missing required files:\n" + missing.map((p) => `- ${p}`).join("\n"));
-  process.exit(1);
-}
+if (missing.length > 0) fail("Missing required files:\n" + missing.map((p) => `- ${p}`).join("\n"));
 
 const pkg = JSON.parse(readFileSync(join(root, "package.json"), "utf8"));
-if (pkg.name !== "@eyevanovich/picm-factory") {
-  console.error("package.json must use the expected public npm package name");
-  process.exit(1);
-}
-if (pkg.repository?.url !== "git+https://github.com/eyevanovich/picm-factory.git") {
-  console.error("package.json repository must match the trusted publishing repository");
-  process.exit(1);
-}
-if (!pkg.keywords?.includes("pi-package")) {
-  console.error("package.json must include keyword: pi-package");
-  process.exit(1);
-}
-if (!pkg.pi?.extensions || !pkg.pi?.skills || !pkg.pi?.prompts) {
-  console.error("package.json must declare pi.extensions, pi.skills, and pi.prompts");
-  process.exit(1);
-}
-if (pkg.pi.prompts.length !== 0) {
-  console.error("Backing prompts must not autoload alongside same-named extension commands");
-  process.exit(1);
-}
-if (pkg.private === true) {
-  console.error("package.json must allow npm publication");
-  process.exit(1);
-}
-if (pkg.publishConfig?.access !== "public") {
-  console.error("Scoped npm package must publish with public access");
-  process.exit(1);
-}
-if (pkg.scripts?.prepublishOnly !== "npm run check") {
-  console.error("npm publication must run the package check first");
-  process.exit(1);
-}
-if (!pkg.scripts?.check?.includes("test/*.test.mjs")) {
-  console.error("npm run check must exercise all test/*.test.mjs files");
-  process.exit(1);
-}
+if (pkg.name !== "@eyevanovich/picm-factory") fail("package.json must use the expected public npm package name");
+if (pkg.repository?.url !== "git+https://github.com/eyevanovich/picm-factory.git") fail("package.json repository must match the trusted publishing repository");
+if (!pkg.keywords?.includes("pi-package")) fail("package.json must include keyword: pi-package");
+if (!pkg.pi?.extensions || !pkg.pi?.skills || !pkg.pi?.prompts) fail("package.json must declare pi.extensions, pi.skills, and pi.prompts");
+if (pkg.pi.prompts.length !== 0) fail("Backing prompts must not autoload alongside same-named extension commands");
+if (pkg.private === true) fail("package.json must allow npm publication");
+if (pkg.publishConfig?.access !== "public") fail("Scoped npm package must publish with public access");
+if (pkg.scripts?.prepublishOnly !== "npm run check") fail("npm publication must run the package check first");
+if (!pkg.scripts?.check?.includes("test/*.test.mjs")) fail("npm run check must exercise all test/*.test.mjs files");
 for (const dependency of ["@earendil-works/pi-ai", "@earendil-works/pi-coding-agent", "typebox"]) {
-  if (pkg.peerDependencies?.[dependency] !== "*") {
-    console.error(`Pi runtime peer dependency must be declared with *: ${dependency}`);
-    process.exit(1);
-  }
+  if (pkg.peerDependencies?.[dependency] !== "*") fail(`Pi runtime peer dependency must be declared with *: ${dependency}`);
 }
 
 const packResult = JSON.parse(
@@ -147,21 +119,19 @@ const unexpectedPackageFiles = packedFiles.filter(
   (path) => !requiredPackageFiles.includes(path),
 );
 if (unexpectedPackageFiles.length > 0) {
-  console.error(
+  fail(
     "npm package contains development-only files:\n" +
       unexpectedPackageFiles.map((path) => `- ${path}`).join("\n"),
   );
-  process.exit(1);
 }
 const missingPackageFiles = requiredPackageFiles.filter(
   (path) => !packedFiles.includes(path),
 );
 if (missingPackageFiles.length > 0) {
-  console.error(
+  fail(
     "npm package missing runtime files:\n" +
       missingPackageFiles.map((path) => `- ${path}`).join("\n"),
   );
-  process.exit(1);
 }
 
 const packagedMarkdown = packedFiles.filter((path) => path.endsWith(".md"));
@@ -170,26 +140,14 @@ for (const file of packagedMarkdown) {
   for (const [, target] of text.matchAll(/\]\(([^)]+\.md)\)/g)) {
     if (/^[a-z]+:\/\//i.test(target)) continue;
     const destination = resolve(root, dirname(file), target);
-    if (!packedFiles.some((path) => resolve(root, path) === destination)) {
-      console.error(`Packaged instruction ${file} links to an unpackaged target: ${target}`);
-      process.exit(1);
-    }
+    if (!packedFiles.some((path) => resolve(root, path) === destination)) fail(`Packaged instruction ${file} links to an unpackaged target: ${target}`);
   }
 }
 
 const skill = readFileSync(join(root, "skills/picm-factory/SKILL.md"), "utf8");
-if (!skill.startsWith("---\n")) {
-  console.error("SKILL.md must start with YAML frontmatter");
-  process.exit(1);
-}
-if (!skill.includes("name: picm-factory")) {
-  console.error("SKILL.md frontmatter must include name: picm-factory");
-  process.exit(1);
-}
-if (!skill.includes("description:")) {
-  console.error("SKILL.md frontmatter must include description");
-  process.exit(1);
-}
+if (!skill.startsWith("---\n")) fail("SKILL.md must start with YAML frontmatter");
+if (!skill.includes("name: picm-factory")) fail("SKILL.md frontmatter must include name: picm-factory");
+if (!skill.includes("description:")) fail("SKILL.md frontmatter must include description");
 
 const extension = readFileSync(join(root, "extensions/picm-factory.ts"), "utf8");
 const forbiddenExtensionRuntimeSignals = [
@@ -205,10 +163,7 @@ const forbiddenExtensionRuntimeSignals = [
   'name: "picm_proposal_batch"',
 ];
 for (const signal of forbiddenExtensionRuntimeSignals) {
-  if (extension.includes(signal)) {
-    console.error(`PiCM extension must remain a thin non-authoritative dispatcher; found: ${signal}`);
-    process.exit(1);
-  }
+  if (extension.includes(signal)) fail(`PiCM extension must remain a thin non-authoritative dispatcher; found: ${signal}`);
 }
 for (const signal of [
   'pi.on("session_start"',
@@ -217,25 +172,16 @@ for (const signal of [
   'name: "picm_decision"',
   'commandPrompt(',
 ]) {
-  if (!extension.includes(signal)) {
-    console.error(`PiCM extension missing retained command utility: ${signal}`);
-    process.exit(1);
-  }
+  if (!extension.includes(signal)) fail(`PiCM extension missing retained command utility: ${signal}`);
 }
 
 const privacyPolicy = readFileSync(join(root, "extensions/runtime/privacy-policy.mjs"), "utf8");
 for (const signal of ["normalizePrivacyExcludedPaths", "privacyPathMatches", "validatePrivacyPolicy"]) {
-  if (!privacyPolicy.includes(signal)) {
-    console.error(`PiCM privacy policy missing deterministic signal: ${signal}`);
-    process.exit(1);
-  }
+  if (!privacyPolicy.includes(signal)) fail(`PiCM privacy policy missing deterministic signal: ${signal}`);
 }
 const maintenancePolicy = readFileSync(join(root, "extensions/runtime/maintenance-policy.mjs"), "utf8");
 for (const signal of ["calculateNextDue", "resetPolicy", "isDue", "INVALID_TIMESTAMP"]) {
-  if (!maintenancePolicy.includes(signal)) {
-    console.error(`PiCM maintenance policy missing deterministic signal: ${signal}`);
-    process.exit(1);
-  }
+  if (!maintenancePolicy.includes(signal)) fail(`PiCM maintenance policy missing deterministic signal: ${signal}`);
 }
 
 const codingCompletionLists = [
@@ -246,20 +192,14 @@ for (const listName of codingCompletionLists) {
   const list = extension.match(
     new RegExp(`const ${listName} = \\[([\\s\\S]*?)\\n\\];`),
   )?.[1];
-  if (!list?.includes('value: "coding"')) {
-    console.error(`PiCM extension ${listName} must offer the coding completion`);
-    process.exit(1);
-  }
+  if (!list?.includes('value: "coding"')) fail(`PiCM extension ${listName} must offer the coding completion`);
 }
 
 for (const [file, text] of [
   ["README.md", readFileSync(join(root, "README.md"), "utf8")],
   ["skills/picm-factory/SKILL.md", skill],
 ]) {
-  if (!hasCurrentPinnedInstallVersions(text, pkg.version)) {
-    console.error(`${file} must pin the current package version ${pkg.version}`);
-    process.exit(1);
-  }
+  if (!hasCurrentPinnedInstallVersions(text, pkg.version)) fail(`${file} must pin the current package version ${pkg.version}`);
 }
 
 const releaseDocs = {
@@ -294,10 +234,7 @@ const releaseDocs = {
 for (const [file, signals] of Object.entries(releaseDocs)) {
   const text = readFileSync(join(root, file), "utf8");
   for (const signal of signals) {
-    if (!text.includes(signal)) {
-      console.error(`Release documentation ${file} missing signal: ${signal}`);
-      process.exit(1);
-    }
+    if (!text.includes(signal)) fail(`Release documentation ${file} missing signal: ${signal}`);
   }
 }
 
@@ -305,30 +242,18 @@ for (const obsoleteReleasePleaseFile of [
   "release-please-config.json",
   ".release-please-manifest.json",
 ]) {
-  if (existsSync(join(root, obsoleteReleasePleaseFile))) {
-    console.error(`Obsolete Release Please file must be removed: ${obsoleteReleasePleaseFile}`);
-    process.exit(1);
-  }
+  if (existsSync(join(root, obsoleteReleasePleaseFile))) fail(`Obsolete Release Please file must be removed: ${obsoleteReleasePleaseFile}`);
 }
 
 const changelog = readFileSync(join(root, "CHANGELOG.md"), "utf8");
-if (changelog.includes("## [Unreleased]")) {
-  console.error("The release preparer owns release notes; do not maintain an Unreleased section");
-  process.exit(1);
-}
+if (changelog.includes("## [Unreleased]")) fail("The release preparer owns release notes; do not maintain an Unreleased section");
 const escapedPackageVersion = pkg.version.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 const currentReleaseHeading = changelog.match(
   new RegExp(`^## \\[${escapedPackageVersion}\\] - (\\d{4}-\\d{2}-\\d{2})$`, "m"),
 );
-if (!currentReleaseHeading) {
-  console.error(`CHANGELOG.md must include a dated heading for version ${pkg.version}`);
-  process.exit(1);
-}
+if (!currentReleaseHeading) fail(`CHANGELOG.md must include a dated heading for version ${pkg.version}`);
 const releaseDate = currentReleaseHeading[1];
-if (new Date(`${releaseDate}T00:00:00Z`).toISOString().slice(0, 10) !== releaseDate) {
-  console.error(`CHANGELOG.md has an invalid release date for version ${pkg.version}`);
-  process.exit(1);
-}
+if (new Date(`${releaseDate}T00:00:00Z`).toISOString().slice(0, 10) !== releaseDate) fail(`CHANGELOG.md has an invalid release date for version ${pkg.version}`);
 
 const publishWorkflow = readFileSync(
   join(root, ".github/workflows/publish.yml"),
@@ -347,23 +272,11 @@ const publishWorkflowSignals = [
   "npm publish",
 ];
 for (const signal of publishWorkflowSignals) {
-  if (!publishWorkflow.includes(signal)) {
-    console.error(`npm publish workflow missing signal: ${signal}`);
-    process.exit(1);
-  }
+  if (!publishWorkflow.includes(signal)) fail(`npm publish workflow missing signal: ${signal}`);
 }
-if (/NPM_(TOKEN|AUTH_TOKEN)/.test(publishWorkflow)) {
-  console.error("npm publish workflow must use trusted publishing, not a stored npm token");
-  process.exit(1);
-}
-if (/^\s+push:\s*$/m.test(publishWorkflow.slice(0, publishWorkflow.indexOf("jobs:")))) {
-  console.error("npm publication must not be triggered by an arbitrary pushed tag");
-  process.exit(1);
-}
-if (publishWorkflow.includes("gh release create")) {
-  console.error("The publisher must require an existing GitHub Release");
-  process.exit(1);
-}
+if (/NPM_(TOKEN|AUTH_TOKEN)/.test(publishWorkflow)) fail("npm publish workflow must use trusted publishing, not a stored npm token");
+if (/^\s+push:\s*$/m.test(publishWorkflow.slice(0, publishWorkflow.indexOf("jobs:")))) fail("npm publication must not be triggered by an arbitrary pushed tag");
+if (publishWorkflow.includes("gh release create")) fail("The publisher must require an existing GitHub Release");
 
 const releaseWorkflow = readFileSync(
   join(root, ".github/workflows/release.yml"),
@@ -391,28 +304,16 @@ const releaseWorkflowSignals = [
   'release_tag="$RELEASE_TAG"',
 ];
 for (const signal of releaseWorkflowSignals) {
-  if (!releaseWorkflow.includes(signal)) {
-    console.error(`Release workflow missing signal: ${signal}`);
-    process.exit(1);
-  }
+  if (!releaseWorkflow.includes(signal)) fail(`Release workflow missing signal: ${signal}`);
 }
-if (/pull-requests:\s*write|issues:\s*write|release-please-action/.test(releaseWorkflow)) {
-  console.error("The release workflow must not create or manage pull requests");
-  process.exit(1);
-}
-if (/(PERSONAL_ACCESS_TOKEN|GH_PAT|NPM_TOKEN|NPM_AUTH_TOKEN)/.test(releaseWorkflow)) {
-  console.error("Release preparation must use short-lived GitHub workflow credentials");
-  process.exit(1);
-}
+if (/pull-requests:\s*write|issues:\s*write|release-please-action/.test(releaseWorkflow)) fail("The release workflow must not create or manage pull requests");
+if (/(PERSONAL_ACCESS_TOKEN|GH_PAT|NPM_TOKEN|NPM_AUTH_TOKEN)/.test(releaseWorkflow)) fail("Release preparation must use short-lived GitHub workflow credentials");
 
 const actionUses = [publishWorkflow, releaseWorkflow].flatMap((workflow) =>
   [...workflow.matchAll(/uses:\s+[^@\s]+@([^\s]+)/g)],
 );
 const unpinnedAction = actionUses.find(([, ref]) => !/^[0-9a-f]{40}$/.test(ref));
-if (unpinnedAction) {
-  console.error(`GitHub Action must be pinned to a commit SHA: ${unpinnedAction[0]}`);
-  process.exit(1);
-}
+if (unpinnedAction) fail(`GitHub Action must be pinned to a commit SHA: ${unpinnedAction[0]}`);
 
 const publicTextFiles = [
   ...packagedMarkdown,
@@ -442,17 +343,11 @@ const forbiddenPrivateSignals = [
 for (const file of new Set(publicTextFiles)) {
   const text = readFileSync(join(root, file), "utf8");
   for (const signal of forbiddenPrivateSignals) {
-    if (text.includes(signal)) {
-      console.error(`Public release file ${file} contains private/internal signal: ${signal}`);
-      process.exit(1);
-    }
+    if (text.includes(signal)) fail(`Public release file ${file} contains private/internal signal: ${signal}`);
   }
 }
 
 const referencesDoc = readFileSync(join(root, "docs/references.md"), "utf8");
-if (/Cellar\/pi-coding-agent\/\d+\.\d+\.\d+/.test(referencesDoc)) {
-  console.error("docs/references.md must not pin a versioned Homebrew Cellar path");
-  process.exit(1);
-}
+if (/Cellar\/pi-coding-agent\/\d+\.\d+\.\d+/.test(referencesDoc)) fail("docs/references.md must not pin a versioned Homebrew Cellar path");
 
 console.log("PiCM Factory package check passed.");
