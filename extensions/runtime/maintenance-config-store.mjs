@@ -387,7 +387,7 @@ export function createMaintenanceConfigStore({
     return {
       ok: true,
       exists: result.exists,
-      privacy: projectPrivacyExclusions(result.privacy),
+      privacy: projectPrivacyExclusions(result.privacy) ?? null,
     };
   }
 

@@ -37,6 +37,14 @@ Use the authoritative procedure and calibration in
 [`maintenance-rubric.md`](../skills/picm-factory/references/maintenance-rubric.md#cold-agent-walk)
 during a general `/picm-maintain` smoke. Record fixture-specific observations here.
 
+## Shared contract and absent exclusions
+
+Use fresh identical copies of `test/fixtures/coding-repository/small-service` for paired `/picm-adopt coding` runs: normal project-local discovery and PiCM-only extension/skill loading. Keep the Pi version, model, and thinking level equal; record the actual resources loaded. Both should load the shared contract, interpret successful settings status with `privacy: null` as no stored PiCM exclusions, and reach Strict coding assessment without coaching or a maintenance-depth selector.
+
+For a signed-off settings run, request one exclusion and an optional cadence. Verify that absent exclusions use an omitted `expectedExcludedPaths`, while a stored empty list uses `[]`; both retain concurrent-change checks. Preserve unrelated fields and distinguish cadence initialization from maintenance completion.
+
+Compression compatibility: the observed Headroom tabular router extracted only the old skill routing table and discarded the surrounding shared contract. Keep the skill router as prose, retain every mode/branch link, and compare original versus compressed contract content when changing this format. The structural test prevents that table shape; it doesn't guarantee arbitrary compressors preserve instructions. Don't change global compression settings to make a package test pass.
+
 ## `/picm-help` smoke check
 
 Expected behavior:

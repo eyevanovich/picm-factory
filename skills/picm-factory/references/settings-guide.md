@@ -4,7 +4,7 @@ Use before changing privacy exclusions or cadence, or recording a completed main
 
 ## Privacy exclusions
 
-Use `picm_settings` `status` to read projected exclusions without exposing opaque configuration. Persist agreed exclusions with `set-exclusions`, passing the last observed `expectedExcludedPaths`. Session-only exclusions remain in conversation. An exclusion update grants no read/write authority and doesn't protect commits; recommend exact `.gitignore` patterns separately when useful.
+Use `picm_settings` `status` to read projected exclusions without exposing opaque configuration. A successful response with `privacy: null` means no PiCM exclusions are stored, not an unknown or failed read; continue eligibility checks using the other privacy boundaries. Otherwise `privacy.excludedPaths` is the stored list. Persist agreed exclusions with `set-exclusions`: omit `expectedExcludedPaths` for `privacy: null`, or pass the observed list, including `[]` for a stored empty list. Both forms compare the observed state and reject concurrent changes; don't substitute `[]` for absence. Session-only exclusions remain in conversation. An exclusion update grants no read/write authority and doesn't protect commits; recommend exact `.gitignore` patterns separately when useful.
 
 ## Optional cadence
 

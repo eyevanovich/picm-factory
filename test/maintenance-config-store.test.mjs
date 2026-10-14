@@ -697,7 +697,7 @@ test("legacy opaque privacy objects remain readable and merge exclusions without
   assert.deepEqual(await store.readSettings(), {
     ok: true,
     exists: true,
-    privacy: undefined,
+    privacy: null,
   });
   const updated = await store.compareAndUpdatePrivacyExclusions(
     undefined,

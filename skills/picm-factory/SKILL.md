@@ -45,12 +45,14 @@ Before privacy/cadence configuration or maintenance-cycle completion, load [sett
 
 Load the selected guide and its required branch references; complete its procedure under the shared contract.
 
-| Mode | Required guide | Additional branch |
-| --- | --- | --- |
-| new | [interview and creation](references/interview-guide.md) | Layout selection, templates, and first-run guidance are routed there. |
-| adopt | [adoption](references/adoption-guide.md) | `coding` or selected hybrid mapping also loads [coding adoption](references/coding-adoption-guide.md). |
-| maintain | [maintenance](references/maintenance-rubric.md) | Coding depth, trace, required redundancy review, and optional optimization are routed there. |
-| optimize | [documentation optimization](references/optimization-guide.md) | Required preservation ledger, redundancy review, and writing-lens audit are routed there. |
-| help | [help](references/help-guide.md) | Explain without inspecting or editing the workspace. |
+**new**: Load [interview and creation](references/interview-guide.md) for layout selection, templates, and first-run guidance.
+
+**adopt**: Load [adoption](references/adoption-guide.md). For `coding` or selected hybrid mapping, also load [coding adoption](references/coding-adoption-guide.md).
+
+**maintain**: Load [maintenance](references/maintenance-rubric.md) for coding depth, trace, required redundancy review, and optional optimization.
+
+**optimize**: Load [documentation optimization](references/optimization-guide.md) for the required preservation ledger, redundancy review, and writing-lens audit.
+
+**help**: Load [help](references/help-guide.md). Explain without inspecting or editing the workspace.
 
 For help/setup only, the release-managed project-local install example is `pi install -l npm:@eyevanovich/picm-factory@0.5.1`. Load this skill only through its explicit command entry points, not during ordinary PiCM implementation discussion.
