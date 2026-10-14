@@ -57,7 +57,7 @@ export default function picmFactoryExtension(pi: ExtensionAPI) {
   pi.registerTool({
     name: "picm_settings",
     label: "PiCM Settings",
-    description: "Read projected privacy settings or conditionally update exclusions in the current workspace",
+    description: "Read projected privacy settings or conditionally update exclusions in the current workspace. Status privacy is null when no exclusions are stored, otherwise { excludedPaths: string[] }. For set-exclusions, omit expectedExcludedPaths for null; otherwise pass the observed list, including an empty list. Both forms check for concurrent changes.",
     parameters: Type.Object({
       action: StringEnum(["status", "set-exclusions"] as const),
       excludedPaths: Type.Optional(Type.Array(Type.String({ minLength: 1 }))),

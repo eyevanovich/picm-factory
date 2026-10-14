@@ -1,14 +1,14 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { extensionHarness } from "./helpers/picm-extension-harness.mjs";
+import { harness } from "./helpers/maintenance-extension-harness.mjs";
 
 function resultDetails(result) {
   return JSON.parse(result.content[0].text);
 }
 
 test("decision tool returns a selected choice without recording approval state", async () => {
-  const h = extensionHarness();
+  const h = harness();
   const ctx = h.context(process.cwd());
   ctx.hasUI = true;
   ctx.ui.select = async () => "Curated";
@@ -21,7 +21,7 @@ test("decision tool returns a selected choice without recording approval state",
 });
 
 test("decision dismissal and unavailable UI return information only", async () => {
-  const h = extensionHarness();
+  const h = harness();
   const dismissed = h.context(process.cwd());
   dismissed.hasUI = true;
   dismissed.ui.select = async () => undefined;

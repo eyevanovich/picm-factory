@@ -19,7 +19,7 @@ test("both workflows require the shared redundancy procedure during discovery", 
   assert.match(read(`${references}/optimization-guide.md`), /before opportunities or a no-op conclusion/);
   const skill = read("skills/picm-factory/SKILL.md");
   assert.match(skill, /required redundancy review/);
-  assert.match(skill, /Required preservation ledger, redundancy review, and writing-lens audit/);
+  assert.match(skill, /required preservation ledger, redundancy review, and writing-lens audit/i);
 });
 
 test("shared review covers applicability, preservation, dispositions, and bounded completion", () => {

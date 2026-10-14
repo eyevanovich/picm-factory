@@ -37,6 +37,14 @@ Use the authoritative procedure and calibration in
 [`maintenance-rubric.md`](../skills/picm-factory/references/maintenance-rubric.md#cold-agent-walk)
 during a general `/picm-maintain` smoke. Record fixture-specific observations here.
 
+## Shared contract and absent exclusions
+
+Use fresh identical copies of `test/fixtures/coding-repository/small-service` for paired `/picm-adopt coding` runs: normal project-local discovery and PiCM-only extension/skill loading. Keep the Pi version, model, and thinking level equal; record the actual resources loaded. Both should load the shared contract, interpret successful settings status with `privacy: null` as no stored PiCM exclusions, and reach Strict coding assessment without coaching or a maintenance-depth selector.
+
+For a signed-off settings run, request one exclusion and an optional cadence. Verify that absent exclusions use an omitted `expectedExcludedPaths`, while a stored empty list uses `[]`; both retain concurrent-change checks. Preserve unrelated fields and distinguish cadence initialization from maintenance completion.
+
+Compression compatibility: the observed Headroom tabular router extracted only the old skill routing table and discarded the surrounding shared contract. Keep the skill router as prose, retain every mode/branch link, and compare original versus compressed contract content when changing this format. The structural test prevents that table shape; it doesn't guarantee arbitrary compressors preserve instructions. Don't change global compression settings to make a package test pass.
+
 ## `/picm-help` smoke check
 
 Expected behavior:
@@ -68,9 +76,8 @@ Expected behavior:
 - Uses ordinary host tools to inspect only the agent-facing documentation needed for the task. It honors Git ignores, configured/session exclusions, and known sensitive paths as discovery defaults without claiming universal tool enforcement.
 - Asks about a specific privacy conflict when needed; a named external document can be read as user-authorized context but does not grant authority to write there.
 - Inspects root/local instructions, context maps/contracts, and routed reference/workflow docs in scope. It records generated, unrelated, and uncertain omissions without opening excluded/private content. In `optimization-writing-lens`, the expected discovered set is `AGENTS.md`, `CONTEXT.md`, `services/billing/AGENTS.md`, `workflows/release/AGENTS.md`, and `generated/deploy/AGENTS.md`; the generated deployment guide is readable but ineligible for edits.
-- Builds the preservation ledger, records five writing-lens outcomes with document-specific evidence, and shows `### Writing-lens audit` before opportunities, a final direction, or a no-op result.
+- After the preservation ledger, shows `### Writing-lens audit` before opportunities, a final direction, or a no-op result. Reports **Pass**, **Opportunity**, or **Not applicable** with document-specific evidence for context pointers, information hierarchy, canonical home, completion criteria, and pruning.
 - Identifies evidence-backed opportunities before drafting edits, distinguishes true duplication from intentional local safety or review reminders, and preserves unique safety, privacy, permission, command, behavior, verification, handoff, and domain constraints.
-- Applies the required agent-document writing lens after the ledger and reports **Pass**, **Opportunity**, or **Not applicable** for context pointers, information hierarchy, canonical home, completion criteria, and pruning.
 - In `existing-doc-duplication`, recognizes the explicit intentional-conflict declaration as a preservation constraint. In `optimization-writing-lens`, it preserves the intentionally repeated local customer-data rule in `services/billing/AGENTS.md`, the release-note human-approval criterion in `workflows/release/AGENTS.md`, and the generated deployment guide's do-not-edit boundary.
 - Does not propose source/build/runtime, `.picm/`, generated-artifact, per-run output, or unrelated-workspace edits.
 - For selected improvements, presents a concise final direction with material effects and uncertainty, offers a diff or file review when useful, then waits for conversational sign-off before edits. Routine aligned implementation does not need repeated approval.

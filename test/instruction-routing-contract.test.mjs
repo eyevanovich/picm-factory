@@ -25,13 +25,18 @@ test("every registered command routes through shared privacy and alignment befor
   assert.ok(contract >= 0 && routing > contract);
   assert.ok(skill.indexOf("Before content reads or searches") < routing);
   assert.ok(skill.indexOf("Wait for conversational sign-off") < routing);
+  assert.match(skill, /\*\*adopt\*\*:[^\n]*`coding` or selected hybrid mapping[^\n]*coding-adoption-guide\.md/);
   for (const [mode, guide] of Object.entries(routes)) {
     assert.match(commandPrompt(`picm-${mode}`), /shared trusted-assistant contract/);
     assert.ok(commandPrompt(`picm-${mode}`).includes(`Mode: ${mode}`));
     assert.ok(linkedPaths("SKILL.md").includes(guide), `${mode} guide not reachable`);
     assert.ok(linkedPaths(guide).includes("SKILL.md"), `${mode} guide lacks its shared prerequisite`);
-    assert.match(skill, new RegExp(`\\| ${mode} \\|[^\\n]*${guide.replaceAll(".", "\\.")}`));
+    assert.match(skill, new RegExp(`\\*\\*${mode}\\*\\*:[^\\n]*${guide.replaceAll(".", "\\.")}`));
   }
+});
+
+test("shared-contract routing avoids lossy tabular compression", () => {
+  assert.doesNotMatch(read("SKILL.md"), /^\|.*\|$/m, "Headroom table extraction can discard the surrounding shared contract");
 });
 
 test("scope and completion criteria cover the observed QA gaps", () => {

@@ -22,26 +22,10 @@ export function createMaintenanceController({ store, now = () => new Date() } = 
       return {
         ok: true,
         maintenance,
-        patch: { maintenance },
       };
     } catch (error) {
       return failed(error);
     }
-  }
-
-  async function applyPolicy(maintenance) {
-    try {
-      const valid = validatePolicy(maintenance);
-      const result = await store.updateMaintenance(valid);
-      return result.ok ? { ...result, patch: { maintenance: valid } } : result;
-    } catch (error) {
-      return failed(error);
-    }
-  }
-
-  async function apply(input) {
-    const decision = preview(input);
-    return decision.ok ? applyPolicy(decision.maintenance) : decision;
   }
 
   async function status() {
@@ -83,7 +67,7 @@ export function createMaintenanceController({ store, now = () => new Date() } = 
     }
   }
 
-  async function startupProbe({ mode, seenKeys = new Set() } = {}) {
+  async function startupProbe({ mode } = {}) {
     if (mode !== "tui") return { ok: true, action: "none", reason: "non-tui" };
     const current = await store.read();
     if (!current.ok) return current;
@@ -100,14 +84,11 @@ export function createMaintenanceController({ store, now = () => new Date() } = 
     }
 
     const dueKey = `${maintenance.mode}:${maintenance.nextDueAt}`;
-    if (seenKeys.has(dueKey)) return { ok: true, action: "none", reason: "already-seen", dueKey };
 
     return { ok: true, action: "due", dueKey, maintenance };
   }
 
   return {
-    apply,
-    applyPolicy,
     completeCycle,
     preview,
     startupProbe,

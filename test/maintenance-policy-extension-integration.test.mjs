@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { readFileSync, writeFileSync } from "node:fs";
+import { readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import test from "node:test";
 
@@ -47,6 +47,54 @@ test("policy status projects maintenance and complete does not create or reset m
   writeFileSync(join(cwd, ".picm/config.json"), JSON.stringify({ version: 1, opaque: { secret: "not projected" } }));
   const absent = details(await h.tool.execute("complete-absent", { action: "complete" }, undefined, undefined, h.context(cwd)));
   assert.equal(absent.changed, false);
+});
+
+test("settings serializes absent exclusions explicitly and updates the observed state", async (t) => {
+  for (const [name, config, expectedPrivacy] of [
+    ["missing config", undefined, null],
+    ["missing privacy", { custom: "keep" }, null],
+    ["legacy privacy", { custom: "keep", privacy: { owner: "preserve" } }, null],
+    ["stored empty exclusions", { custom: "keep", privacy: { excludedPaths: [] } }, { excludedPaths: [] }],
+  ]) {
+    await t.test(name, async (t) => {
+      const cwd = fixture(t);
+      const h = harness();
+      const path = join(cwd, ".picm/config.json");
+      if (config === undefined) rmSync(path);
+      else writeFileSync(path, JSON.stringify(config));
+
+      const status = details(await h.settings.execute("status", { action: "status" }, undefined, undefined, h.context(cwd)));
+      assert.deepEqual(status, { ok: true, exists: config !== undefined, privacy: expectedPrivacy });
+      const updated = details(await h.settings.execute("set", {
+        action: "set-exclusions",
+        excludedPaths: ["private"],
+        ...(status.privacy === null ? {} : { expectedExcludedPaths: status.privacy.excludedPaths }),
+      }, undefined, undefined, h.context(cwd)));
+      assert.equal(updated.changed, true);
+      const saved = JSON.parse(readFileSync(path, "utf8"));
+      assert.deepEqual(saved.privacy, { ...config?.privacy, excludedPaths: ["private"] });
+      if (config) assert.equal(saved.custom, "keep");
+    });
+  }
+});
+
+test("settings distinguishes concurrent absent and empty exclusion states", async (t) => {
+  for (const [initialPrivacy, concurrentPrivacy] of [[undefined, { excludedPaths: [] }], [{ excludedPaths: [] }, undefined]]) {
+    const cwd = fixture(t);
+    const h = harness();
+    const path = join(cwd, ".picm/config.json");
+    writeFileSync(path, JSON.stringify({ privacy: initialPrivacy }));
+    const status = details(await h.settings.execute("status", { action: "status" }, undefined, undefined, h.context(cwd)));
+    writeFileSync(path, JSON.stringify({ custom: "concurrent", privacy: concurrentPrivacy }));
+    const before = readFileSync(path, "utf8");
+    const result = details(await h.settings.execute("stale", {
+      action: "set-exclusions",
+      excludedPaths: ["private"],
+      ...(status.privacy === null ? {} : { expectedExcludedPaths: status.privacy.excludedPaths }),
+    }, undefined, undefined, h.context(cwd)));
+    assert.equal(result.conflict, true);
+    assert.equal(readFileSync(path, "utf8"), before);
+  }
 });
 
 test("settings projects exclusions and reports a stale conditional update without mutation", async (t) => {

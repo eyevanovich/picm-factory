@@ -49,7 +49,7 @@ You do not need to know PiCM or ICM terminology. PiCM Factory gives Pi five comm
 | `/picm-optimize` | Agent-facing instructions or context are repetitive, diffuse, or hard to navigate. | Outcome-preserving optimization of agent-facing documentation only. |
 | `/picm-help` | You want command help. | Explains syntax, examples, installation, and safety behavior. |
 
-Arguments are optional conversational input, not required flags; bare commands remain valid. Full syntax is `/picm-adopt [coding | adoption request]` and `/picm-maintain [strict | balanced] [coding | routing | handoffs | stale-context | security | trace "drift symptom"]`. In interactive Pi, type a space after `/picm-adopt` or `/picm-maintain` to see argument completions.
+Arguments are optional conversational input, not required flags; bare commands remain valid. In interactive Pi, type a space after `/picm-adopt` or `/picm-maintain` to see argument completions.
 
 Examples:
 

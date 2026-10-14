@@ -3,7 +3,6 @@ import { resolve } from "node:path";
 import test from "node:test";
 
 import {
-  mergePrivacyExcludedPaths,
   normalizePrivacyExcludedPaths,
   privacyPathMatches,
   projectStoredPrivacyPolicy,
@@ -19,10 +18,6 @@ test("normalizes, deduplicates, and minimizes project-relative exclusions", () =
     "client-data/acme",
     "client-data/acme/private.txt",
   ]), ["client-data/acme", "secrets"]);
-  assert.deepEqual(mergePrivacyExcludedPaths(root, [".env"], ["secrets/key"], ["secrets"]), [
-    ".env",
-    "secrets",
-  ]);
 });
 
 test("rejects empty, absolute, root, and outside exclusions", () => {
