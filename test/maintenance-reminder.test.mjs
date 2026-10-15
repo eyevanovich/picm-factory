@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { createMaintenanceReminder } from "../extensions/runtime/maintenance-reminder.mjs";
+import { createMaintenanceReminder } from "../extensions/runtime/maintenance-reminder.ts";
 
 const due = { mode: "nudge", nextDueAt: "2026-01-01T00:00:00.000Z" };
 

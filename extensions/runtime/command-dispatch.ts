@@ -1,4 +1,6 @@
-import { parseMaintenanceDepthArgument } from "./coding-maintenance-depth.mjs";
+import { parseMaintenanceDepthArgument } from "./coding-maintenance-depth.ts";
+
+import type { MaintenanceDepth } from "./coding-maintenance-depth.ts";
 
 const modes = new Map([
   ["picm-new", "new"],
@@ -8,7 +10,7 @@ const modes = new Map([
   ["picm-help", "help"],
 ]);
 
-export function commandPrompt(command, args = "", { depth } = {}) {
+export function commandPrompt(command: string, args = "", { depth }: { depth?: MaintenanceDepth } = {}) {
   const mode = modes.get(command);
   if (!mode) throw new Error(`Unknown PiCM command: ${command}`);
   const text = args.trim();

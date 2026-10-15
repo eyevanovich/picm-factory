@@ -3,7 +3,7 @@ import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import picmFactoryExtension from "../../extensions/picm-factory.ts";
-import { createPolicy } from "../../extensions/runtime/maintenance-policy.mjs";
+import { createPolicy } from "../../extensions/runtime/maintenance-policy.ts";
 
 export function fixture(t, maintenance) {
   const cwd = mkdtempSync(join(tmpdir(), "picm-extension-maintenance-"));

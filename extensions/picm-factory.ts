@@ -1,6 +1,7 @@
 import {
   withFileMutationQueue,
   type ExtensionAPI,
+  type ExtensionContext,
 } from "@earendil-works/pi-coding-agent";
 import { StringEnum } from "@earendil-works/pi-ai";
 import { join } from "node:path";
@@ -9,11 +10,11 @@ import {
   BALANCED_MAINTENANCE_GUIDANCE,
   MAINTENANCE_DEPTH_CHOICES,
   STRICT_MAINTENANCE_GUIDANCE,
-} from "./runtime/coding-maintenance-depth.mjs";
-import { commandPrompt, maintenanceRequest } from "./runtime/command-dispatch.mjs";
-import { createMaintenanceConfigStore } from "./runtime/maintenance-config-store.mjs";
-import { createMaintenanceController } from "./runtime/maintenance-controller.mjs";
-import { createMaintenanceReminder } from "./runtime/maintenance-reminder.mjs";
+} from "./runtime/coding-maintenance-depth.ts";
+import { commandPrompt, maintenanceRequest } from "./runtime/command-dispatch.ts";
+import { createMaintenanceConfigStore } from "./runtime/maintenance-config-store.ts";
+import { createMaintenanceController } from "./runtime/maintenance-controller.ts";
+import { createMaintenanceReminder } from "./runtime/maintenance-reminder.ts";
 
 const commandDescriptions = {
   "picm-new": "Create a workspace; optionally add a workflow description after the command",
@@ -119,11 +120,11 @@ export default function picmFactoryExtension(pi: ExtensionAPI) {
     },
   });
 
-  async function chooseDepth(ctx: any, args: string) {
+  async function chooseDepth(ctx: Pick<ExtensionContext, "mode" | "ui">, args: string): Promise<ReturnType<typeof maintenanceRequest> | undefined> {
     const parsed = maintenanceRequest(args);
     if (parsed.depth) return parsed;
     if (ctx.mode !== "tui") return { ...parsed, depth: "strict" };
-    const choice = await ctx.ui.select("Choose maintenance depth for this run (stored preset will not change)", MAINTENANCE_DEPTH_CHOICES);
+    const choice = await ctx.ui.select("Choose maintenance depth for this run (stored preset will not change)", [...MAINTENANCE_DEPTH_CHOICES]);
     if (choice !== BALANCED_MAINTENANCE_GUIDANCE && choice !== STRICT_MAINTENANCE_GUIDANCE) return undefined;
     return { ...parsed, depth: choice === BALANCED_MAINTENANCE_GUIDANCE ? "balanced" : "strict" };
   }
@@ -175,7 +176,7 @@ export default function picmFactoryExtension(pi: ExtensionAPI) {
       if (ctx.hasUI) ctx.ui.notify("PiCM reminder could not be presented; it may be offered again.", "warning");
       return;
     }
-    if (result.action === "run-now") {
+    if (result.ok && result.action === "run-now") {
       const selected = await chooseDepth(ctx, "");
       if (selected) pi.sendUserMessage(commandPrompt("picm-maintain", selected.args, { depth: selected.depth }), { deliverAs: "followUp" });
     } else if (!result.ok && ctx.hasUI) {

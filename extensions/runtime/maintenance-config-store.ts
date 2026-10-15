@@ -1,43 +1,75 @@
 import * as nodeFs from "node:fs/promises";
+import type { FileHandle } from "node:fs/promises";
+import type { Stats } from "node:fs";
+import { codedError, errorCode } from "./errors.ts";
+import type { MaintenancePolicy } from "./maintenance-policy.ts";
+import type { StoredPrivacyPolicy } from "./privacy-policy.ts";
 import { randomUUID } from "node:crypto";
 import { relative, resolve, join } from "node:path";
-import { validatePolicy } from "./maintenance-policy.mjs";
+import { validatePolicy } from "./maintenance-policy.ts";
 import {
   projectStoredPrivacyPolicy,
   validatePrivacyPolicy,
   validateStoredPrivacyPolicy,
-} from "./privacy-policy.mjs";
+} from "./privacy-policy.ts";
 
-function errorDecision(code, message) {
+type ConfigFields = { maintenance?: MaintenancePolicy; privacy?: StoredPrivacyPolicy };
+type MutationDetails = ConfigFields & {
+  changed?: boolean;
+  committed?: boolean;
+  conflict?: boolean;
+  code?: string;
+  message?: string;
+  warning?: string;
+  exists?: boolean;
+  config?: Record<string, unknown>;
+};
+export type ConfigFailure = MutationDetails & { ok: false; code: string; message: string };
+export type ConfigMutationResult = ConfigFailure | (MutationDetails & { ok: true });
+type ConfigReadResult = ConfigFailure | (ConfigFields & { ok: true } & (
+  { exists: false; config?: undefined; mode?: undefined; sourceText?: undefined } |
+  { exists: true; config: Record<string, unknown>; mode: number; sourceText: string }
+));
+type StoreOptions = {
+  cwd?: string;
+  fs?: typeof nodeFs;
+  randomId?: () => string;
+  lockRetryMs?: number;
+  lockRetries?: number;
+  processId?: number;
+  isProcessAlive?: (pid: number) => boolean;
+};
+export type MutationOptions = { signal?: AbortSignal };
+
+function errorDecision(code: string, message: string): ConfigFailure {
   return { ok: false, code, message };
 }
 
-function messageOf(error) {
+function messageOf(error: unknown) {
   return error instanceof Error ? error.message : String(error);
 }
 
-function valuesEqual(left, right) {
+function valuesEqual(left: unknown, right: unknown) {
   return JSON.stringify(left) === JSON.stringify(right);
 }
 
-function delay(milliseconds) {
+function delay(milliseconds: number) {
   return new Promise((resolveDelay) => setTimeout(resolveDelay, milliseconds));
 }
 
-function throwIfAborted(signal) {
+function throwIfAborted(signal: AbortSignal | undefined) {
   if (signal?.aborted) {
-    const error = new Error("CONFIG_OPERATION_CANCELLED: operation was cancelled before mutation");
-    error.code = "CONFIG_OPERATION_CANCELLED";
+    const error = codedError("CONFIG_OPERATION_CANCELLED", "CONFIG_OPERATION_CANCELLED: operation was cancelled before mutation");
     throw error;
   }
 }
 
-function isRecord(value) {
+function isRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value);
 }
 
 export function createMaintenanceConfigStore({
-  cwd,
+  cwd: configuredCwd,
   fs = nodeFs,
   randomId = randomUUID,
   lockRetryMs = 5,
@@ -48,24 +80,25 @@ export function createMaintenanceConfigStore({
       process.kill(pid, 0);
       return true;
     } catch (error) {
-      return error?.code === "EPERM";
+      return errorCode(error) === "EPERM";
     }
   },
-} = {}) {
-  if (!cwd) throw new Error("PiCM config store requires cwd");
+}: StoreOptions = {}) {
+  if (!configuredCwd) throw new Error("PiCM config store requires cwd");
+  const cwd = configuredCwd;
 
   const directory = join(cwd, ".picm");
   const configPath = join(directory, "config.json");
-  const projectPrivacyExclusions = (privacy) => projectStoredPrivacyPolicy(privacy, cwd);
+  const projectPrivacyExclusions = (privacy: unknown) => projectStoredPrivacyPolicy(privacy, cwd);
   const lockPath = `${configPath}.lock`;
   const recoveryPrefix = "config.json.lock.recovery-";
 
-  async function validateDirectory() {
+  async function validateDirectory(): Promise<ConfigFailure | { ok: true; exists: boolean }> {
     let stat;
     try {
       stat = await fs.lstat(directory);
     } catch (error) {
-      if (error?.code === "ENOENT") return { ok: true, exists: false };
+      if (errorCode(error) === "ENOENT") return { ok: true, exists: false };
       return errorDecision("CONFIG_DIRECTORY_STAT_FAILED", messageOf(error));
     }
     if (stat.isSymbolicLink()) {
@@ -89,12 +122,12 @@ export function createMaintenanceConfigStore({
     return { ok: true, exists: true };
   }
 
-  async function validateConfigFile() {
+  async function validateConfigFile(): Promise<ConfigFailure | { ok: true; exists: false } | { ok: true; exists: true; stat: Stats }> {
     let stat;
     try {
       stat = await fs.lstat(configPath);
     } catch (error) {
-      if (error?.code === "ENOENT") return { ok: true, exists: false };
+      if (errorCode(error) === "ENOENT") return { ok: true, exists: false };
       return errorDecision("CONFIG_STAT_FAILED", messageOf(error));
     }
     if (stat.isSymbolicLink()) return errorDecision("CONFIG_SYMLINK_BLOCKED", "PiCM config must not be a symlink");
@@ -114,7 +147,7 @@ export function createMaintenanceConfigStore({
     return { ok: true, exists: true, stat };
   }
 
-  async function read() {
+  async function read(): Promise<ConfigReadResult> {
     const directoryDecision = await validateDirectory();
     if (!directoryDecision.ok) return directoryDecision;
     if (!directoryDecision.exists) {
@@ -127,8 +160,8 @@ export function createMaintenanceConfigStore({
 
     try {
       const text = await fs.readFile(configPath, "utf8");
-      const config = JSON.parse(text);
-      if (!config || typeof config !== "object" || Array.isArray(config)) {
+      const config: unknown = JSON.parse(text);
+      if (!isRecord(config)) {
         return errorDecision("CONFIG_INVALID_JSON_OBJECT", "maintenance config root must be a JSON object");
       }
       let maintenance;
@@ -137,7 +170,7 @@ export function createMaintenanceConfigStore({
         if (Object.hasOwn(config, "maintenance")) maintenance = validatePolicy(config.maintenance);
         if (Object.hasOwn(config, "privacy")) privacy = validateStoredPrivacyPolicy(config.privacy, cwd);
       } catch (error) {
-        return errorDecision(error.code ?? "INVALID_CONFIG", messageOf(error));
+        return errorDecision(errorCode(error) ?? "INVALID_CONFIG", messageOf(error));
       }
       return { ok: true, exists: true, config, maintenance, privacy, mode: fileDecision.stat.mode, sourceText: text };
     } catch (error) {
@@ -159,12 +192,12 @@ export function createMaintenanceConfigStore({
       recoveryPath = join(directory, `${recoveryPrefix}${processId}-${randomId()}`);
       await fs.link(lockPath, recoveryPath);
     } catch (error) {
-      if (error?.code === "ENOENT") return true;
+      if (errorCode(error) === "ENOENT") return true;
       return false;
     }
     try {
-      const owner = JSON.parse(await fs.readFile(recoveryPath, "utf8"));
-      if (!Number.isSafeInteger(owner?.pid) || typeof owner?.token !== "string" || isProcessAlive(owner.pid)) {
+      const owner: unknown = JSON.parse(await fs.readFile(recoveryPath, "utf8"));
+      if (!isRecord(owner) || typeof owner.pid !== "number" || !Number.isSafeInteger(owner.pid) || typeof owner.token !== "string" || isProcessAlive(owner.pid)) {
         return false;
       }
       const [lockStat, recoveryStat] = await Promise.all([
@@ -185,7 +218,7 @@ export function createMaintenanceConfigStore({
     }
   }
 
-  async function acquireLock(waitForLock) {
+  async function acquireLock(waitForLock: boolean): Promise<ConfigFailure | { ok: true; handle: FileHandle; token: string }> {
     for (let attempt = 0; ; attempt += 1) {
       const token = randomId();
       let handle;
@@ -195,7 +228,7 @@ export function createMaintenanceConfigStore({
         await handle.sync();
         return { ok: true, handle, token };
       } catch (error) {
-        if (error?.code !== "EEXIST") {
+        if (errorCode(error) !== "EEXIST") {
           try { await handle?.close(); } catch {}
           if (handle) {
             try { await fs.unlink(lockPath); } catch {}
@@ -211,7 +244,7 @@ export function createMaintenanceConfigStore({
     }
   }
 
-  async function mutateConfigField(field, validValue, {
+  async function mutateConfigField<K extends keyof ConfigFields, V extends ConfigFields[K]>(field: K, validValue: V, {
     expectedValue,
     conditional = false,
     conflictCode,
@@ -219,7 +252,14 @@ export function createMaintenanceConfigStore({
     selectCurrentValue = (value) => value,
     mergeCurrentValue = (_current, next) => next,
     signal,
-  } = {}) {
+  }: MutationOptions & {
+    expectedValue?: unknown;
+    conditional?: boolean;
+    conflictCode?: string;
+    conflictMessage?: string;
+    selectCurrentValue?: (value: ConfigFields[K]) => unknown;
+    mergeCurrentValue?: (current: ConfigFields[K], next: V) => ConfigFields[K];
+  } = {}): Promise<ConfigMutationResult> {
     throwIfAborted(signal);
     const initial = await read();
     throwIfAborted(signal);
@@ -238,9 +278,9 @@ export function createMaintenanceConfigStore({
       return { ok: true, changed: false, exists: false, [field]: undefined };
     }
 
-    let lockHandle;
-    let lockToken;
-    let tempHandle;
+    let lockHandle: FileHandle | undefined;
+    let lockToken: string | undefined;
+    let tempHandle: FileHandle | undefined;
     let directoryMayHaveBeenCreated = false;
     const tempPath = `${configPath}.tmp-${process.pid}-${randomId()}`;
     try {
@@ -271,7 +311,7 @@ export function createMaintenanceConfigStore({
         };
       }
 
-      const nextConfig = current.exists
+      const nextConfig: Record<string, unknown> = current.exists
         ? { ...current.config }
         : { version: 1, generatedBy: "picm-factory" };
       const nextValue = mergeCurrentValue(current[field], validValue);
@@ -332,10 +372,10 @@ export function createMaintenanceConfigStore({
       }
       return { ok: true, changed: true, committed: true, exists: true, config: nextConfig, [field]: validValue };
     } catch (error) {
-      if (error?.code === "CONFIG_OPERATION_CANCELLED") {
-        if (directoryMayHaveBeenCreated) {
+      if (errorCode(error) === "CONFIG_OPERATION_CANCELLED") {
+        if (directoryMayHaveBeenCreated && error instanceof Error) {
           error.message += "; .picm/ may have been created and retained";
-          error.possibleCreatedDirectory = true;
+          Object.assign(error, { possibleCreatedDirectory: true });
         }
         throw error;
       }
@@ -346,31 +386,31 @@ export function createMaintenanceConfigStore({
       try { await lockHandle?.close(); } catch {}
       if (lockHandle) {
         try {
-          const owner = JSON.parse(await fs.readFile(lockPath, "utf8"));
-          if (owner.pid === processId && owner.token === lockToken) await fs.unlink(lockPath);
+          const owner: unknown = JSON.parse(await fs.readFile(lockPath, "utf8"));
+          if (isRecord(owner) && owner.pid === processId && owner.token === lockToken) await fs.unlink(lockPath);
         } catch {}
       }
     }
   }
 
-  async function updateMaintenance(maintenance) {
+  async function updateMaintenance(maintenance: unknown) {
     let validMaintenance;
     try {
       validMaintenance = maintenance === undefined ? undefined : validatePolicy(maintenance);
     } catch (error) {
-      return errorDecision(error.code ?? "INVALID_POLICY", messageOf(error));
+      return errorDecision(errorCode(error) ?? "INVALID_POLICY", messageOf(error));
     }
     return mutateConfigField("maintenance", validMaintenance);
   }
 
-  async function compareAndUpdateMaintenance(expectedMaintenance, maintenance, { signal } = {}) {
+  async function compareAndUpdateMaintenance(expectedMaintenance: unknown, maintenance: unknown, { signal }: MutationOptions = {}) {
     let validExpected;
     let validMaintenance;
     try {
       validExpected = expectedMaintenance === undefined ? undefined : validatePolicy(expectedMaintenance);
       validMaintenance = maintenance === undefined ? undefined : validatePolicy(maintenance);
     } catch (error) {
-      return errorDecision(error.code ?? "INVALID_POLICY", messageOf(error));
+      return errorDecision(errorCode(error) ?? "INVALID_POLICY", messageOf(error));
     }
     return mutateConfigField("maintenance", validMaintenance, {
       expectedValue: validExpected,
@@ -391,7 +431,7 @@ export function createMaintenanceConfigStore({
     };
   }
 
-  async function compareAndUpdatePrivacyExclusions(expectedExcludedPaths, excludedPaths, { signal } = {}) {
+  async function compareAndUpdatePrivacyExclusions(expectedExcludedPaths: unknown, excludedPaths: unknown, { signal }: MutationOptions = {}) {
     let expectedPrivacy;
     let nextPrivacy;
     try {
@@ -400,7 +440,7 @@ export function createMaintenanceConfigStore({
         : { excludedPaths: validatePrivacyPolicy({ excludedPaths: expectedExcludedPaths }, cwd).excludedPaths };
       nextPrivacy = { excludedPaths: validatePrivacyPolicy({ excludedPaths }, cwd).excludedPaths };
     } catch (error) {
-      return errorDecision(error.code ?? "INVALID_PRIVACY_POLICY", messageOf(error));
+      return errorDecision(errorCode(error) ?? "INVALID_PRIVACY_POLICY", messageOf(error));
     }
 
     const result = await mutateConfigField("privacy", nextPrivacy, {

@@ -9,12 +9,14 @@ export const MAINTENANCE_DEPTH_CHOICES = Object.freeze([
   BALANCED_MAINTENANCE_GUIDANCE,
 ]);
 
-export function parseMaintenanceDepthArgument(args) {
+export type MaintenanceDepth = "strict" | "balanced";
+
+export function parseMaintenanceDepthArgument(args: string) {
   const trimmed = args.trim();
   const match = /^(strict|balanced)(?:\s+([\s\S]*))?$/i.exec(trimmed);
   if (!match) return { depth: undefined, remainingArgs: trimmed };
   return {
-    depth: match[1].toLowerCase(),
+    depth: match[1].toLowerCase() as MaintenanceDepth,
     remainingArgs: match[2]?.trim() ?? "",
   };
 }

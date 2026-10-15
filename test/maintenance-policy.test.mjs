@@ -8,7 +8,7 @@ import {
   normalizeInterval,
   resetPolicy,
   validatePolicy,
-} from "../extensions/runtime/maintenance-policy.mjs";
+} from "../extensions/runtime/maintenance-policy.ts";
 
 test("calendar months clamp month-end and handle leap years", () => {
   assert.equal(calculateNextDue("2025-01-31T12:34:56.789Z", { value: 1, unit: "months" }), "2025-02-28T12:34:56.789Z");

@@ -32,7 +32,8 @@
     "prompts": []
   },
   "scripts": {
-    "check": "node --test test/*.test.mjs && node scripts/check-package.mjs",
+    "check": "npm run typecheck && node --test test/*.test.mjs && node scripts/check-package.mjs",
+    "typecheck": "tsc --noEmit",
     "prepublishOnly": "npm run check"
   },
   "peerDependencies": {
@@ -49,5 +50,9 @@
     "skills/picm-factory/SKILL.md",
     "skills/picm-factory/references",
     "skills/picm-factory/templates"
-  ]
+  ],
+  "devDependencies": {
+    "@types/node": "^24.19.2",
+    "typescript": "^5.9.3"
+  }
 }
