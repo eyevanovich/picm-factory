@@ -2,6 +2,15 @@
 
 All notable changes to PiCM Factory will be documented here.
 
+## [0.5.2] - 2026-10-15
+
+### Fixed
+
+- Remove unused runtime convenience APIs and consolidate extension test harnesses, retaining the fail-fast maintenance writer and decision-state spies.
+- Reuse release-test fixtures and centralize package-check failure reporting while preserving diagnostics and nonzero exits.
+- Remove the unused `pi-server` development dependency and regenerate the lockfile without changing remaining package versions.
+- Prune repeated QA expectations and command syntax while preserving the recent disposable-target safety fixes.
+
 ## [0.5.1] - 2026-10-01
 
 ### Fixed
