@@ -1,11 +1,11 @@
 # Agent Instructions
 
 ## Identity
-You are working on PiCM Factory, a project-local Pi package for creating, adopting, maintaining, and optimizing PiCM / ICM-style folder-agent workspaces and coding-repository context maps.
+You are working on PiCM Factory, shared workspace and coding-context guidance with Pi and Claude Code integrations.
 
 ## Operating constraints
 - PiCM Factory is project-local by default. Install with `pi install -l ...`.
-- Keep the extension thin. Runtime methodology belongs in the skill, references, and templates; backing prompts remain repository-only.
+- Keep host integrations thin. Shared behavior, references, templates, and portable settings logic live in `shared/`; backing prompts remain repository-only.
 - Do not build a custom TUI or workflow executor without clear evidence it is necessary.
 - Be non-destructive by default. Inspect first; for modification commands, present a concise final direction and wait for conversational sign-off before editing.
 - Before changing or reviewing write safety, cancellation, approval, or reminders, read [ADR-0002](docs/adr/0002-trusted-methodology-assistant.md) and [the redesign contract](docs/redesign-contract.md). Migrate runtime, guidance, generated content, and tests together.
@@ -15,12 +15,16 @@ You are working on PiCM Factory, a project-local Pi package for creating, adopti
 - Visible files and folders are the source of truth. `.picm/` is maintainer-only context; normal workflow routing should skip it.
 
 ## Repository structure
-- `extensions/picm-factory.ts` — slash-command registration, small UI/configuration helpers, and skill dispatch.
-- `extensions/runtime/` — configuration integrity, reminder, dispatch, and maintenance-depth utilities.
+- `pi/extensions/picm-factory.ts` — slash-command registration, small UI/configuration helpers, and composed command prompts.
+- `pi/extensions/runtime/` — Pi command dispatch and reminder presentation.
+- `pi/HOST.md` — Pi host instructions.
+- `claude-code/` — Claude plugin adapter and settings CLI; source alone isn't installable.
+- `shared/runtime/` — portable configuration integrity, policy, and maintenance-depth utilities.
+- `shared/compose-instructions.ts` — common-contract, host, and selected-procedure assembly; installed-resource link resolution.
 - `prompts/` — backing prompt text only; package prompt discovery stays disabled to avoid duplicating extension commands.
-- `skills/picm-factory/SKILL.md` — main behavior contract.
-- `skills/picm-factory/references/` — detailed methodology guidance.
-- `skills/picm-factory/templates/` — scaffold templates.
+- `shared/picm-factory/CONTRACT.md` — main behavior contract.
+- `shared/picm-factory/references/` — detailed methodology guidance.
+- `shared/picm-factory/templates/` — scaffold templates.
 - `test/fixtures/` — synthetic QA fixtures; repository-only and excluded from releases.
 - `docs/` — QA scenarios and public methodology references.
 - `qa-runner/CONTEXT.md` — interactive Pi/Herdr QA guidance.
@@ -29,14 +33,17 @@ You are working on PiCM Factory, a project-local Pi package for creating, adopti
 
 | Task | Start here | Supporting files |
 | --- | --- | --- |
-| Change slash-command registration, tool wiring, or dispatch | `extensions/picm-factory.ts` | `extensions/runtime/`, Pi extension documentation |
-| Change configuration integrity, privacy settings, reminders, dispatch, or maintenance-depth selection | `extensions/runtime/` | `extensions/picm-factory.ts`, focused runtime tests |
-| Change scaffold, adoption, maintenance, optimization, or help behavior | `skills/picm-factory/SKILL.md` | The relevant file under `skills/picm-factory/references/` |
-| Change coding adoption or context-map behavior | `skills/picm-factory/references/coding-adoption-guide.md` | `coding-maintenance-rubric.md`, `layout-profiles.md`, coding templates |
-| Change generated workspace content | `skills/picm-factory/templates/` | `skills/picm-factory/references/layout-profiles.md` |
-| Change npm packaging or release validation | `package.json` | `scripts/check-package.mjs`, `README.md`, `CHANGELOG.md` |
+| Change Pi commands, tool wiring, or reminders | `pi/extensions/picm-factory.ts` | `pi/extensions/runtime/`, `pi/HOST.md`, Pi documentation |
+| Change Claude commands or settings access | `claude-code/` | `test/claude-bundle.test.mjs`, Claude plugin documentation |
+| Change configuration integrity, policies, or maintenance depth | `shared/runtime/` | Both host adapters, focused runtime tests |
+| Change scaffold, adoption, maintenance, optimization, or help behavior | `shared/picm-factory/CONTRACT.md` | The relevant file under `shared/picm-factory/references/` |
+| Change coding adoption or context-map behavior | `shared/picm-factory/references/coding-adoption-guide.md` | `coding-maintenance-rubric.md`, `layout-profiles.md`, coding templates |
+| Change generated workspace content | `shared/picm-factory/templates/` | `shared/picm-factory/references/layout-profiles.md` |
+| Change instruction composition | `shared/compose-instructions.ts` | Host sources, `test/instruction-composition.test.mjs`, packaged-artifact tests |
+| Change packaging or release validation | `package.json` | `scripts/check-package.mjs`, `scripts/build-claude-bundle.mjs`, `docs/releasing.md` |
 | Change automated fixture coverage | `test/fixtures/` | `docs/layout-fixture-qa.md` |
-| Run interactive command QA | `qa-runner/CONTEXT.md` | `docs/layout-fixture-qa.md` |
+| Run interactive Pi QA | `qa-runner/CONTEXT.md` | `docs/layout-fixture-qa.md` |
+| Run interactive Claude QA | `docs/claude-code-qa.md` | `claude-code/README.md` |
 | Change public guidance or attribution | `README.md` | `docs/`, `CONTRIBUTING.md` |
 
 Normal task routing should skip `.picm/`; it contains only maintainer metadata.
@@ -48,7 +55,9 @@ Run before committing package changes:
 npm run check
 ```
 
-Interactive command QA is intentionally manual. Follow `qa-runner/CONTEXT.md`; do not run write-capable smoke tests without an explicit disposable target and user approval.
+Use Node 24 for checks and the Claude settings helper. `npm run build:claude` generates ignored `dist/claude-code/` with self-contained command skills; Pi composes the same source sections at dispatch without a build. Edit canonical sources, never generated copies. Keep both distributions self-contained and test them outside the checkout.
+
+Interactive command QA is intentionally manual. Follow the host's QA guide above; do not run write-capable smoke tests without an explicit disposable target and user approval.
 
 ## Contributions
 Read `CONTRIBUTING.md`. Keep changes small, preserve the safety model, and use GitHub Issues for public work tracking.

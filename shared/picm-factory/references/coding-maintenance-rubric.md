@@ -1,6 +1,6 @@
 # Coding maintenance
 
-Load for initial coding adoption, or maintenance with a Coding Repository profile, `capabilities.codebaseMap`, or visible `CONTEXT-MAP.md`. Apply the [shared contract](../SKILL.md) and the general [maintenance rubric](maintenance-rubric.md) for severity, repair tiers, and reporting. During adoption, use those definitions plus the checks here; no separate broad workflow audit or optimization interview is required.
+Load for initial coding adoption, or maintenance with a Coding Repository profile, `capabilities.codebaseMap`, or visible `CONTEXT-MAP.md`. Apply the [shared contract](../CONTRACT.md) and the general [maintenance rubric](maintenance-rubric.md) for severity, repair tiers, and reporting. During adoption, use those definitions plus the checks here; no separate broad workflow audit or optimization interview is required.
 
 Use bounded eligible inspection. Respect generated/do-not-edit and nested-repository boundaries; ask before following unclear symlink targets. Keep sensitive findings generic.
 

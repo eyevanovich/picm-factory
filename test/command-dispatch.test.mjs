@@ -1,9 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { commandPrompt, maintenanceRequest } from "../extensions/runtime/command-dispatch.ts";
+import { commandPrompt, maintenanceRequest } from "../pi/extensions/runtime/command-dispatch.ts";
 
-test("each registered command maps to its shared skill mode without protocol instructions", () => {
+test("each registered command maps to its composed mode without protocol instructions", () => {
   for (const [command, mode] of [
     ["picm-new", "new"],
     ["picm-adopt", "adopt"],
@@ -12,10 +12,10 @@ test("each registered command maps to its shared skill mode without protocol ins
     ["picm-help", "help"],
   ]) {
     const prompt = commandPrompt(command, "focused request");
-    assert.match(prompt, /Load the picm-factory skill/);
+    assert.match(prompt, /## Shared trusted-assistant contract/);
     assert.match(prompt, new RegExp(`Mode: ${mode}`));
     assert.match(prompt, /User arguments: focused request/);
-    assert.doesNotMatch(prompt, /scan_control|proposal|approval token|preflight/i);
+    assert.doesNotMatch(prompt, /picm_scan_control|picm_scaffold_proposal|picm_proposal_batch|approval token|mandatory preflight/i);
   }
   assert.throws(() => commandPrompt("picm-unknown"), /Unknown PiCM command/);
 });

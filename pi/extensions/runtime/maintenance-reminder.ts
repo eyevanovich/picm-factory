@@ -1,6 +1,6 @@
-import type { ConfigFailure } from "./maintenance-config-store.ts";
-import type { createMaintenanceController } from "./maintenance-controller.ts";
-import type { ScheduledMaintenancePolicy } from "./maintenance-policy.ts";
+import type { ConfigFailure } from "../../../shared/runtime/maintenance-config-store.ts";
+import type { createMaintenanceController } from "../../../shared/runtime/maintenance-controller.ts";
+import type { ScheduledMaintenancePolicy } from "../../../shared/runtime/maintenance-policy.ts";
 
 export function createMaintenanceReminder({ controllerForWorkspace: configuredController }: {
   controllerForWorkspace?: (cwd: string) => Pick<ReturnType<typeof createMaintenanceController>, "startupProbe">;

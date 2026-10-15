@@ -1,10 +1,12 @@
 # Adoption
 
-Use for `/picm-adopt` under the [shared contract](../SKILL.md). Inspect existing material, preserve what works, and propose the smallest compatibility/routing improvement. Adoption isn't automatic conversion.
+Use for `adopt` under the [shared contract](../CONTRACT.md). Inspect existing material, preserve what works, and propose the smallest routing improvement. Adoption isn't automatic conversion.
+
+For explicit `coding`, selected coding adoption, or hybrid codebase mapping: Load [coding adoption](coding-adoption-guide.md) for this branch before assessing readiness or producing a report. The shortcut skips classification, not its mapping decisions or Strict examination.
 
 ## Read-first orientation
 
-Inspect eligible routing/context: `AGENTS.md`, `CLAUDE.md`, `CONTEXT.md`, `REFERENCES.md`, identity/rules/examples, references, workflows, handoffs, stages, and relevant projected configuration. For a complex workspace, offer a representative path-to-role-to-rationale inventory; classification informs proposals, never migration authority.
+After successful projected settings status and path eligibility, inspect routing/context: `AGENTS.md`, `CONTEXT.md`, `REFERENCES.md`, identity/rules/examples, references, workflows, handoffs, stages, and relevant projected configuration. Inspect eligible legacy instructions only for the migration cases below; don't open raw config to determine profile or adoption status. For a complex workspace, offer a representative path-to-role-to-rationale inventory; classification informs proposals, never migration authority.
 
 For sensitive non-Git material, recommend storage/sharing review and exact `.gitignore` patterns when future commits are plausible. Discovery exclusions aren't commit protection. Leave Git initialization to the user; ignore-file edits require sign-off. Describe sensitive findings generically, without opening or quoting protected content.
 
@@ -12,7 +14,18 @@ For sensitive non-Git material, recommend storage/sharing review and exact `.git
 
 Adequate visible routing identifies purpose, core read-first context, common task starts, meaningful local boundaries, relevant privacy/coding rules, and `.picm/` exclusion. Classify it as **adequate**, **partial**, **placeholder/unrelated**, or **conflicting/risky**.
 
-Preserve an adequate `AGENTS.md` or `CLAUDE.md` as authoritative. If both exist, identify cooperation/conflicts; a canonical file plus compatibility pointer is optional. If neither exists, recommend minimal `AGENTS.md` and ask whether a `CLAUDE.md` shim is useful, rather than creating either automatically.
+Preserve adequate `AGENTS.md` routing. Use the migration cases below for legacy instructions; creating or migrating routing still requires a final direction and sign-off.
+
+### Instruction-file migration
+
+`AGENTS.md` is the canonical target at root and meaningful nested instruction boundaries:
+
+- **AGENTS-only:** use it; preserve its rules and existing local routes.
+- **CLAUDE-only:** when `AGENTS.md` is absent and `CLAUDE.md` exists, propose migration to `AGENTS.md`. Preserve every applicable instruction, resolve relative paths and incoming pointers, and name any rename/removal effects. Wait for sign-off before writing, renaming, or deleting; declined migration leaves the original untouched and the migration pending.
+- **Both:** if both exist, identify cooperation/conflicts and unique instructions. Propose reconciliation into `AGENTS.md`, preserving meaning and resolving disagreements with the user. Don't silently overwrite or delete either file. Claude's legacy-file precedence can suppress native `AGENTS.md` loading; retaining both doesn't complete migration. Report that unresolved state until the signed-off legacy-file disposition and native loading are verified.
+- **Neither:** propose the smallest useful `AGENTS.md`, not an alternate instruction filename or compatibility shim.
+
+Mention `CLAUDE.md` only to explain or carry out an existing-file migration. Generate no import shim. Verify the host can load the resulting `AGENTS.md`; unsupported versions/settings are a setup limitation, not a successful migration.
 
 | Outcome | Meaning |
 | --- | --- |
@@ -25,7 +38,7 @@ Set `adoption.status: "adopted"` only with adequate visible routing. Metadata ne
 
 ## Coding or hybrid branch
 
-`coding` enters directly; otherwise offer coding adoption after shallow, bounded classification. Load [coding adoption](coding-adoption-guide.md) for this branch. It owns mapping approach, additive/curated depth, high-value hints, Strict baseline, and codebase-map metadata. A coding profile can be primary or complement an existing workflow profile.
+For other requests, offer coding adoption after shallow, bounded classification; selecting it activates the coding reference above. It owns mapping approach, additive/curated depth, high-value hints, Strict baseline, and codebase-map metadata. A coding profile can be primary or complement an existing workflow profile.
 
 ## Direction and result
 

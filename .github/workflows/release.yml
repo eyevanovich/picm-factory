@@ -62,6 +62,15 @@ jobs:
       - name: Validate prepared release
         run: npm run check
 
+      - name: Bundle Claude Code plugin
+        shell: bash
+        env:
+          RELEASE_TAG: ${{ steps.prepare.outputs.tag }}
+        run: |
+          npm run build:claude
+          cd dist/claude-code
+          zip -qr "../picm-claude-code-${RELEASE_TAG#v}.zip" .
+
       - name: Resolve release app identity
         id: release-app-user
         shell: bash
@@ -81,7 +90,7 @@ jobs:
         run: |
           git config user.name "${RELEASE_APP_SLUG}[bot]"
           git config user.email "${RELEASE_APP_USER_ID}+${RELEASE_APP_SLUG}[bot]@users.noreply.github.com"
-          git add package.json package-lock.json CHANGELOG.md README.md skills/picm-factory/SKILL.md
+          git add package.json package-lock.json CHANGELOG.md README.md pi/HOST.md
           git commit -m "chore: release $RELEASE_TAG"
           git tag --no-sign "$RELEASE_TAG"
           git push --atomic origin \
@@ -94,7 +103,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           RELEASE_TAG: ${{ steps.prepare.outputs.tag }}
           NOTES_FILE: ${{ runner.temp }}/release-notes.md
-        run: gh release create "$RELEASE_TAG" --verify-tag --title "$RELEASE_TAG" --notes-file "$NOTES_FILE"
+        run: gh release create "$RELEASE_TAG" dist/picm-claude-code-*.zip --verify-tag --title "$RELEASE_TAG" --notes-file "$NOTES_FILE"
 
       - name: Dispatch trusted npm publisher
         shell: bash

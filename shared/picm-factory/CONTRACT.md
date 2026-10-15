@@ -1,9 +1,3 @@
----
-name: picm-factory
-description: Load for explicit registered /picm-new, /picm-adopt, /picm-maintain, /picm-optimize, or /picm-help command prompts requesting this skill. Natural-language PiCM discussion does not invoke it.
-license: MIT
----
-
 # PiCM Factory
 
 ## Shared trusted-assistant contract
@@ -14,7 +8,7 @@ Apply this contract before the selected mode's discovery or changes.
 
 Start with the current workspace and only task-relevant context. Keep discovery inside that scope or explicitly named external context. Resolve ignore policy through exact ancestor/global ignore-policy locations, not recursive parent/sibling discovery. If policy can't be resolved safely, ask instead of reading uncertain content. Ask when location or scope is materially ambiguous. A named external file or folder is read scope, not authority to write there; nested-repository context likewise grants no initialization or fetching.
 
-Before content reads or searches, select eligible paths using root/nested Git ignores, repository/global excludes, persisted `privacy.excludedPaths`, session exclusions, and known sensitive paths. Bound output. Use `picm_settings` `status` for projected exclusions rather than dumping opaque config. Existing workspace read-first prerequisites are subject to this eligibility check; request an already-sanitized replacement when an excluded prerequisite blocks the task.
+Before content reads or searches, first obtain a successful host `settings` `status` result for projected exclusions rather than dumping opaque config—even when no config is expected. Then select eligible paths using root/nested Git ignores, repository/global excludes, persisted `privacy.excludedPaths`, session exclusions, and known sensitive paths. Exact ignore-policy reads and bounded path-only orientation can establish eligibility; manifests, instructions, source, and tests wait until it is established. Bound output. If status fails or is malformed, stop workspace discovery and report the failure; don't infer empty exclusions or inspect raw `.picm/config.json`. On failure, report only the helper's sanitized error code/message and ask the owner to restore known-good configuration preserving intended exclusions outside the conversation, then stop. Don't request configuration contents or diagnostic output, or suggest alternate inspection/repair commands or deleting/resetting config, including as a user action. After a claim of repair, rerun the helper and resume only after successful settings status; another failure has the same bounded stop, not escalating troubleshooting. The trusted helper may read configuration internally; the agent uses its projected output. Existing workspace read-first prerequisites are subject to this eligibility check; request an already-sanitized replacement when an excluded prerequisite blocks the task.
 
 Keep secrets, credentials, private keys, regulated/private data, and sensitive client material out of model-visible reads, tool output, consultation payloads, memory, reusable context, examples, reports, and diagnostics. User approval does not override this boundary. If eligibility is uncertain, ask for an already-sanitized, non-sensitive source; sanitizing after disclosure is too late. If protected content appears unexpectedly, stop inspecting it, report the exposure generically without repeating values, and ask how to proceed safely.
 
@@ -37,22 +31,10 @@ A user-created Git checkpoint is optional advice for substantial existing-conten
 
 ### Workspace boundaries
 
-Visible files own workflow routing; `.picm/` is minimal maintainer metadata, skipped during normal work. `.pi/` holds Pi installation settings; preserve existing setup. Profiles are recommendations, and coding maps can complement workflow profiles. Use user-named scripts/integrations for deterministic mechanics; keep judgment and review visible rather than building an executor.
+Use `AGENTS.md` as canonical root and nested agent instructions; local `CONTEXT.md` holds reusable context. Existing legacy instructions require a signed-off [migration direction](references/adoption-guide.md#instruction-file-migration), not a compatibility shim or automatic replacement. Visible files own workflow routing; `.picm/` is minimal maintainer metadata, skipped during normal work. Assess routing from eligible visible instructions, never by opening opaque config to infer adoption status. Preserve the host's existing installation settings. Profiles are recommendations, and coding maps can complement workflow profiles. Use user-named scripts/integrations for deterministic mechanics; keep judgment and review visible rather than building an executor.
 
 Before privacy/cadence configuration or maintenance-cycle completion, load [settings and reminders](references/settings-guide.md). Stored exclusions grant no read/write authority; reminders offer work, never autonomous edits.
 
-## Mode routing
+## Host integration
 
-Load the selected guide and its required branch references; complete its procedure under the shared contract.
-
-**new**: Load [interview and creation](references/interview-guide.md) for layout selection, templates, and first-run guidance.
-
-**adopt**: Load [adoption](references/adoption-guide.md). For `coding` or selected hybrid mapping, also load [coding adoption](references/coding-adoption-guide.md).
-
-**maintain**: Load [maintenance](references/maintenance-rubric.md) for coding depth, trace, required redundancy review, and optional optimization.
-
-**optimize**: Load [documentation optimization](references/optimization-guide.md) for the required preservation ledger, redundancy review, and writing-lens audit.
-
-**help**: Load [help](references/help-guide.md). Explain without inspecting or editing the workspace.
-
-For help/setup only, the release-managed project-local install example is `pi install -l npm:@eyevanovich/picm-factory@0.5.2`. Load this skill only through its explicit command entry points, not during ordinary PiCM implementation discussion.
+Use the host adapter's command names, settings operations, setup instructions, and instruction-file loading rules. References use mode names; translate them to the active host's commands in user-facing advice and generated files. Apply this contract only through explicit PiCM entry points, not ordinary implementation discussion. If a required host helper is unavailable or fails, stop the affected operation; never treat a failure as empty settings.

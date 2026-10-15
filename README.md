@@ -1,8 +1,8 @@
 # PiCM Factory
 
-PiCM Factory is a project-local [Pi Coding Agent](https://pi.dev) package for creating, adopting, maintaining, and optimizing folder-agent workspaces and agent-readable coding repositories.
+PiCM Factory helps create, adopt, maintain, and improve folder-agent workspaces and agent-readable coding repositories. It supports [Pi Coding Agent](https://pi.dev) through an npm package and Claude Code through a self-contained plugin bundle.
 
-## Quick start
+## Quick start with Pi
 
 Install Pi once:
 
@@ -37,9 +37,24 @@ A project-level entry for the same package can override this global install. An 
 
 To add PiCM Factory to an existing project, install it from that project's root and run `/picm-adopt`. For local development, replace the npm specifier with `/path/to/picm-factory`.
 
+## Claude Code
+
+From a checkout, use Node 24 or newer:
+
+```bash
+npm ci
+npm run build:claude
+```
+
+Start Claude from your target workspace with `claude --plugin-dir /absolute/path/to/picm-factory/dist/claude-code`, then run `/picm-factory:help`. Claude commands are `/picm-factory:new`, `/picm-factory:adopt`, `/picm-factory:maintain`, `/picm-factory:optimize`, and `/picm-factory:help`.
+
+Releases produced by the updated workflow attach a self-contained `picm-claude-code-VERSION.zip`. Extract it into a stable trusted location and pass that directory to `--plugin-dir`. This is session-local loading, not marketplace installation or automatic updating. Older releases have no Claude bundle. See the [Claude adapter guide](https://github.com/eyevanovich/picm-factory/blob/main/claude-code/README.md).
+
+Both hosts share the same guidance and templates. Each Claude command skill contains the common contract, host instructions, and its primary procedure; Pi assembles the same sections directly when its command runs. Detailed branch references stay on demand, without a shared skill router. Claude uses conversational choices and a Node 24 settings helper; startup reminder offers remain Pi-only. Both hosts use `AGENTS.md` for root and nested instructions, without import shims. Claude Code requires 2.1.277 or newer with native `AGENTS.md` loading enabled. Adoption proposes migration when only legacy instructions exist and resolves conflicts when both files exist; it never silently replaces either.
+
 ## Choose a command
 
-You do not need to know PiCM or ICM terminology. PiCM Factory gives Pi five commands for working on folder-agent and coding projects.
+You do not need to know PiCM or ICM terminology. The table uses Pi command names; Claude's equivalents are listed above.
 
 | Command | Use it when | What it does |
 | --- | --- | --- |
@@ -95,6 +110,8 @@ PiCM Factory is conservative by design:
 PiCM Factory independently adapts ideas from Jake Van Clief and David McDermott's [*Interpretable Context Methodology*](https://arxiv.org/abs/2603.16021), the [Clief Notes community](https://www.skool.com/cliefnotes), and [`RinDig/icm-architect`](https://github.com/RinDig/icm-architect). It runs on [Pi Coding Agent](https://github.com/earendil-works/pi) by Mario Zechner.
 
 ## Development
+
+Agent integrations live in `pi/` and `claude-code/`; canonical guidance, templates, and portable runtime live in `shared/`. The build assembles self-contained Claude command skills and copies their supporting resources into ignored `dist/claude-code/`. Generated copies aren't edited or committed. The root package remains the Pi npm installation entry point.
 
 ```bash
 npm run check

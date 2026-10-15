@@ -1,7 +1,7 @@
 ---
 description: Show PiCM Factory command syntax, arguments, setup, and safety guidance
 ---
-Load this package's `picm-factory` `SKILL.md` before following workspace read-first prerequisites. Apply its scope/privacy contract before workspace reads or searches; an excluded prerequisite needs an already-sanitized replacement, not an approval override.
+Apply the command's included shared contract, Pi host rules, and selected procedure before following workspace read-first prerequisites. Apply its scope/privacy contract before workspace reads or searches; an excluded prerequisite needs an already-sanitized replacement, not an approval override.
 
 Mode: help
 Command: /picm-help

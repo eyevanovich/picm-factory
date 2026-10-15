@@ -2,9 +2,9 @@ import assert from "node:assert/strict";
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { dirname, join, relative, resolve } from "node:path";
 import test from "node:test";
-import { commandPrompt } from "../extensions/runtime/command-dispatch.ts";
+import { commandPrompt } from "../pi/extensions/runtime/command-dispatch.ts";
 
-const base = resolve("skills/picm-factory");
+const base = resolve("shared/picm-factory");
 const read = (path) => readFileSync(join(base, path), "utf8");
 const linkedPaths = (path) => [...read(path).matchAll(/\]\(([^)]+\.md)\)/g)]
   .map(([, target]) => relative(base, resolve(base, dirname(path), target)));
@@ -18,29 +18,26 @@ const routes = {
   help: "references/help-guide.md",
 };
 
-test("every registered command routes through shared privacy and alignment before its guide", () => {
-  const skill = read("SKILL.md");
-  const contract = skill.indexOf("## Shared trusted-assistant contract");
-  const routing = skill.indexOf("## Mode routing");
-  assert.ok(contract >= 0 && routing > contract);
-  assert.ok(skill.indexOf("Before content reads or searches") < routing);
-  assert.ok(skill.indexOf("Wait for conversational sign-off") < routing);
-  assert.match(skill, /\*\*adopt\*\*:[^\n]*`coding` or selected hybrid mapping[^\n]*coding-adoption-guide\.md/);
+test("every command includes shared privacy and alignment before its selected procedure", () => {
+  assert.doesNotMatch(read("CONTRACT.md"), /## Mode routing/);
   for (const [mode, guide] of Object.entries(routes)) {
-    assert.match(commandPrompt(`picm-${mode}`), /shared trusted-assistant contract/);
-    assert.ok(commandPrompt(`picm-${mode}`).includes(`Mode: ${mode}`));
-    assert.ok(linkedPaths("SKILL.md").includes(guide), `${mode} guide not reachable`);
-    assert.ok(linkedPaths(guide).includes("SKILL.md"), `${mode} guide lacks its shared prerequisite`);
-    assert.match(skill, new RegExp(`\\*\\*${mode}\\*\\*:[^\\n]*${guide.replaceAll(".", "\\.")}`));
+    const prompt = commandPrompt(`picm-${mode}`);
+    const procedure = prompt.indexOf(read(guide).split("\n")[0]);
+    assert.ok(prompt.includes(`Mode: ${mode}`));
+    assert.ok(prompt.indexOf("Before content reads or searches") < procedure);
+    assert.ok(prompt.indexOf("Wait for conversational sign-off") < procedure);
+    assert.ok(prompt.indexOf("# Pi host adapter") < procedure);
+    assert.ok(linkedPaths(guide).includes("CONTRACT.md"), `${mode} guide lacks its shared prerequisite`);
   }
+  assert.match(read("references/adoption-guide.md"), /Load \[coding adoption\]\(coding-adoption-guide\.md\) for this branch/);
 });
 
 test("shared-contract routing avoids lossy tabular compression", () => {
-  assert.doesNotMatch(read("SKILL.md"), /^\|.*\|$/m, "Headroom table extraction can discard the surrounding shared contract");
+  assert.doesNotMatch(read("CONTRACT.md"), /^\|.*\|$/m, "Headroom table extraction can discard the surrounding shared contract");
 });
 
 test("scope and completion criteria cover the observed QA gaps", () => {
-  const skill = read("SKILL.md");
+  const skill = read("CONTRACT.md");
   assert.match(skill, /Keep discovery inside that scope/);
   assert.match(skill, /exact ancestor\/global ignore-policy locations/);
   assert.match(skill, /If policy can't be resolved safely, ask/);
@@ -52,14 +49,14 @@ test("scope and completion criteria cover the observed QA gaps", () => {
 });
 
 test("all shipped instruction links resolve inside the packaged skill", () => {
-  const files = ["SKILL.md", ...["references", "templates"].flatMap((directory) =>
+  const files = ["CONTRACT.md", ...["references", "templates"].flatMap((directory) =>
     readdirSync(join(base, directory)).filter((name) => name.endsWith(".md")).map((name) => `${directory}/${name}`))];
   const pkg = JSON.parse(readFileSync(resolve("package.json"), "utf8"));
   for (const file of files) {
     for (const target of linkedPaths(file)) {
       assert.ok(!target.startsWith(".."), `${file} escapes package: ${target}`);
       assert.ok(existsSync(join(base, target)), `${file} has broken pointer: ${target}`);
-      const packagePath = `skills/picm-factory/${target}`;
+      const packagePath = `shared/picm-factory/${target}`;
       assert.ok(pkg.files.some((entry) => packagePath === entry || packagePath.startsWith(`${entry}/`)), `${target} not publishable`);
     }
   }

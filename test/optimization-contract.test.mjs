@@ -1,10 +1,11 @@
 import assert from "node:assert/strict";
+import { commandPrompt } from "../pi/extensions/runtime/command-dispatch.ts";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import test from "node:test";
 
 const read = (path) => readFileSync(join(process.cwd(), path), "utf8");
-const base = "skills/picm-factory";
+const base = "shared/picm-factory";
 
 test("optimization retains documentation-only exclusions, preservation and ordered audit", () => {
   const guide = read(`${base}/references/optimization-guide.md`);
@@ -33,9 +34,8 @@ test("maintenance optional optimization defaults No without widening edit scope"
 });
 
 test("optimization entry points require the shared contract and preservation procedure", () => {
-  const skill = read(`${base}/SKILL.md`);
   const guide = read(`${base}/references/optimization-guide.md`);
-  assert.match(skill, /\*\*optimize\*\*:[^\n]*optimization-guide\.md/);
+  assert.match(commandPrompt("picm-optimize"), /# Documentation optimization/);
   assert.match(guide, /Selections inform a direction; they aren't sign-off/);
   assert.match(guide, /wait for sign-off before edits/);
   assert.match(read("prompts/picm-optimize.md"), /shared trusted-assistant contract/);

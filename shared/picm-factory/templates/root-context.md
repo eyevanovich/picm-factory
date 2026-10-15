@@ -1,4 +1,4 @@
-<!-- PiCM authoring: retain only needed sections and actual paths; omit Named mechanics if none were supplied. Remove this comment from generated output. -->
+<!-- PiCM authoring: retain only needed sections and actual paths; omit Named mechanics if none were supplied. Translate maintain below to the active host's command. Remove this comment from generated output. -->
 # {{picm:workflow-name}} context
 
 ## Purpose and audience
@@ -23,4 +23,4 @@
 {{picm:non-sensitive-path-boundaries-and-handling-rules}}
 
 ## Maintenance
-Consider `/picm-maintain` after first real use or process changes.
+Consider `maintain` after first real use or process changes.

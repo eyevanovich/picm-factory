@@ -22,8 +22,14 @@ test("Run Now sends an ordinary maintenance request and does not reset cadence",
   const before = readFileSync(join(cwd, ".picm/config.json"), "utf8");
   await h.handlers.get("session_start")({}, h.context(cwd));
   assert.equal(h.sent.length, 1);
-  assert.match(h.sent[0], /Mode: maintain/);
-  assert.match(h.sent[0], /One-run depth: strict/);
+  assert.equal(h.sent[0], "Running /picm-maintain (strict).");
+  assert.equal(h.instructions[0].display, false);
+  assert.match(h.instructions[0].content, /Mode: maintain/);
+  assert.match(h.instructions[0].content, /One-run depth: strict/);
+  assert.deepEqual(h.deliveries.map(({ type, options }) => ({ type, options })), [
+    { type: "custom", options: { deliverAs: "nextTurn" } },
+    { type: "user", options: { deliverAs: "followUp" } },
+  ]);
   assert.equal(readFileSync(join(cwd, ".picm/config.json"), "utf8"), before);
 });
 
@@ -48,7 +54,8 @@ test("Run Now honors Balanced depth and a dismissed depth leaves cadence due", a
       await h.handlers.get("session_start")({}, h.context(cwd));
       assert.equal(h.selections.length, 2);
       assert.equal(h.sent.length, depth === "balanced" ? 1 : 0);
-      if (depth === "balanced") assert.match(h.sent[0], /One-run depth: balanced/);
+      assert.equal(h.instructions.length, depth === "balanced" ? 1 : 0);
+      if (depth === "balanced") assert.match(h.instructions[0].content, /One-run depth: balanced/);
       assert.equal(readFileSync(join(cwd, ".picm/config.json"), "utf8"), before);
     });
   }

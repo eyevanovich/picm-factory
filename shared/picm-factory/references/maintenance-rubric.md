@@ -1,6 +1,6 @@
 # Maintenance rubric
 
-Use for `/picm-maintain` under the [shared contract](../SKILL.md). Maintain is a heuristic health check or focused drift investigation, not provenance tracing or automatic repair.
+Use for `maintain` under the [shared contract](../CONTRACT.md). Maintain is a heuristic health check or focused drift investigation, not provenance tracing or automatic repair.
 
 ## Intake and discovery
 
@@ -52,7 +52,7 @@ For `trace` or a concrete symptom, restate it; identify relevant prompt/routing/
 
 ## Report and repairs
 
-Use `# PiCM Maintenance Report` with Summary (profile/signals, inspected/omitted scope), Pass, Warnings, Suggestions, redundancy dispositions, and recommended actions. Each finding names paths, problem/opportunity, evidence, likely cause, tier, and healing path. Offer `/picm-maintain trace "describe what drifted"` when useful.
+Use `# PiCM Maintenance Report` with Summary (profile/signals, inspected/omitted scope), Pass, Warnings, Suggestions, redundancy dispositions, and recommended actions. Each finding names paths, problem/opportunity, evidence, likely cause, tier, and healing path. Offer `maintain trace "describe what drifted"` when useful.
 
 Trace uses `# PiCM Trace Report`: Symptom, Files inspected, Likely drift source, Confidence, Output patch vs source healing, Suggested healing path, and Changes I can apply with your sign-off.
 

@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import test from "node:test";
 import { discoverAndLoadExtensions } from "@earendil-works/pi-coding-agent";
 
@@ -16,9 +16,14 @@ test("packed TypeScript runtime loads through Pi from node_modules", async (t) =
   mkdirSync(packageRoot, { recursive: true });
   execFileSync("tar", ["-xzf", join(cwd, packed.filename), "-C", packageRoot, "--strip-components=1"]);
 
-  const result = await discoverAndLoadExtensions([
-    join(packageRoot, "extensions"),
-  ], cwd, join(cwd, "agent"));
+  const manifest = JSON.parse(readFileSync(join(packageRoot, "package.json"), "utf8"));
+  assert.deepEqual(manifest.pi.skills, []);
+  const entry = readFileSync(join(packageRoot, "pi/HOST.md"), "utf8");
+  assert.match(entry, /# Pi host adapter/);
+  assert.ok(readFileSync(join(packageRoot, "shared/picm-factory/CONTRACT.md"), "utf8").includes("Wait for conversational sign-off"));
+  assert.equal(existsSync(join(packageRoot, "dist")), false);
+  const result = await discoverAndLoadExtensions(manifest.pi.extensions.map((path) =>
+    join(packageRoot, path)), cwd, join(cwd, "agent"));
   assert.deepEqual(result.errors, []);
   assert.equal(result.extensions.length, 1);
   const [extension] = result.extensions;
@@ -28,6 +33,34 @@ test("packed TypeScript runtime loads through Pi from node_modules", async (t) =
   assert.deepEqual([...extension.tools.keys()].sort(), [
     "picm_decision", "picm_maintenance_policy", "picm_settings",
   ]);
+  const prompts = {};
+  const installedRoot = realpathSync(packageRoot);
+  result.runtime.sendMessage = (message, options) => {
+    assert.equal(message.display, false);
+    assert.deepEqual(options, { deliverAs: "nextTurn" });
+    prompts.current = message.content;
+  };
+  result.runtime.sendUserMessage = (text) => {
+    assert.match(text, /^Running \/picm-(new|adopt|maintain|optimize|help)( \(balanced\))?\.$/);
+  };
+  for (const mode of ["new", "adopt", "maintain", "optimize", "help"]) {
+    const args = mode === "maintain" ? "balanced bounded focus" : "bounded focus";
+    await extension.commands.get(`picm-${mode}`).handler(args, { cwd, mode: "rpc", waitForIdle: async () => {} });
+    const prompt = prompts.current;
+    prompts[mode] = prompt;
+    assert.match(prompt, /## Shared trusted-assistant contract/);
+    assert.match(prompt, /# Pi host adapter/);
+    assert.match(prompt, /User arguments: bounded focus/);
+    assert.ok(prompt.includes(`Mode: ${mode}`));
+    assert.doesNotMatch(prompt, /Load the picm-factory skill|## Mode routing/);
+    assert.equal(prompt.includes(resolve(".")), false, "prompt depends on source checkout");
+    for (const [, target] of prompt.matchAll(/\]\(<([^<>\n]+\.md)(?:#[^<>\n]*)?>\)/g)) {
+      assert.ok(target.startsWith(`${installedRoot}/`), target);
+      assert.ok(existsSync(target), target);
+    }
+  }
+  assert.match(prompts.maintain, /One-run depth: balanced/);
+  assert.match(prompts.help, /without inspecting or editing the workspace/);
   const status = await extension.tools.get("picm_maintenance_policy").definition.execute(
     "package-status", { action: "status" }, undefined, undefined, { cwd },
   );

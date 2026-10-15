@@ -34,7 +34,7 @@ For pre-adoption custom fixtures, run:
 ## Cold-agent walk-test procedure
 
 Use the authoritative procedure and calibration in
-[`maintenance-rubric.md`](../skills/picm-factory/references/maintenance-rubric.md#cold-agent-walk)
+[`maintenance-rubric.md`](../shared/picm-factory/references/maintenance-rubric.md#cold-agent-walk)
 during a general `/picm-maintain` smoke. Record fixture-specific observations here.
 
 ## Shared contract and absent exclusions

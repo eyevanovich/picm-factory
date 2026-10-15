@@ -1,10 +1,10 @@
 # Interview and creation
 
-Use for `/picm-new` under the [shared contract](../SKILL.md). Create the smallest scaffold that supports the first real run. Command arguments seed the interview; ask only missing critical questions.
+Use for `new` under the [shared contract](../CONTRACT.md). Create the smallest scaffold that supports the first real run. Command arguments seed the interview; ask only missing critical questions.
 
 ## Orient before interviewing
 
-Classify the folder as empty enough, source-material-only, or existing architecture. Git/Pi metadata, README/license/ignore files, manifests, editor folders, and OS noise are compatible with an otherwise empty workspace.
+Classify the folder as empty enough, source-material-only, or existing architecture. Git/agent metadata, README/license/ignore files, manifests, editor folders, and OS noise are compatible with an otherwise empty workspace.
 
 For source material, ask whether to build around it without moving or rewriting it. For existing architecture, recommend adoption; scaffold over it only when the user chooses that direction. Preserve deployment/setup already completed.
 
@@ -30,7 +30,7 @@ Relevant follow-ups cover operator guidance for non-technical/team users, actual
 
 ## Templates and writing
 
-Load only templates needed for the selected layout from `../templates/`:
+Load only templates needed for the selected layout using the links below:
 
 | Content | Template |
 | --- | --- |
@@ -48,4 +48,4 @@ Typical files are root `AGENTS.md`/`CONTEXT.md`, necessary local context, and ju
 
 Validate the scaffold and pointers; leave no unresolved tokens or authoring notes. Give the selected profile's path-specific first-run checklist from `layout-profiles.md` (including specialist guidance when applicable), naming the first artifact, human check, downstream source, and remaining gaps.
 
-Recommend `/picm-maintain` after first real use and when stages, roles, routing, references, mechanics, coding boundaries, manifests, or verification sources change. Maintenance is advisory, not a preflight or provenance debugger.
+Recommend `maintain` after first real use and when stages, roles, routing, references, mechanics, coding boundaries, manifests, or verification sources change. Maintenance is advisory, not a preflight or provenance debugger.

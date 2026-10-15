@@ -1,7 +1,7 @@
 # PiCM Factory Context
 
 ## What we are building
-PiCM Factory is a project-local Pi Coding Agent package that helps users create, adopt, maintain, and optimize PiCM / ICM-style folder-agent workspaces and agent-readable coding repositories.
+PiCM Factory provides shared guidance with Pi and Claude Code integrations that help users create, adopt, maintain, and optimize PiCM / ICM-style folder-agent workspaces and agent-readable coding repositories.
 
 Operational routing, safety, and verification rules live in `AGENTS.md`.
 

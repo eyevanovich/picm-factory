@@ -7,7 +7,7 @@ const root = process.cwd();
 const base = join(root, "test/fixtures/layout-profiles/specialist-folder");
 
 test("specialist recipes route the first run through a reviewed artifact", () => {
-  const layout = readFileSync(join(root, "skills/picm-factory/references/specialist-guide.md"), "utf8");
+  const layout = readFileSync(join(root, "shared/picm-factory/references/specialist-guide.md"), "utf8");
   assert.match(layout, /`nextAction\.source` to equal `expectedArtifact`/);
   assert.match(layout, /`scaffolded` means the input is created/);
 
@@ -33,8 +33,8 @@ test("specialist recipes route the first run through a reviewed artifact", () =>
 });
 
 test("specialist templates preserve context, uncertainty, and handoff semantics", () => {
-  const specialist = readFileSync(join(root, "skills/picm-factory/templates/specialist-context.md"), "utf8");
-  const handoff = readFileSync(join(root, "skills/picm-factory/templates/handoff-card.md"), "utf8");
+  const specialist = readFileSync(join(root, "shared/picm-factory/templates/specialist-context.md"), "utf8");
+  const handoff = readFileSync(join(root, "shared/picm-factory/templates/handoff-card.md"), "utf8");
   assert.match(specialist, /Reference material|Workflows/);
   assert.match(handoff, /Blockers \/ risks \/ gaps/);
   assert.match(handoff, /Review and next action/);

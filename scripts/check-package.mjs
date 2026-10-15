@@ -20,6 +20,12 @@ const required = [
   ".github/workflows/publish.yml",
   ".github/workflows/release.yml",
   "scripts/prepare-release.mjs",
+  "scripts/build-claude-bundle.mjs",
+  "claude-code/.claude-plugin/plugin.json",
+  "claude-code/HOST.md",
+  "claude-code/README.md",
+  "claude-code/settings.ts",
+  "test/claude-bundle.test.mjs",
   "test/release-preparer.test.mjs",
   "test/maintenance-policy.test.mjs",
   "test/maintenance-config-store.test.mjs",
@@ -35,18 +41,20 @@ const required = [
   "test/optimization-contract.test.mjs",
   "test/specialist-folder-maintenance-contract.test.mjs",
   "test/privacy-policy.test.mjs",
-  "extensions/picm-factory.ts",
-  "extensions/runtime/errors.ts",
-  "extensions/runtime/coding-maintenance-depth.ts",
-  "extensions/runtime/command-dispatch.ts",
-  "extensions/runtime/maintenance-policy.ts",
-  "extensions/runtime/privacy-policy.ts",
-  "extensions/runtime/maintenance-config-store.ts",
-  "extensions/runtime/maintenance-controller.ts",
-  "extensions/runtime/maintenance-reminder.ts",
-  "skills/picm-factory/SKILL.md",
-  "skills/picm-factory/references/optimization-guide.md",
-  "skills/picm-factory/references/preview-review-protocol.md",
+  "pi/extensions/picm-factory.ts",
+  "shared/runtime/errors.ts",
+  "shared/runtime/coding-maintenance-depth.ts",
+  "pi/extensions/runtime/command-dispatch.ts",
+  "shared/runtime/maintenance-policy.ts",
+  "shared/runtime/privacy-policy.ts",
+  "shared/runtime/maintenance-config-store.ts",
+  "shared/runtime/maintenance-controller.ts",
+  "pi/extensions/runtime/maintenance-reminder.ts",
+  "pi/HOST.md",
+  "shared/compose-instructions.ts",
+  "shared/picm-factory/CONTRACT.md",
+  "shared/picm-factory/references/optimization-guide.md",
+  "shared/picm-factory/references/preview-review-protocol.md",
   "prompts/picm-new.md",
   "prompts/picm-adopt.md",
   "prompts/picm-maintain.md",
@@ -67,6 +75,7 @@ if (pkg.name !== "@eyevanovich/picm-factory") fail("package.json must use the ex
 if (pkg.repository?.url !== "git+https://github.com/eyevanovich/picm-factory.git") fail("package.json repository must match the trusted publishing repository");
 if (!pkg.keywords?.includes("pi-package")) fail("package.json must include keyword: pi-package");
 if (!pkg.pi?.extensions || !pkg.pi?.skills || !pkg.pi?.prompts) fail("package.json must declare pi.extensions, pi.skills, and pi.prompts");
+if (JSON.stringify(pkg.pi.extensions) !== JSON.stringify(["./pi/extensions"]) || JSON.stringify(pkg.pi.skills) !== JSON.stringify([])) fail("Pi discovery must use the host-specific directories");
 if (pkg.pi.prompts.length !== 0) fail("Backing prompts must not autoload alongside same-named extension commands");
 if (pkg.private === true) fail("package.json must allow npm publication");
 if (pkg.publishConfig?.access !== "public") fail("Scoped npm package must publish with public access");
@@ -86,35 +95,37 @@ const requiredPackageFiles = [
   "package.json",
   "README.md",
   "LICENSE",
-  "extensions/runtime/errors.ts",
-  "extensions/picm-factory.ts",
-  "extensions/runtime/coding-maintenance-depth.ts",
-  "extensions/runtime/command-dispatch.ts",
-  "extensions/runtime/maintenance-policy.ts",
-  "extensions/runtime/privacy-policy.ts",
-  "extensions/runtime/maintenance-config-store.ts",
-  "extensions/runtime/maintenance-controller.ts",
-  "extensions/runtime/maintenance-reminder.ts",
-  "skills/picm-factory/SKILL.md",
-  "skills/picm-factory/references/adoption-guide.md",
-  "skills/picm-factory/references/coding-adoption-guide.md",
-  "skills/picm-factory/references/coding-maintenance-rubric.md",
-  "skills/picm-factory/references/interview-guide.md",
-  "skills/picm-factory/references/layout-profiles.md",
-  "skills/picm-factory/references/maintenance-rubric.md",
-  "skills/picm-factory/references/redundancy-review.md",
-  "skills/picm-factory/references/optimization-guide.md",
-  "skills/picm-factory/references/preview-review-protocol.md",
-  "skills/picm-factory/references/help-guide.md",
-  "skills/picm-factory/references/settings-guide.md",
-  "skills/picm-factory/references/specialist-guide.md",
-  "skills/picm-factory/templates/code-boundary-context.md",
-  "skills/picm-factory/templates/context-map.md",
-  "skills/picm-factory/templates/handoff-card.md",
-  "skills/picm-factory/templates/root-agents.md",
-  "skills/picm-factory/templates/root-context.md",
-  "skills/picm-factory/templates/specialist-context.md",
-  "skills/picm-factory/templates/stage-context.md",
+  "shared/runtime/errors.ts",
+  "pi/extensions/picm-factory.ts",
+  "shared/runtime/coding-maintenance-depth.ts",
+  "pi/extensions/runtime/command-dispatch.ts",
+  "shared/runtime/maintenance-policy.ts",
+  "shared/runtime/privacy-policy.ts",
+  "shared/runtime/maintenance-config-store.ts",
+  "shared/runtime/maintenance-controller.ts",
+  "pi/extensions/runtime/maintenance-reminder.ts",
+  "pi/HOST.md",
+  "shared/compose-instructions.ts",
+  "shared/picm-factory/CONTRACT.md",
+  "shared/picm-factory/references/adoption-guide.md",
+  "shared/picm-factory/references/coding-adoption-guide.md",
+  "shared/picm-factory/references/coding-maintenance-rubric.md",
+  "shared/picm-factory/references/interview-guide.md",
+  "shared/picm-factory/references/layout-profiles.md",
+  "shared/picm-factory/references/maintenance-rubric.md",
+  "shared/picm-factory/references/redundancy-review.md",
+  "shared/picm-factory/references/optimization-guide.md",
+  "shared/picm-factory/references/preview-review-protocol.md",
+  "shared/picm-factory/references/help-guide.md",
+  "shared/picm-factory/references/settings-guide.md",
+  "shared/picm-factory/references/specialist-guide.md",
+  "shared/picm-factory/templates/code-boundary-context.md",
+  "shared/picm-factory/templates/context-map.md",
+  "shared/picm-factory/templates/handoff-card.md",
+  "shared/picm-factory/templates/root-agents.md",
+  "shared/picm-factory/templates/root-context.md",
+  "shared/picm-factory/templates/specialist-context.md",
+  "shared/picm-factory/templates/stage-context.md",
 ];
 const packedFiles = packResult.files.map(({ path }) => path);
 const unexpectedPackageFiles = packedFiles.filter(
@@ -146,12 +157,10 @@ for (const file of packagedMarkdown) {
   }
 }
 
-const skill = readFileSync(join(root, "skills/picm-factory/SKILL.md"), "utf8");
-if (!skill.startsWith("---\n")) fail("SKILL.md must start with YAML frontmatter");
-if (!skill.includes("name: picm-factory")) fail("SKILL.md frontmatter must include name: picm-factory");
-if (!skill.includes("description:")) fail("SKILL.md frontmatter must include description");
+const hostInstructions = readFileSync(join(root, "pi/HOST.md"), "utf8");
+if (!hostInstructions.startsWith("# Pi host adapter")) fail("Pi host instructions must be a plain source document");
 
-const extension = readFileSync(join(root, "extensions/picm-factory.ts"), "utf8");
+const extension = readFileSync(join(root, "pi/extensions/picm-factory.ts"), "utf8");
 const forbiddenExtensionRuntimeSignals = [
   "node:child_process",
   "executePipeline",
@@ -177,11 +186,11 @@ for (const signal of [
   if (!extension.includes(signal)) fail(`PiCM extension missing retained command utility: ${signal}`);
 }
 
-const privacyPolicy = readFileSync(join(root, "extensions/runtime/privacy-policy.ts"), "utf8");
+const privacyPolicy = readFileSync(join(root, "shared/runtime/privacy-policy.ts"), "utf8");
 for (const signal of ["normalizePrivacyExcludedPaths", "privacyPathMatches", "validatePrivacyPolicy"]) {
   if (!privacyPolicy.includes(signal)) fail(`PiCM privacy policy missing deterministic signal: ${signal}`);
 }
-const maintenancePolicy = readFileSync(join(root, "extensions/runtime/maintenance-policy.ts"), "utf8");
+const maintenancePolicy = readFileSync(join(root, "shared/runtime/maintenance-policy.ts"), "utf8");
 for (const signal of ["calculateNextDue", "resetPolicy", "isDue", "INVALID_TIMESTAMP"]) {
   if (!maintenancePolicy.includes(signal)) fail(`PiCM maintenance policy missing deterministic signal: ${signal}`);
 }
@@ -199,7 +208,7 @@ for (const listName of codingCompletionLists) {
 
 for (const [file, text] of [
   ["README.md", readFileSync(join(root, "README.md"), "utf8")],
-  ["skills/picm-factory/SKILL.md", skill],
+  ["pi/HOST.md", hostInstructions],
 ]) {
   if (!hasCurrentPinnedInstallVersions(text, pkg.version)) fail(`${file} must pin the current package version ${pkg.version}`);
 }
@@ -298,7 +307,10 @@ const releaseWorkflowSignals = [
   "actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6",
   "node scripts/prepare-release.mjs --require-merged-prs",
   "npm run check",
-  "git add package.json package-lock.json CHANGELOG.md README.md skills/picm-factory/SKILL.md",
+  "npm run build:claude",
+  'zip -qr "../picm-claude-code-${RELEASE_TAG#v}.zip" .',
+  'gh release create "$RELEASE_TAG" dist/picm-claude-code-*.zip',
+  "git add package.json package-lock.json CHANGELOG.md README.md pi/HOST.md",
   'git config user.name "${RELEASE_APP_SLUG}[bot]"',
   "git push --atomic origin",
   "gh release create",
@@ -324,11 +336,14 @@ const publicTextFiles = [
   "CONTRIBUTING.md",
   "AGENTS.md",
   "CONTEXT.md",
-  "skills/picm-factory/SKILL.md",
-  "skills/picm-factory/references/coding-adoption-guide.md",
-  "skills/picm-factory/references/coding-maintenance-rubric.md",
-  "skills/picm-factory/references/optimization-guide.md",
-  "skills/picm-factory/references/redundancy-review.md",
+  "claude-code/HOST.md",
+  "claude-code/README.md",
+  ...["new", "adopt", "maintain", "optimize", "help"].map((mode) => `claude-code/skills/${mode}/SKILL.md`),
+  "shared/compose-instructions.ts", "shared/picm-factory/CONTRACT.md",
+  "shared/picm-factory/references/coding-adoption-guide.md",
+  "shared/picm-factory/references/coding-maintenance-rubric.md",
+  "shared/picm-factory/references/optimization-guide.md",
+  "shared/picm-factory/references/redundancy-review.md",
   "docs/layout-fixture-qa.md",
   "docs/picm-new-scenarios.md",
   "docs/release-tagging-actions-research.md",

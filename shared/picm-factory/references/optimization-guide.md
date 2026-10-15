@@ -1,6 +1,6 @@
 # Documentation optimization
 
-Use for `/picm-optimize` or accepted maintenance-integrated optimization under the [shared contract](../SKILL.md). Improve navigation, clarity, and upkeep while preserving unique constraints and intended outcomes. This isn't a semantic-equivalence proof or a promise of token savings.
+Use for `optimize` or accepted maintenance-integrated optimization under the [shared contract](../CONTRACT.md). Improve navigation, clarity, and upkeep while preserving unique constraints and intended outcomes. This isn't a semantic-equivalence proof or a promise of token savings.
 
 ## Scope
 

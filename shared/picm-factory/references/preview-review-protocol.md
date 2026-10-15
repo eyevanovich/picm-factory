@@ -1,6 +1,6 @@
 # Change and review guidance
 
-Use for consequential PiCM changes or failed-operation recovery. The [shared contract](../SKILL.md) owns scope, privacy, final direction, conversational sign-off, cancellation, and completion; this guide adds review detail, not authorization machinery.
+Use for consequential PiCM changes or failed-operation recovery. The [shared contract](../CONTRACT.md) owns scope, privacy, final direction, conversational sign-off, cancellation, and completion; this guide adds review detail, not authorization machinery.
 
 ## Proportional review
 

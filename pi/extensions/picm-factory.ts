@@ -10,10 +10,10 @@ import {
   BALANCED_MAINTENANCE_GUIDANCE,
   MAINTENANCE_DEPTH_CHOICES,
   STRICT_MAINTENANCE_GUIDANCE,
-} from "./runtime/coding-maintenance-depth.ts";
+} from "../../shared/runtime/coding-maintenance-depth.ts";
 import { commandPrompt, maintenanceRequest } from "./runtime/command-dispatch.ts";
-import { createMaintenanceConfigStore } from "./runtime/maintenance-config-store.ts";
-import { createMaintenanceController } from "./runtime/maintenance-controller.ts";
+import { createMaintenanceConfigStore } from "../../shared/runtime/maintenance-config-store.ts";
+import { createMaintenanceController } from "../../shared/runtime/maintenance-controller.ts";
 import { createMaintenanceReminder } from "./runtime/maintenance-reminder.ts";
 
 const commandDescriptions = {
@@ -129,6 +129,15 @@ export default function picmFactoryExtension(pi: ExtensionAPI) {
     return { ...parsed, depth: choice === BALANCED_MAINTENANCE_GUIDANCE ? "balanced" : "strict" };
   }
 
+  function dispatch(command: CommandName, args: string, depth?: "strict" | "balanced", followUp = false) {
+    pi.sendMessage({
+      customType: "picm-instructions",
+      content: commandPrompt(command, args, { depth }),
+      display: false,
+    }, { deliverAs: "nextTurn" });
+    pi.sendUserMessage(`Running /${command}${depth ? ` (${depth})` : ""}.`, followUp ? { deliverAs: "followUp" } : undefined);
+  }
+
   for (const command of Object.keys(commandDescriptions) as CommandName[]) {
     pi.registerCommand(command, {
       description: commandDescriptions[command],
@@ -144,10 +153,10 @@ export default function picmFactoryExtension(pi: ExtensionAPI) {
         if (command === "picm-maintain") {
           const selected = await chooseDepth(ctx, args);
           if (!selected) return;
-          pi.sendUserMessage(commandPrompt(command, selected.args, { depth: selected.depth }));
+          dispatch(command, selected.args, selected.depth);
           return;
         }
-        pi.sendUserMessage(commandPrompt(command, args));
+        dispatch(command, args);
       },
     });
   }
@@ -178,7 +187,7 @@ export default function picmFactoryExtension(pi: ExtensionAPI) {
     }
     if (result.ok && result.action === "run-now") {
       const selected = await chooseDepth(ctx, "");
-      if (selected) pi.sendUserMessage(commandPrompt("picm-maintain", selected.args, { depth: selected.depth }), { deliverAs: "followUp" });
+      if (selected) dispatch("picm-maintain", selected.args, selected.depth, true);
     } else if (!result.ok && ctx.hasUI) {
       ctx.ui.notify(`PiCM reminder unavailable: ${result.code ?? "configuration error"}`, "warning");
     }

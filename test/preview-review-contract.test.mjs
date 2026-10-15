@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import test from "node:test";
 
-const protocol = readFileSync(join(process.cwd(), "skills/picm-factory/references/preview-review-protocol.md"), "utf8");
+const protocol = readFileSync(join(process.cwd(), "shared/picm-factory/references/preview-review-protocol.md"), "utf8");
 
 test("review guidance preserves a conversational final direction rather than runtime authority", () => {
   for (const signal of [

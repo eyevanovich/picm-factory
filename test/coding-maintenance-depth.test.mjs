@@ -5,7 +5,7 @@ import {
   MAINTENANCE_DEPTH_CHOICES,
   STRICT_MAINTENANCE_GUIDANCE,
   parseMaintenanceDepthArgument,
-} from "../extensions/runtime/coding-maintenance-depth.ts";
+} from "../shared/runtime/coding-maintenance-depth.ts";
 
 test("new run-depth choices are strict-first and exclude Light", () => {
   assert.deepEqual(MAINTENANCE_DEPTH_CHOICES, [

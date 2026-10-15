@@ -24,9 +24,9 @@ Use a Conventional Commit pull-request title. For detailed changelog entries, ad
 1. Merge normal feature/fix pull requests with Conventional Commit titles.
 2. Open **Actions → Create release → Run workflow** and select `main`.
 3. The workflow finds the merged `main` pull requests associated with commits after the latest release tag and selects the highest required SemVer bump from their titles.
-4. It updates `package.json`, synchronizes the lockfile's root-package version without changing the locked dependency graph, updates pinned install commands in `README.md` and `skills/picm-factory/SKILL.md`, and prepends generated notes to `CHANGELOG.md`, preferring each PR's reviewed `## What Changed` bullets over its title.
+4. It updates `package.json`, synchronizes the lockfile's root-package version without changing the locked dependency graph, updates pinned install commands in `README.md` and `pi/HOST.md`, and prepends generated notes to `CHANGELOG.md`, preferring each PR's reviewed `## What Changed` bullets over its title.
 5. It installs validation dependencies from the committed lockfile with lifecycle scripts disabled, runs `npm run check`, creates a `chore: release v<version>` commit directly on `main`, and atomically pushes that commit with the matching tag.
-6. It creates the GitHub Release and explicitly dispatches `publish.yml`.
+6. It runs `npm run build:claude`, archives the generated plugin as `picm-claude-code-VERSION.zip`, attaches it to the GitHub Release, and explicitly dispatches `publish.yml`.
 7. `publish.yml` installs the same validation dependencies under those restrictions, requires that GitHub Release, checks that its tag matches `package.json`, runs package validation through `prepublishOnly`, and publishes through npm trusted publishing. Pushing a tag alone cannot invoke publication.
 8. Verify the release on:
    - `https://www.npmjs.com/package/@eyevanovich/picm-factory`
@@ -34,6 +34,14 @@ Use a Conventional Commit pull-request title. For detailed changelog entries, ad
    - `https://pi.dev/packages/@eyevanovich/picm-factory`
 
 If `main` advances while the workflow is running, the atomic push fails instead of overwriting newer work. Re-run the workflow from the new `main` after reviewing the additional commits.
+
+## Claude Code artifact
+
+The generated plugin's manifest and runtime package version come from the prepared root `package.json`. No generated files are committed. Claude skill bodies are assembled at bundle time; the Pi package ships the composer and canonical sources, so local Pi installs need no build step. The bundle includes composed command skills, supporting shared guidance/templates, Node-only settings runtime, and the Claude adapter; it excludes Pi APIs, tests, local settings, and development dependencies.
+
+Users extract the zip into a stable trusted directory and launch Claude from their workspace with `claude --plugin-dir /absolute/path/to/extracted-plugin`. Loading is session-local. There is no marketplace entry or automatic update path in this release; users extract a newer version and select its path.
+
+Before release, run `npm run check`, build the bundle, and run `claude plugin validate dist/claude-code` with a supported Claude CLI. Automated checks cover extracted artifacts and helper behavior, not live conversational execution. Interactive QA still requires an approved disposable workspace. Release preparation or local validation never authorizes publishing.
 
 ## Security and permissions
 

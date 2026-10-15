@@ -2,7 +2,7 @@
 
 Profiles are recommendations, not validation laws. Choose one primary profile; borrow secondary patterns only where useful. Coding Repository can be primary or a codebase-map capability alongside a workflow profile. Custom layouts remain valid when they route clearly.
 
-Default to root `AGENTS.md` plus local `CONTEXT.md`. Root routing names when to load local context/maps; local `AGENTS.md` is for hard local behavior or an independent Pi/subagent working directory. Visible files own routing; normal work skips `.picm/` metadata.
+Default to root `AGENTS.md` plus local `CONTEXT.md`. Apply the host adapter's instruction-loading bridge where needed. Root routing names when to load local context/maps; local `AGENTS.md` is for hard local behavior or an independent agent/subagent working directory. Visible files own routing; normal work skips `.picm/` metadata.
 
 ## Stage Pipeline
 

@@ -1,9 +1,10 @@
 import assert from "node:assert/strict";
+import { commandPrompt } from "../pi/extensions/runtime/command-dispatch.ts";
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import test from "node:test";
 
-const references = "skills/picm-factory/references";
+const references = "shared/picm-factory/references";
 const fixture = "test/fixtures/layout-profiles/anti-patterns/instruction-redundancy";
 const read = (path) => readFileSync(resolve(path), "utf8");
 
@@ -17,9 +18,8 @@ test("both workflows require the shared redundancy procedure during discovery", 
   }
   assert.match(read(`${references}/maintenance-rubric.md`), /required even when optional optimization is declined/);
   assert.match(read(`${references}/optimization-guide.md`), /before opportunities or a no-op conclusion/);
-  const skill = read("skills/picm-factory/SKILL.md");
-  assert.match(skill, /required redundancy review/);
-  assert.match(skill, /required preservation ledger, redundancy review, and writing-lens audit/i);
+  assert.match(commandPrompt("picm-maintain"), /required even when optional optimization is declined/);
+  assert.match(commandPrompt("picm-optimize"), /Preservation ledger and redundancy/);
 });
 
 test("shared review covers applicability, preservation, dispositions, and bounded completion", () => {

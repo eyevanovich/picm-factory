@@ -1,0 +1,9 @@
+{
+  "name": "picm-factory",
+  "description": "Create, adopt, maintain, and improve folder-agent workspaces and coding context maps.",
+  "homepage": "https://github.com/eyevanovich/picm-factory",
+  "license": "MIT",
+  "author": {
+    "name": "eyevanovich"
+  }
+}

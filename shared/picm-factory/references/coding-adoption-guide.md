@@ -1,6 +1,6 @@
 # Coding adoption
 
-Load for `/picm-adopt coding`, selected coding adoption, or hybrid codebase mapping. Apply the [shared contract](../SKILL.md); map useful context without documenting every file or claiming complete architecture knowledge.
+Load for `adopt coding`, selected coding adoption, or hybrid codebase mapping. Apply the [shared contract](../CONTRACT.md); map useful context without documenting every file or claiming complete architecture knowledge.
 
 ## Entry and scope
 
@@ -24,7 +24,7 @@ Initial adoption loads [coding maintenance](coding-maintenance-rubric.md) and pe
 
 ## Map placement and ownership
 
-Keep a genuinely small map in root routing; use `CONTEXT-MAP.md` for a substantial/hybrid map; or reuse adequate `ARCHITECTURE.md`/developer guidance and add missing pointers. Link the chosen map from canonical `AGENTS.md`/`CLAUDE.md`.
+Keep a genuinely small map in root routing; use `CONTEXT-MAP.md` for a substantial/hybrid map; or reuse adequate `ARCHITECTURE.md`/developer guidance and add missing pointers. Link the chosen map from canonical `AGENTS.md`; handle existing legacy instructions through [adoption migration](adoption-guide.md#instruction-file-migration).
 
 Root routing owns behavior/task routes; the map indexes boundaries/responsibilities, authoritative context, entry/public surfaces, and verification sources. Local `CONTEXT.md` holds purpose, read-first files, dependencies/constraints, risks, checks, coordination, and unknowns. Supported maps also expose cross-boundary constraints and generated/do-not-edit areas.
 

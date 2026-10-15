@@ -3,9 +3,9 @@ import assert from "node:assert/strict";
 import * as fs from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { createMaintenanceConfigStore } from "../extensions/runtime/maintenance-config-store.ts";
-import { createMaintenanceController } from "../extensions/runtime/maintenance-controller.ts";
-import { createPolicy } from "../extensions/runtime/maintenance-policy.ts";
+import { createMaintenanceConfigStore } from "../shared/runtime/maintenance-config-store.ts";
+import { createMaintenanceController } from "../shared/runtime/maintenance-controller.ts";
+import { createPolicy } from "../shared/runtime/maintenance-policy.ts";
 
 async function repository(t) {
   const cwd = await fs.mkdtemp(join(tmpdir(), "picm-maintenance-"));
