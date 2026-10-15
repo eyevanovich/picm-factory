@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { commandPrompt, maintenanceRequest } from "../extensions/runtime/command-dispatch.mjs";
+import { commandPrompt, maintenanceRequest } from "../extensions/runtime/command-dispatch.ts";
 
 test("each registered command maps to its shared skill mode without protocol instructions", () => {
   for (const [command, mode] of [

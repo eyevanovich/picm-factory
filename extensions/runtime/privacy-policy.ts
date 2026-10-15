@@ -1,27 +1,26 @@
 import { isAbsolute, relative, resolve, sep } from "node:path";
 
-function privacyError(code, message) {
-  const error = new Error(message);
-  error.code = code;
-  return error;
-}
+import { codedError as privacyError } from "./errors.ts";
 
-function isOutside(root, candidate) {
+export type StoredPrivacyPolicy = Record<string, unknown> & { excludedPaths?: string[] };
+export type PrivacyPolicy = StoredPrivacyPolicy & { excludedPaths: string[] };
+
+function isOutside(root: string, candidate: string) {
   const path = relative(root, candidate);
   return path === ".." || path.startsWith(`..${sep}`) || isAbsolute(path);
 }
 
-function toPortablePath(path) {
+function toPortablePath(path: string) {
   return path.split(sep).join("/");
 }
 
-export function normalizePrivacyExcludedPaths(cwd, values) {
+export function normalizePrivacyExcludedPaths(cwd: string, values: unknown): string[] {
   if (!Array.isArray(values)) {
     throw privacyError("PRIVACY_EXCLUDED_PATHS_INVALID", "privacy.excludedPaths must be an array");
   }
 
   const root = resolve(cwd);
-  const normalized = [];
+  const normalized: string[] = [];
   for (const value of values) {
     if (typeof value !== "string" || value.trim() === "") {
       throw privacyError("PRIVACY_EXCLUDED_PATH_INVALID", "privacy exclusions must be non-empty strings");
@@ -46,11 +45,11 @@ export function normalizePrivacyExcludedPaths(cwd, values) {
   ));
 }
 
-export function privacyPathMatches(exclusion, candidate) {
+export function privacyPathMatches(exclusion: string, candidate: string) {
   return candidate === exclusion || candidate.startsWith(`${exclusion}/`);
 }
 
-export function validatePrivacyPolicy(value, cwd) {
+export function validatePrivacyPolicy(value: unknown, cwd: string): PrivacyPolicy {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
     throw privacyError("PRIVACY_POLICY_INVALID", "privacy must be an object");
   }
@@ -59,11 +58,11 @@ export function validatePrivacyPolicy(value, cwd) {
   }
   return {
     ...value,
-    excludedPaths: normalizePrivacyExcludedPaths(cwd, value.excludedPaths),
+    excludedPaths: normalizePrivacyExcludedPaths(cwd, "excludedPaths" in value ? value.excludedPaths : undefined),
   };
 }
 
-export function validateStoredPrivacyPolicy(value, cwd) {
+export function validateStoredPrivacyPolicy(value: unknown, cwd: string): StoredPrivacyPolicy {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
     throw privacyError(
       "PRIVACY_LEGACY_MIGRATION_REQUIRED",
@@ -74,7 +73,7 @@ export function validateStoredPrivacyPolicy(value, cwd) {
   return validatePrivacyPolicy(value, cwd);
 }
 
-export function projectStoredPrivacyPolicy(value, cwd) {
+export function projectStoredPrivacyPolicy(value: unknown, cwd: string) {
   if (value === undefined) return undefined;
   const privacy = validateStoredPrivacyPolicy(value, cwd);
   return Array.isArray(privacy.excludedPaths)

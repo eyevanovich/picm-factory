@@ -7,7 +7,7 @@ import {
   privacyPathMatches,
   projectStoredPrivacyPolicy,
   validatePrivacyPolicy,
-} from "../extensions/runtime/privacy-policy.mjs";
+} from "../extensions/runtime/privacy-policy.ts";
 
 const root = resolve("/synthetic/project");
 

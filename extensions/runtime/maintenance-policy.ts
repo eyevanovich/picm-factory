@@ -1,29 +1,48 @@
-export const MAINTENANCE_MODES = Object.freeze(["manual", "nudge", "automatic"]);
-export const MAINTENANCE_INTERVAL_UNITS = Object.freeze(["days", "weeks", "months"]);
+export const MAINTENANCE_MODES = Object.freeze(["manual", "nudge", "automatic"] as const);
+export const MAINTENANCE_INTERVAL_UNITS = Object.freeze(["days", "weeks", "months"] as const);
+
+export type MaintenanceMode = typeof MAINTENANCE_MODES[number];
+export type IntervalUnit = typeof MAINTENANCE_INTERVAL_UNITS[number];
+export type MaintenanceInterval = { value: number; unit: IntervalUnit };
+export type ScheduledMaintenancePolicy = {
+  mode: Exclude<MaintenanceMode, "manual">;
+  interval: MaintenanceInterval;
+  lastCycleAt: string;
+  nextDueAt: string;
+};
+export type MaintenancePolicy = { mode: "manual" } | ScheduledMaintenancePolicy;
+export type PolicyOptions = {
+  mode?: unknown;
+  intervalValue?: unknown;
+  intervalUnit?: unknown;
+  now?: Date | string | number;
+};
 
 export class MaintenancePolicyError extends Error {
-  constructor(code, message) {
+  readonly code: string;
+
+  constructor(code: string, message: string) {
     super(`${code}: ${message}`);
     this.name = "MaintenancePolicyError";
     this.code = code;
   }
 }
 
-function fail(code, message) {
+function fail(code: string, message: string): never {
   throw new MaintenancePolicyError(code, message);
 }
 
-export function normalizeInterval(value, unit) {
-  if (!Number.isSafeInteger(value) || value <= 0) {
+export function normalizeInterval(value: unknown, unit: unknown): MaintenanceInterval {
+  if (typeof value !== "number" || !Number.isSafeInteger(value) || value <= 0) {
     fail("INVALID_INTERVAL_VALUE", "interval value must be a positive safe integer");
   }
-  if (!MAINTENANCE_INTERVAL_UNITS.includes(unit)) {
+  if (!MAINTENANCE_INTERVAL_UNITS.some((candidate) => candidate === unit)) {
     fail("INVALID_INTERVAL_UNIT", "interval unit must be days, weeks, or months");
   }
-  return { value, unit };
+  return { value, unit: unit as IntervalUnit };
 }
 
-export function canonicalTimestamp(value, field = "timestamp") {
+export function canonicalTimestamp(value: unknown, field = "timestamp"): string {
   if (typeof value !== "string" || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/.test(value)) {
     fail("INVALID_TIMESTAMP", `${field} must be a canonical RFC 3339 UTC millisecond timestamp`);
   }
@@ -34,7 +53,7 @@ export function canonicalTimestamp(value, field = "timestamp") {
   return value;
 }
 
-export function canonicalNow(now = new Date()) {
+export function canonicalNow(now: Date | string | number = new Date()) {
   const date = now instanceof Date ? new Date(now.getTime()) : new Date(now);
   if (!Number.isFinite(date.getTime())) {
     fail("INVALID_NOW", "current time is invalid");
@@ -42,11 +61,11 @@ export function canonicalNow(now = new Date()) {
   return date.toISOString();
 }
 
-function daysInUtcMonth(year, month) {
+function daysInUtcMonth(year: number, month: number) {
   return new Date(Date.UTC(year, month + 1, 0)).getUTCDate();
 }
 
-export function calculateNextDue(lastCycleAt, interval) {
+export function calculateNextDue(lastCycleAt: string, interval: { value?: unknown; unit?: unknown } | null | undefined) {
   canonicalTimestamp(lastCycleAt, "lastCycleAt");
   const normalized = normalizeInterval(interval?.value, interval?.unit);
   const from = new Date(lastCycleAt);
@@ -75,10 +94,11 @@ export function calculateNextDue(lastCycleAt, interval) {
   return next.toISOString();
 }
 
-export function validatePolicy(policy) {
-  if (!policy || typeof policy !== "object" || Array.isArray(policy)) {
+export function validatePolicy(value: unknown): MaintenancePolicy {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
     fail("INVALID_POLICY", "maintenance policy must be an object");
   }
+  const policy = value as Record<string, unknown>;
   const keys = Object.keys(policy).sort();
   if (policy.mode === "manual") {
     if (keys.length !== 1 || keys[0] !== "mode") {
@@ -86,14 +106,15 @@ export function validatePolicy(policy) {
     }
     return { mode: "manual" };
   }
-  if (!MAINTENANCE_MODES.includes(policy.mode)) {
+  if (policy.mode !== "nudge" && policy.mode !== "automatic") {
     fail("INVALID_MODE", "maintenance mode must be manual, nudge, or automatic");
   }
   const expected = ["interval", "lastCycleAt", "mode", "nextDueAt"];
   if (keys.length !== expected.length || keys.some((key, index) => key !== expected[index])) {
     fail("INVALID_POLICY", "scheduled maintenance policy has unknown or missing fields");
   }
-  const interval = normalizeInterval(policy.interval?.value, policy.interval?.unit);
+  const rawInterval = policy.interval as { value?: unknown; unit?: unknown } | null | undefined;
+  const interval = normalizeInterval(rawInterval?.value, rawInterval?.unit);
   if (Object.keys(policy.interval ?? {}).sort().join(",") !== "unit,value") {
     fail("INVALID_POLICY", "maintenance interval has unknown or missing fields");
   }
@@ -106,7 +127,7 @@ export function validatePolicy(policy) {
   return { mode: policy.mode, interval, lastCycleAt, nextDueAt };
 }
 
-export function createPolicy({ mode = "nudge", intervalValue, intervalUnit, now = new Date() } = {}) {
+export function createPolicy({ mode = "nudge", intervalValue, intervalUnit, now = new Date() }: PolicyOptions = {}): MaintenancePolicy {
   if (mode === "manual") return { mode: "manual" };
   if (mode !== "nudge" && mode !== "automatic") {
     fail("INVALID_MODE", "maintenance mode must be manual, nudge, or automatic");
@@ -121,7 +142,7 @@ export function createPolicy({ mode = "nudge", intervalValue, intervalUnit, now 
   };
 }
 
-export function resetPolicy(policy, now = new Date()) {
+export function resetPolicy(policy: unknown, now: Date | string | number = new Date()) {
   const valid = validatePolicy(policy);
   if (valid.mode === "manual") return valid;
   return createPolicy({
@@ -132,7 +153,7 @@ export function resetPolicy(policy, now = new Date()) {
   });
 }
 
-export function isDue(policy, now = new Date()) {
+export function isDue(policy: unknown, now: Date | string | number = new Date()) {
   const valid = validatePolicy(policy);
   if (valid.mode === "manual") return false;
   return Date.parse(canonicalNow(now)) >= Date.parse(valid.nextDueAt);

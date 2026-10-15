@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { createMaintenanceController } from "../extensions/runtime/maintenance-controller.mjs";
-import { createPolicy } from "../extensions/runtime/maintenance-policy.mjs";
+import { createMaintenanceController } from "../extensions/runtime/maintenance-controller.ts";
+import { createPolicy } from "../extensions/runtime/maintenance-policy.ts";
 
 function memoryStore(maintenance, extra = { custom: true }) {
   let config = maintenance === undefined ? extra : { ...extra, maintenance };

@@ -26,6 +26,10 @@ npm run check
 
 Use Node 24 for development. The project is tested with Node 24.19.0 and npm 11.17.0.
 
+The extension and runtime modules use TypeScript. `npm run check` includes strict type checking; run `npm run typecheck` for that check alone. Keep syntax compatible with Node’s type stripping: use explicit `.ts` imports and avoid enums and parameter properties. Pi loads the packaged TypeScript through its extension loader; no build output is published.
+
+Tests, release scripts, and sample repository fixtures remain JavaScript.
+
 Create a focused branch and keep unrelated changes separate.
 
 ## Making changes

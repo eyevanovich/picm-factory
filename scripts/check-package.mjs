@@ -36,13 +36,14 @@ const required = [
   "test/specialist-folder-maintenance-contract.test.mjs",
   "test/privacy-policy.test.mjs",
   "extensions/picm-factory.ts",
-  "extensions/runtime/coding-maintenance-depth.mjs",
-  "extensions/runtime/command-dispatch.mjs",
-  "extensions/runtime/maintenance-policy.mjs",
-  "extensions/runtime/privacy-policy.mjs",
-  "extensions/runtime/maintenance-config-store.mjs",
-  "extensions/runtime/maintenance-controller.mjs",
-  "extensions/runtime/maintenance-reminder.mjs",
+  "extensions/runtime/errors.ts",
+  "extensions/runtime/coding-maintenance-depth.ts",
+  "extensions/runtime/command-dispatch.ts",
+  "extensions/runtime/maintenance-policy.ts",
+  "extensions/runtime/privacy-policy.ts",
+  "extensions/runtime/maintenance-config-store.ts",
+  "extensions/runtime/maintenance-controller.ts",
+  "extensions/runtime/maintenance-reminder.ts",
   "skills/picm-factory/SKILL.md",
   "skills/picm-factory/references/optimization-guide.md",
   "skills/picm-factory/references/preview-review-protocol.md",
@@ -85,14 +86,15 @@ const requiredPackageFiles = [
   "package.json",
   "README.md",
   "LICENSE",
+  "extensions/runtime/errors.ts",
   "extensions/picm-factory.ts",
-  "extensions/runtime/coding-maintenance-depth.mjs",
-  "extensions/runtime/command-dispatch.mjs",
-  "extensions/runtime/maintenance-policy.mjs",
-  "extensions/runtime/privacy-policy.mjs",
-  "extensions/runtime/maintenance-config-store.mjs",
-  "extensions/runtime/maintenance-controller.mjs",
-  "extensions/runtime/maintenance-reminder.mjs",
+  "extensions/runtime/coding-maintenance-depth.ts",
+  "extensions/runtime/command-dispatch.ts",
+  "extensions/runtime/maintenance-policy.ts",
+  "extensions/runtime/privacy-policy.ts",
+  "extensions/runtime/maintenance-config-store.ts",
+  "extensions/runtime/maintenance-controller.ts",
+  "extensions/runtime/maintenance-reminder.ts",
   "skills/picm-factory/SKILL.md",
   "skills/picm-factory/references/adoption-guide.md",
   "skills/picm-factory/references/coding-adoption-guide.md",
@@ -175,11 +177,11 @@ for (const signal of [
   if (!extension.includes(signal)) fail(`PiCM extension missing retained command utility: ${signal}`);
 }
 
-const privacyPolicy = readFileSync(join(root, "extensions/runtime/privacy-policy.mjs"), "utf8");
+const privacyPolicy = readFileSync(join(root, "extensions/runtime/privacy-policy.ts"), "utf8");
 for (const signal of ["normalizePrivacyExcludedPaths", "privacyPathMatches", "validatePrivacyPolicy"]) {
   if (!privacyPolicy.includes(signal)) fail(`PiCM privacy policy missing deterministic signal: ${signal}`);
 }
-const maintenancePolicy = readFileSync(join(root, "extensions/runtime/maintenance-policy.mjs"), "utf8");
+const maintenancePolicy = readFileSync(join(root, "extensions/runtime/maintenance-policy.ts"), "utf8");
 for (const signal of ["calculateNextDue", "resetPolicy", "isDue", "INVALID_TIMESTAMP"]) {
   if (!maintenancePolicy.includes(signal)) fail(`PiCM maintenance policy missing deterministic signal: ${signal}`);
 }

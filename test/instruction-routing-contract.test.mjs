@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { dirname, join, relative, resolve } from "node:path";
 import test from "node:test";
-import { commandPrompt } from "../extensions/runtime/command-dispatch.mjs";
+import { commandPrompt } from "../extensions/runtime/command-dispatch.ts";
 
 const base = resolve("skills/picm-factory");
 const read = (path) => readFileSync(join(base, path), "utf8");
