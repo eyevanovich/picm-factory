@@ -46,6 +46,7 @@
   "files": [
     "pi/extensions",
     "pi/HOST.md",
+    "pi/session-history.md",
     "shared/compose-instructions.ts",
     "shared/runtime",
     "shared/picm-factory"

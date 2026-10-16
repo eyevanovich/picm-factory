@@ -1,6 +1,6 @@
 ---
 name: maintain
-description: Check and repair workspace context drift.
+description: Keep workspace guidance aligned and current, optionally using a session retrospective.
 disable-model-invocation: true
 ---
 

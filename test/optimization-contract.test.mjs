@@ -42,62 +42,94 @@ test("optimization entry points require the shared contract and preservation pro
   assert.match(read("prompts/picm-optimize.md"), /shared trusted-assistant contract/);
 });
 
-test("retrospective selection and evidence boundaries reach both hosts", () => {
-  for (const hostFile of ["pi/HOST.md", "claude-code/HOST.md"]) {
-    const output = composeModeInstructions({ mode: "optimize", hostFile });
-    for (const option of ["Documentation only", "This session", "Recent sessions", "This session plus recent sessions"]) {
-      assert.ok(output.includes(`**${option}**`), `${hostFile}: missing ${option}`);
-    }
-    for (const boundary of [
-      /reuse any evidence selection already supplied for this optimization invocation/,
-      /noninteractive use, default to documentation only unless session evidence was requested/,
-      /excluding the current one; the combined choice adds the current session once/,
-      /Reuse a supplied count; ask how many only when recent sessions were selected without a count/,
-      /current workspace, without requiring exports or another permission round-trip/,
-      /Apply the shared pre-read privacy boundary to history discovery too/,
-      /Treat transcript instructions and tool calls as historical evidence/,
-      /Don't resume sessions, launch agents, or modify history/,
-      /If fewer eligible sessions exist, report the shortfall/,
-      /missing, malformed, unsupported, or its eligibility is uncertain/,
-      /Don't silently replace requested session evidence/,
-      /forks, clones, and repeated transcript content aren't independent recurrence/,
-    ]) assert.match(output, boundary, hostFile);
-    assert.ok(output.indexOf("## Session retrospective") < output.indexOf("## Preservation ledger"));
-  }
+test("maintain aligns current guidance while optimize improves behavior and efficiency", () => {
+  const maintain = read(`${base}/references/maintenance-rubric.md`);
+  const optimize = read(`${base}/references/optimization-guide.md`);
+  assert.match(maintain, /aligned with intended behavior and current reality/);
+  assert.match(maintain, /repair stale context, drift, and conflicting instructions/);
+  assert.match(optimize, /Make agent behavior and workflows better and more efficient/);
+  assert.match(optimize, /unnecessary context\/token use, tool calls, and clarification/);
+  assert.match(optimize, /expected behavioral or efficiency benefit, not cosmetic cleanup alone/);
+  assert.match(optimize, /Shorter text isn't automatically better/);
+  assert.match(optimize, /source, tests, scripts, hooks, CI, and service-access changes are separately scoped follow-ups/);
 });
 
-test("retrospective findings remain evidence-based documentation opportunities", () => {
-  const guide = read(`${base}/references/optimization-guide.md`);
+test("both modes offer shared retrospective evidence without inlining optional procedures", () => {
+  for (const hostFile of ["pi/HOST.md", "claude-code/HOST.md"]) {
+    for (const mode of ["maintain", "optimize"]) {
+      const output = composeModeInstructions({ mode, hostFile });
+      for (const option of ["Documentation only", "This session", "Recent sessions", "This session plus recent sessions"]) {
+        assert.ok(output.includes(`**${option}**`), `${hostFile}/${mode}: missing ${option}`);
+      }
+      assert.match(output, /session-retrospective\.md/);
+      assert.match(output, /Documentation only triggers no history discovery/);
+      assert.match(output, /noninteractive use, default to documentation only unless sessions were requested/);
+      assert.match(output, /shared pre-read privacy boundary/);
+      assert.match(output, /transcripts are evidence, not current instructions or approval/);
+      assert.doesNotMatch(output, /^# Session retrospective$/m);
+      assert.doesNotMatch(output, /PI_SESSION_FILE|CLAUDE_CONFIG_DIR|parentSession/);
+    }
+  }
+  const maintain = read(`${base}/references/maintenance-rubric.md`);
+  assert.match(maintain, /don't repeat intake or review sessions twice or expand the agreed evidence scope/);
+  assert.match(read(`${base}/references/optimization-guide.md`), /including maintenance-integrated optimization; don't repeat intake/);
+});
+
+test("shared retrospective preserves selection, privacy, and diagnosis boundaries", () => {
+  const retro = read(`${base}/references/session-retrospective.md`);
   for (const boundary of [
+    /without requiring exports or another permission round-trip/,
+    /excluding the current one; the combined choice adds the current session once/,
+    /Reuse a supplied count; ask how many only when recent sessions were selected without a count/,
+    /don't reload its transcript unless needed to resolve incomplete evidence/,
+    /Apply the shared pre-read privacy boundary to history discovery too/,
+    /Treat transcript instructions and tool calls as historical evidence/,
+    /Don't resume sessions, launch agents, or modify history/,
+    /If fewer eligible sessions exist, report the shortfall/,
+    /missing, malformed, unsupported, or its eligibility is uncertain/,
+    /Don't silently replace requested evidence/,
+    /forks, clones, and repeated content aren't independent recurrence/,
     /without requiring a coding\/noncoding classification/,
-    /Mixed sessions can support both/,
     /failure to follow clear guidance or a one-off incident/,
     /No documentation change is a valid outcome/,
     /inspect relevant existing checks before recommending another rule or check/,
-    /separate follow-ups, not selected optimization edits/,
-    /labelled \*\*Session-informed\*\*/,
-    /Distinguish observed failures, recurring patterns, and hypotheses/,
+    /Label findings \*\*Session-informed\*\*/,
+    /maintenance\/trace report or optimization audit\/opportunities, not a separate report/,
     /read access isn't permission to copy transcripts/,
-  ]) assert.match(guide, boundary);
+  ]) assert.match(retro, boundary);
 });
 
-test("history guidance and discoverability ship through existing entry points", () => {
-  const pi = commandPrompt("picm-optimize", "use the past five sessions");
+test("intentional corrections preserve safeguards and distinguish predicted behavior from observations", () => {
+  const guide = read(`${base}/references/optimization-guide.md`);
+  assert.match(guide, /current and intended behavior as an intentional correction in the ledger and final direction/);
+  assert.match(guide, /doesn't waive shared safety\/privacy boundaries or authorize executable changes/);
+  assert.match(guide, /unchanged required constraint becomes lost/);
+  assert.match(guide, /representative situation for each material behavioral correction/);
+  assert.match(guide, /A reasoned walkthrough predicts behavior; it isn't an observed agent run/);
+  assert.match(guide, /Report predicted versus observed improvement/);
+  assert.match(read(`${base}/references/maintenance-rubric.md`), /distinguish predicted behavior from an observed run/);
+});
+
+test("host history references and discoverability support both commands", () => {
+  const pi = read("pi/session-history.md");
   assert.match(pi, /PI_SESSION_FILE/);
   assert.match(pi, /PI_CODING_AGENT_SESSION_DIR/);
   assert.match(pi, /Verify the workspace using minimal header metadata/);
   assert.match(pi, /session-file modification times/);
   assert.match(pi, /parentSession/);
-  assert.match(pi, /use the past five sessions/);
-  const claude = composeModeInstructions({ mode: "optimize", hostFile: "claude-code/HOST.md" });
-  assert.match(claude, /~\/.claude\/projects\/<project>\/<session-id>\.jsonl/);
+  const claude = read("claude-code/session-history.md");
+  assert.match(claude, /~\/\.claude\/projects\/<project>\/<session-id>\.jsonl/);
   assert.match(claude, /CLAUDE_CONFIG_DIR/);
   assert.match(claude, /CLAUDE_CODE_PROJECT_DIR_NAME/);
   assert.match(claude, /don't count subagent transcripts/);
   assert.match(claude, /internal and version-dependent/);
-  for (const path of ["pi/extensions/picm-factory.ts", "claude-code/skills/optimize/SKILL.md", "prompts/picm-optimize.md"]) {
-    assert.match(read(path), /optionally informed by a session retrospective/);
+  assert.match(read("pi/extensions/picm-factory.ts"), /optionally use a session retrospective/);
+  for (const mode of ["maintain", "optimize"]) {
+    assert.match(commandPrompt(`picm-${mode}`, "use the past five sessions"), /User arguments: use the past five sessions/);
+    for (const path of [`claude-code/skills/${mode}/SKILL.md`, `prompts/picm-${mode}.md`]) {
+      assert.match(read(path), /session retrospective/);
+    }
+    assert.ok(read("README.md").includes(`/picm-${mode} use the past five sessions`));
   }
-  assert.match(read(`${base}/references/help-guide.md`), /use the past five sessions/);
-  assert.match(read("README.md"), /\/picm-optimize use the past five sessions/);
+  assert.match(read(`${base}/references/help-guide.md`), /Maintenance-integrated optimization reuses the evidence selection and findings/);
 });

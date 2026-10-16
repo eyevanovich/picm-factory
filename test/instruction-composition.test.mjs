@@ -28,7 +28,8 @@ test("each mode includes the complete common contract, host rules, and only its 
       assert.match(output, /\[shared contract\]\(#shared-trusted-assistant-contract\)/);
       assert.match(output, /Wait for conversational sign-off/);
       assert.match(output, /sanitizing after disclosure is too late/);
-      assert.doesNotMatch(output, /^# (?:Coding adoption|Redundancy review|Layout profiles and first runs)$/m);
+      assert.doesNotMatch(output, /^# (?:Coding adoption|Redundancy review|Layout profiles and first runs|Session retrospective|Session history)$/m);
+      assert.doesNotMatch(output, /PI_SESSION_FILE|CLAUDE_CODE_PROJECT_DIR_NAME/);
     }
   }
 });

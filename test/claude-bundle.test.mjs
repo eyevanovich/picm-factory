@@ -39,7 +39,7 @@ test("release zip is self-contained outside the checkout with explicit-only comm
   const root = fixture(t);
   const bundle = buildClaudeBundle({ root });
   const version = JSON.parse(readFileSync(join(root, "package.json"), "utf8")).version;
-  const expected = [".claude-plugin/plugin.json", "package.json", "README.md", "LICENSE", "claude-code/settings.ts",
+  const expected = [".claude-plugin/plugin.json", "package.json", "README.md", "LICENSE", "claude-code/settings.ts", "claude-code/session-history.md",
     ...["new", "adopt", "maintain", "optimize", "help"].map((mode) => `skills/${mode}/SKILL.md`),
     ...files(join(root, "shared")).filter((path) => path !== "compose-instructions.ts").map((path) => `shared/${path}`)].sort();
   const procedures = Object.fromEntries(Object.entries({ new: "interview-guide", adopt: "adoption-guide", maintain: "maintenance-rubric", optimize: "optimization-guide", help: "help-guide" })
@@ -92,11 +92,19 @@ test("release zip is self-contained outside the checkout with explicit-only comm
   }
   const optimize = readFileSync(join(extracted, "skills/optimize/SKILL.md"), "utf8");
   assert.match(optimize, /^description: .*session retrospective/m);
-  assert.match(optimize, /## Session retrospective \(optional\)/);
-  assert.match(optimize, /## Optimize session history/);
-  assert.match(optimize, /CLAUDE_CODE_PROJECT_DIR_NAME/);
-  assert.match(optimize, /shared pre-read privacy boundary to history discovery/);
-  assert.match(optimize, /separate follow-ups, not selected optimization edits/);
+  const maintain = readFileSync(join(extracted, "skills/maintain/SKILL.md"), "utf8");
+  for (const text of [maintain, optimize]) {
+    assert.ok(text.includes("${CLAUDE_PLUGIN_ROOT}/shared/picm-factory/references/session-retrospective.md"));
+    assert.ok(text.includes("${CLAUDE_PLUGIN_ROOT}/claude-code/session-history.md"));
+    assert.match(text, /Documentation only triggers no history discovery/);
+    assert.doesNotMatch(text, /^# Session retrospective$|CLAUDE_CONFIG_DIR/m);
+  }
+  const retro = readFileSync(join(extracted, "shared/picm-factory/references/session-retrospective.md"), "utf8");
+  assert.match(retro, /maintain or optimize includes session evidence/);
+  assert.match(retro, /shared pre-read privacy boundary to history discovery/);
+  assert.match(retro, /Don't resume sessions, launch agents, or modify history/);
+  assert.match(readFileSync(join(extracted, "claude-code/session-history.md"), "utf8"), /CLAUDE_CODE_PROJECT_DIR_NAME/);
+  assert.match(optimize, /separately scoped follow-ups, not selected optimization edits/);
   const help = readFileSync(join(extracted, "skills/help/SKILL.md"), "utf8");
   assert.match(help, /without inspecting or editing/);
   assert.match(help, /use the past five sessions/);

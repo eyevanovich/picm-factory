@@ -8,19 +8,21 @@ Explain package behavior under the [shared contract](../CONTRACT.md) without ins
 | --- | --- |
 | `new [workflow description]` | A new/mostly empty workspace; free-form text seeds the minimal scaffold interview. |
 | `adopt [coding \| adoption request]` | Existing source, instructions, or architecture; `coding` skips classification and enters coding adoption. |
-| `maintain [strict \| balanced] [coding \| routing \| handoffs \| stale-context \| security \| trace "drift symptom"]` | General/focused health checks or a likely-source drift investigation. |
-| `optimize [focus or session request]` | Improve agent-facing documentation while preserving constraints and outcomes, optionally informed by a session retrospective. |
+| `maintain [strict \| balanced] [focus or session request]` | Keep guidance aligned with intended behavior and current reality; repair stale context and drift, optionally using a session retrospective. |
+| `optimize [focus or session request]` | Improve agent behavior and workflow efficiency through documentation, optionally using a session retrospective. |
 | `help` | Syntax, setup, settings, and behavior. |
 
 Arguments are optional; bare commands remain valid. Give one concrete example using the host's maintenance command with `trace "the final draft differs from the approved brief"`.
 
 Strict gives broader systematic coding-map coverage; Balanced samples major boundaries and one coding path. These are one-run recommendations, not persistent security modes; historical Light metadata remains readable but isn't offered. The host adapter owns depth selection and argument conveniences.
 
-## Session-informed optimization
+## Maintain, optimize, and session evidence
 
-Optimize offers documentation only, this session, recent sessions, or this session plus recent sessions unless the request already specifies the evidence. Users can say "include this session" or "use the past five sessions"; use the active host's optimize command in examples. Recent means previous sessions for the current workspace, excluding the current one unless also requested. The agent locates available local history without requiring exports, asks for a count only if missing, and reports coverage limits. If history is unavailable or ambiguous, it asks for help rather than silently claiming a retrospective.
+Maintain keeps guidance aligned and current; optimize makes the approach better and more efficient, including behavior, context/token use, and workflow-tooling opportunities. These purposes can overlap: maintenance already offers optional optimization. Relevant tooling can be assessed, but executable script/tool/CI changes are separately scoped follow-ups, not implicit maintenance or optimization edits.
 
-The review follows the work represented, whether coding, other workflows, or mixed. Session-informed findings join the normal opportunity list; tooling/check changes remain separate follow-ups outside documentation-only edits. History reads remain subject to privacy exclusions and sensitive-content boundaries.
+Both offer documentation only, this session, recent sessions, or this session plus recent sessions unless the request already specifies the evidence. Users can say "include this session" or "use the past five sessions"; give examples with both active-host commands. Recent means previous sessions for the current workspace, excluding the current one unless also requested. The agent locates available local history without requiring exports, asks for a count only if missing, and reports coverage limits. If history is unavailable or ambiguous, it asks for help rather than silently claiming a retrospective. Maintenance-integrated optimization reuses the evidence selection and findings without a second session review.
+
+The review follows the work represented, whether coding, other workflows, or mixed. Session-informed findings join the existing maintenance/trace report or optimization opportunities. History reads remain subject to privacy exclusions and sensitive-content boundaries. Behavior corrections require an explicit agreed direction; shorter guidance isn't automatically better, and token savings aren't promised.
 
 ## Setup and shared behavior
 

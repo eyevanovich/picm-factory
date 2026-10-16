@@ -48,6 +48,7 @@ export function buildClaudeBundle({ root = repositoryRoot } = {}) {
       writeFileSync(join(staging, target), `${frontmatter[0]}\n${instructions}\n${entry.slice(frontmatter[0].length).trim()}\n`);
     }
     copy("claude-code/settings.ts", "claude-code/settings.ts");
+    copy("claude-code/session-history.md", "claude-code/session-history.md");
     copy("LICENSE", "LICENSE");
     copy("shared/picm-factory/CONTRACT.md", "shared/picm-factory/CONTRACT.md");
     for (const [directory, extension] of [

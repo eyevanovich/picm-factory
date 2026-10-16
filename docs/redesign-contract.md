@@ -11,8 +11,8 @@ All commands share one behavior model. Their task differs, not their permission 
 
 - `/picm-new`: create or extend a workspace or workflow, reusing suitable existing material.
 - `/picm-adopt`: organize existing material without unnecessary replacement or restructuring.
-- `/picm-maintain`: find and repair drift, stale context, and broken handoffs.
-- `/picm-optimize`: simplify agent-facing context while preserving intended outcomes.
+- `/picm-maintain`: keep guidance aligned with intended behavior and current reality; repair drift, stale context, and broken handoffs.
+- `/picm-optimize`: improve agent behavior and workflow efficiency through documentation, preserving required safeguards and recording explicitly agreed corrections. Both modes can use an optional session retrospective; executable tooling changes remain separate follow-ups.
 - `/picm-help`: explain commands, methodology, configuration, and actual limitations; it does not initiate repository changes.
 
 ## Shared interaction contract

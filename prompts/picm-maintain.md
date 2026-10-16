@@ -1,5 +1,5 @@
 ---
-description: Check and improve a PiCM/ICM workspace using the maintenance rubric
+description: Keep workspace guidance aligned and current, optionally using a session retrospective
 argument-hint: '[strict | balanced | coding | trace "drift symptom" | routing | handoffs | stale-context | security]'
 ---
 Apply the command's included shared contract, Pi host rules, and selected procedure before following workspace read-first prerequisites. Apply its scope/privacy contract before workspace reads or searches; an excluded prerequisite needs an already-sanitized replacement, not an approval override.

@@ -70,8 +70,8 @@ test("required downstream references remain reachable for every affected branch"
     ["references/adoption-guide.md", ["references/coding-adoption-guide.md", "references/settings-guide.md"]],
     ["references/coding-adoption-guide.md", ["references/coding-maintenance-rubric.md", "references/layout-profiles.md"]],
     ["references/coding-maintenance-rubric.md", ["references/maintenance-rubric.md", "references/redundancy-review.md"]],
-    ["references/maintenance-rubric.md", ["references/coding-maintenance-rubric.md", "references/redundancy-review.md", "references/optimization-guide.md", "references/settings-guide.md"]],
-    ["references/optimization-guide.md", ["references/redundancy-review.md", "references/settings-guide.md"]],
+    ["references/maintenance-rubric.md", ["references/coding-maintenance-rubric.md", "references/redundancy-review.md", "references/optimization-guide.md", "references/session-retrospective.md", "references/settings-guide.md"]],
+    ["references/optimization-guide.md", ["references/redundancy-review.md", "references/session-retrospective.md", "references/settings-guide.md"]],
   ]) {
     for (const target of targets) assert.ok(linkedPaths(source).includes(target), `${source} cannot reach ${target}`);
   }

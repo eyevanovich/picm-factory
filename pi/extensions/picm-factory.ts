@@ -19,8 +19,8 @@ import { createMaintenanceReminder } from "./runtime/maintenance-reminder.ts";
 const commandDescriptions = {
   "picm-new": "Create a workspace; optionally add a workflow description after the command",
   "picm-adopt": "Adopt an existing workspace safely; type a space for optional arguments",
-  "picm-maintain": "Check workspace health; type a space for one-run depth and focus arguments",
-  "picm-optimize": "Improve agent-facing documentation, optionally informed by a session retrospective",
+  "picm-maintain": "Keep workspace guidance aligned and current; optionally use a session retrospective",
+  "picm-optimize": "Improve agent behavior and workflow efficiency through guidance; optionally use a session retrospective",
   "picm-help": "Show command syntax, arguments, examples, setup, and safety guidance",
 } as const;
 
