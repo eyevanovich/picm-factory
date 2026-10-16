@@ -90,7 +90,16 @@ test("release zip is self-contained outside the checkout with explicit-only comm
     }
     assert.equal(text.includes(root), false, "skill depends on the build checkout");
   }
-  assert.match(readFileSync(join(extracted, "skills/help/SKILL.md"), "utf8"), /without inspecting or editing/);
+  const optimize = readFileSync(join(extracted, "skills/optimize/SKILL.md"), "utf8");
+  assert.match(optimize, /^description: .*session retrospective/m);
+  assert.match(optimize, /## Session retrospective \(optional\)/);
+  assert.match(optimize, /## Optimize session history/);
+  assert.match(optimize, /CLAUDE_CODE_PROJECT_DIR_NAME/);
+  assert.match(optimize, /shared pre-read privacy boundary to history discovery/);
+  assert.match(optimize, /separate follow-ups, not selected optimization edits/);
+  const help = readFileSync(join(extracted, "skills/help/SKILL.md"), "utf8");
+  assert.match(help, /without inspecting or editing/);
+  assert.match(help, /use the past five sessions/);
   const workspace = join(root, "workspace");
   mkdirSync(workspace);
   assert.deepEqual(result(cli(extracted, workspace, "settings", { action: "status" })), { ok: true, exists: false, privacy: null });

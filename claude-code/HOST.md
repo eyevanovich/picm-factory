@@ -10,6 +10,12 @@ Use `/picm-factory:new`, `/picm-factory:adopt`, `/picm-factory:maintain`, `/picm
 
 For maintain, consume an optional leading `strict` or `balanced`. If missing, ask in an interactive session; default to Strict when interactive choice isn't available. Pass the remaining text as the focus. Never change the stored preset for a one-run selection.
 
+## Optimize session history
+
+Only when optimize includes previous sessions, use available host transcript-path/session metadata to locate the current workspace's local history. The default is `~/.claude/projects/<project>/<session-id>.jsonl`; `<project>` is the working directory path with non-alphanumeric characters replaced by `-`. Encoded names over 200 characters are truncated with a hash; don't guess that hash or scan every project's transcripts. `CLAUDE_CONFIG_DIR` changes the config root. A valid `CLAUDE_CODE_PROJECT_DIR_NAME` overrides the project directory name only when `CLAUDE_CONFIG_DIR` is set. Don't dump environment variables or settings to discover overrides; use available path metadata or ask for the location if unresolved.
+
+Inspect minimal available session ID/workspace metadata to verify membership, especially in custom storage shared by multiple workspaces. Use transcript-file modification times for recent activity ordering and disclose that basis. Exclude the current session and don't count subagent transcripts as separate user sessions. JSONL entry shapes are internal and version-dependent; inspect the available format without assuming a fixed schema. If membership, current-session identity, or format can't be established, report the ambiguity instead of guessing. Apply the selected procedure's history scope and privacy rules before reads. See [Claude session storage](https://code.claude.com/docs/en/sessions#where-transcripts-are-stored) for storage and format caveats.
+
 ## Settings helper
 
 For new, adopt, maintain, and optimize, run `settings` `status` successfully before workspace content inspection, even in an apparently empty folder. Use only the projected result; raw `.picm/config.json` is not discovery input or adoption evidence. If the helper fails or returns an invalid shape, stop discovery and report it.

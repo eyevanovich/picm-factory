@@ -7,6 +7,7 @@ import { commandPrompt } from "../pi/extensions/runtime/command-dispatch.ts";
 const base = resolve("shared/picm-factory");
 const read = (path) => readFileSync(join(base, path), "utf8");
 const linkedPaths = (path) => [...read(path).matchAll(/\]\(([^)]+\.md)\)/g)]
+  .filter(([, target]) => !/^https?:\/\//i.test(target))
   .map(([, target]) => relative(base, resolve(base, dirname(path), target)));
 
 // This requirement matrix is independent of the prose layout and wording tests.
@@ -48,7 +49,7 @@ test("scope and completion criteria cover the observed QA gaps", () => {
   assert.match(read("references/specialist-guide.md"), /Complete only when the checklist identifies those actual routes/);
 });
 
-test("all shipped instruction links resolve inside the packaged skill", () => {
+test("all local shipped instruction links resolve inside the packaged skill", () => {
   const files = ["CONTRACT.md", ...["references", "templates"].flatMap((directory) =>
     readdirSync(join(base, directory)).filter((name) => name.endsWith(".md")).map((name) => `${directory}/${name}`))];
   const pkg = JSON.parse(readFileSync(resolve("package.json"), "utf8"));

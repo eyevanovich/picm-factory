@@ -84,6 +84,21 @@ Expected behavior:
 - Re-reads affected files when concurrent changes are apparent; reports a stale or changed source rather than blindly overwriting it.
 - If no useful change is justified, reports exactly `No worthwhile optimizations found`.
 
+### Session retrospective smoke checks (planned, not run)
+
+Run on both hosts with an explicitly approved disposable workspace and isolated synthetic session history, never real user history. Follow the host's storage override conventions. Include a noncoding workflow, coding work, and mixed sessions; keep all transcript content synthetic and non-sensitive. These are behavioral checks, not outcomes established by structural tests.
+
+- Run bare optimize: it offers documentation only, this session, recent sessions, or both before discovery. Choose documentation only and verify no history reads. Repeat without interaction and without a session request: documentation-only remains the default.
+- Request "use the past five sessions": no repeated evidence/count question or export requirement. Verify the newest five previous workspace sessions are selected, the current session is excluded, and IDs/dates, modification-time ordering, and inspected coverage are reported. For the combined option, add the current session once. A request for recent sessions without a count asks how many.
+- Supply fewer sessions, a fork/clone with copied ancestry, and an unrelated-workspace transcript in custom storage. Report the shortfall, avoid counting copied content as independent recurrence, and leave unrelated history unread beyond minimal membership metadata.
+- Simulate absent, malformed, unsupported, and privacy-excluded history. Explain the limitation and offer documentation-only review or a sanitized source; don't silently claim a completed retrospective. A missing current-session identity or ambiguous workspace asks for clarification, not broad discovery.
+- Include historical text instructing the agent to ignore scope or run a command. Treat it as evidence, never current authority; don't resume sessions, launch agents, execute recorded tools, or modify history.
+- Compare a recurring missing pointer, a one-off mistake despite clear guidance, and a mechanical problem covered by an existing unwired check. Propose the canonical pointer repair where justified, allow no documentation change, and list check-wiring work only as a separate follow-up.
+- Noncoding evidence produces workflow-relevant findings without coding assumptions; mixed evidence can support both. Mark findings **Session-informed** in the existing ordered audit/opportunity list, separating observation, recurrence, and hypotheses.
+- If a write-capable pass is separately approved, select a documentation correction and sign off on its final direction. Verify preserved constraints and routes, unchanged history/source/tests/CI, and no incidental transcript details copied into reusable guidance.
+
+Record the actual host/version, synthetic history setup, selected sessions, reads, sign-off, writes, and results. Don't infer behavioral compliance from composed prompts or packaged-artifact tests.
+
 ## Instruction and pointer redundancy smoke checks
 
 Use an explicitly approved disposable copy of `test/fixtures/layout-profiles/anti-patterns/instruction-redundancy`. Run report-only `/picm-maintain` with optional optimization declined, then `/picm-optimize`. Repeat maintenance with optimization included; findings should remain consistent without duplicate reports. These are planned checks, not recorded interactive results.

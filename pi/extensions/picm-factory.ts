@@ -20,7 +20,7 @@ const commandDescriptions = {
   "picm-new": "Create a workspace; optionally add a workflow description after the command",
   "picm-adopt": "Adopt an existing workspace safely; type a space for optional arguments",
   "picm-maintain": "Check workspace health; type a space for one-run depth and focus arguments",
-  "picm-optimize": "Optimize agent-facing documentation without changing intended outcomes",
+  "picm-optimize": "Improve agent-facing documentation, optionally informed by a session retrospective",
   "picm-help": "Show command syntax, arguments, examples, setup, and safety guidance",
 } as const;
 

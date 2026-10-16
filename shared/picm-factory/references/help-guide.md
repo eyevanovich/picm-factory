@@ -9,12 +9,18 @@ Explain package behavior under the [shared contract](../CONTRACT.md) without ins
 | `new [workflow description]` | A new/mostly empty workspace; free-form text seeds the minimal scaffold interview. |
 | `adopt [coding \| adoption request]` | Existing source, instructions, or architecture; `coding` skips classification and enters coding adoption. |
 | `maintain [strict \| balanced] [coding \| routing \| handoffs \| stale-context \| security \| trace "drift symptom"]` | General/focused health checks or a likely-source drift investigation. |
-| `optimize` | Repetitive, diffuse, or hard-to-route agent documentation; documentation-only improvements preserving constraints and outcomes. |
+| `optimize [focus or session request]` | Improve agent-facing documentation while preserving constraints and outcomes, optionally informed by a session retrospective. |
 | `help` | Syntax, setup, settings, and behavior. |
 
 Arguments are optional; bare commands remain valid. Give one concrete example using the host's maintenance command with `trace "the final draft differs from the approved brief"`.
 
 Strict gives broader systematic coding-map coverage; Balanced samples major boundaries and one coding path. These are one-run recommendations, not persistent security modes; historical Light metadata remains readable but isn't offered. The host adapter owns depth selection and argument conveniences.
+
+## Session-informed optimization
+
+Optimize offers documentation only, this session, recent sessions, or this session plus recent sessions unless the request already specifies the evidence. Users can say "include this session" or "use the past five sessions"; use the active host's optimize command in examples. Recent means previous sessions for the current workspace, excluding the current one unless also requested. The agent locates available local history without requiring exports, asks for a count only if missing, and reports coverage limits. If history is unavailable or ambiguous, it asks for help rather than silently claiming a retrospective.
+
+The review follows the work represented, whether coding, other workflows, or mixed. Session-informed findings join the normal opportunity list; tooling/check changes remain separate follow-ups outside documentation-only edits. History reads remain subject to privacy exclusions and sensitive-content boundaries.
 
 ## Setup and shared behavior
 
