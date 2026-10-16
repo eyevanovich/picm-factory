@@ -56,7 +56,15 @@ npm run check
 
 Interactive `/picm-*` QA is manual because commands may ask questions and modification commands require conversational sign-off on a final direction. Follow `qa-runner/CONTEXT.md` and `docs/layout-fixture-qa.md`, use an explicitly approved disposable project, and report the sign-off, writes, and validation.
 
-Avoid brittle assertions against exact model wording. Prefer structural checks and documented interactive observations.
+Avoid brittle assertions against exact model wording. Prefer structural checks and documented interactive observations. Use the [behavioral regression checklist](docs/layout-fixture-qa.md#behavioral-regression-checklist-not-run) to record observable results; adding a checklist or passing artifact tests isn't an observed agent run.
+
+### Instruction-size report
+
+Run `npm run report:instructions` with Node 24. It rebuilds the ignored `dist/claude-code/` bundle using the existing builder, then prints lines, whitespace-separated words, and UTF-8 bytes for each host/mode. Compare output before and after instruction edits; there's no enforced size cap.
+
+Pi rows measure the actual empty-argument dispatched prompt, including default Strict depth for maintenance. Claude rows measure the complete generated `SKILL.md`, including frontmatter and the request placeholder. These are different payload boundaries, not a model-to-model cost comparison. Pi's rebased links include the installation path, so compare from the same checkout path. Supporting references, user-supplied arguments, and the rest of the conversation aren't counted. Empty text has zero lines; a final newline terminates a line without adding another. Counts aren't token estimates or evidence of savings.
+
+Extracted-bundle tests check skill names against their directories, nonempty plain single-line descriptions, and explicit-only invocation. Keep source frontmatter in that restricted format; a general YAML parser isn't part of these checks.
 
 ## Pull requests
 

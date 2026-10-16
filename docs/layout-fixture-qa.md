@@ -84,6 +84,37 @@ Expected behavior:
 - Re-reads affected files when concurrent changes are apparent; reports a stale or changed source rather than blindly overwriting it.
 - If no useful change is justified, reports exactly `No worthwhile optimizations found`.
 
+## Behavioral regression checklist (not run)
+
+Use these acceptance checks alongside the detailed retrospective and redundancy scenarios below, on both hosts. This checklist adds no recorded results. Every run needs an explicitly approved disposable workspace; retrospective runs also need isolated synthetic history. Never use real user history. Write-capable passes need separately agreed target writes and conversational sign-off within the tested command.
+
+Observe tool calls and results, inspected paths, the conversation, and workspace/history file contents before and after the run (including hidden files). Use the host's transcript or tool trace, not private internal reasoning or exact response wording. If observation is incomplete, record **Blocked**, not Pass. A transcript alone can't prove unchanged files.
+
+| Check | Setup and action | Pass evidence | Fail evidence |
+| --- | --- | --- | --- |
+| Documentation-only isolation | Run maintain and optimize separately; choose documentation only. Repeat noninteractively without a history request. | No history discovery, history file reads, or detailed retrospective/history-reference loads. Findings identify documentation-only coverage. | Any history access or claimed session review. |
+| Single evidence review | Explicitly request maintenance with optimization included and the past five synthetic sessions. Supply at least five eligible prior sessions with distinct markers. | No repeated evidence/count question; one review feeds both purposes. Findings retain the selected scope and distinguish freshness/drift from improvement. | Repeated intake or a second history review without a stated freshness, incomplete-evidence, or uncertain-result reason; silent scope expansion. |
+| Withheld modification sign-off | In a fixture with a repair opportunity, request a repair, let the agent present its final direction, then decline edits. | Final direction appears before changes; every workspace and history file remains unchanged. | Any pre-sign-off write, including a saved report or cadence completion. |
+| Missing or unusable evidence | Request recent sessions with absent, malformed, unsupported, or excluded synthetic history, one case per run. | Explicit coverage limitation and documentation-only or sanitized-source fallback; excluded content stays unread. | Claimed completed retrospective, silent fallback presented as session evidence, or excluded-content access. |
+| Redundancy with optimization declined | Run report-only maintain on the instruction-redundancy fixture and decline optional optimization. | Findings cite actual duplicate locations and distinguish the page-number qualifier, separate review trigger, and intentional safety reminder. No writes. | Redundancy skipped because optimization was declined, qualifiers lost in proposals, or edits made. |
+| Integrated redundancy reporting | Run report-only maintain with optimization included on a fresh copy of the same fixture. | Shared evidence and one maintenance report; optimization's audit remains present without repeating the same finding payload. | Duplicate reports/intake, conflicting dispositions, or implied coverage of uninspected files. |
+
+Record each check separately for each host. Use **Pass**, **Fail**, **Blocked**, or **Not run**; a predicted walkthrough isn't Pass. Include the actual host/model/Node versions, package revision or artifact, disposable target, synthetic-history setup, command/answers, observed reads, direction/sign-off, changed-file comparison, evidence location, and remaining limits. Keep evidence synthetic and sanitized. Don't claim cross-host success from one host's run.
+
+Result record (copy only when a run is approved):
+
+```markdown
+### <check> — <host>
+- Status: Not run
+- Date, host/model/Node versions, package revision/artifact:
+- Approved disposable workspace/history and allowed writes:
+- Command and answers:
+- Observed tool calls/paths and evidence location:
+- Final direction and sign-off (or withheld):
+- Workspace/history comparison and known effects:
+- Result rationale and limits:
+```
+
 ## Shared session retrospective smoke checks (planned, not run)
 
 Run on both hosts with an explicitly approved disposable workspace and isolated synthetic session history, never real user history. Follow the host's storage override conventions. Include a noncoding workflow, coding work, and mixed sessions; keep all transcript content synthetic and non-sensitive. These are behavioral checks, not outcomes established by structural tests.

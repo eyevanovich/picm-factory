@@ -33,6 +33,7 @@
     "check": "npm run typecheck && node --test test/*.test.mjs && node scripts/check-package.mjs",
     "typecheck": "tsc --noEmit",
     "build:claude": "node scripts/build-claude-bundle.mjs",
+    "report:instructions": "npm run build:claude && node scripts/report-instructions.mjs",
     "prepublishOnly": "npm run check"
   },
   "peerDependencies": {

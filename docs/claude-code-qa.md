@@ -18,7 +18,7 @@ Before interactive testing, agree on an explicit disposable target and allowed w
 
 For a release candidate, load an extracted zip outside the checkout. Verify each command starts with its common rules, host instructions, and selected procedure already present, then can reach supporting references and templates there; a source-tree-only success is insufficient.
 
-Record observed sign-off, writes, checks, and limitations. Manifest validation alone is not interactive evidence. Don't publish a release or enable persistent installation as a side effect of QA.
+Use the shared [behavioral regression checklist](layout-fixture-qa.md#behavioral-regression-checklist-not-run) for observable pass/fail checks and per-host result records. These checks remain unrun until an approved disposable session exercises them. Record observed sign-off, writes, checks, and limitations. Manifest validation alone is not interactive evidence. Don't publish a release or enable persistent installation as a side effect of QA.
 
 ## Recorded local regression checks
 

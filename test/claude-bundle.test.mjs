@@ -6,6 +6,8 @@ import { dirname, join, resolve } from "node:path";
 import test from "node:test";
 import { buildClaudeBundle } from "../scripts/build-claude-bundle.mjs";
 import { settingsRequest } from "../claude-code/settings.ts";
+import { commandPrompt } from "../pi/extensions/runtime/command-dispatch.ts";
+import { instructionSizeReport } from "../scripts/report-instructions.mjs";
 
 function fixture(t) {
   const root = mkdtempSync(join(tmpdir(), "picm-claude-bundle-"));
@@ -70,7 +72,12 @@ test("release zip is self-contained outside the checkout with explicit-only comm
   }
   for (const mode of ["new", "adopt", "maintain", "optimize", "help"]) {
     const text = readFileSync(join(extracted, `skills/${mode}/SKILL.md`), "utf8");
-    assert.match(text, /^disable-model-invocation: true$/m);
+    const frontmatter = text.match(/^---\n([\s\S]*?)\n---\n/);
+    assert.ok(frontmatter, `${mode}: missing frontmatter`);
+    // Entry metadata uses plain, single-line YAML scalars.
+    assert.match(frontmatter[1], new RegExp(`^name: ${mode}$`, "m"));
+    assert.match(frontmatter[1], /^description: [A-Za-z][^\n]*$/m);
+    assert.match(frontmatter[1], /^disable-model-invocation: true$/m);
     assert.match(text, /## Shared trusted-assistant contract/);
     assert.match(text, /Claude Code 2\.1\.277 or newer/);
     assert.match(text, /Use canonical root\/nested `AGENTS.md`/);
@@ -89,6 +96,19 @@ test("release zip is self-contained outside the checkout with explicit-only comm
       if (other !== mode) assert.equal(text.includes(`\n${heading}\n`), false);
     }
     assert.equal(text.includes(root), false, "skill depends on the build checkout");
+  }
+  const sizes = instructionSizeReport(extracted);
+  assert.equal(sizes.length, 10);
+  for (const row of sizes) {
+    const text = row.host === "Pi"
+      ? commandPrompt(`picm-${row.mode}`)
+      : readFileSync(join(extracted, `skills/${row.mode}/SKILL.md`), "utf8");
+    assert.equal(row.lines, [...text.matchAll(/[^\n]*\n|[^\n]+$/g)].length);
+    assert.equal(row.words, text.trim().split(/\s+/u).length);
+    assert.equal(row.bytes, new TextEncoder().encode(text).length);
+    assert.equal(row.payload, row.host === "Pi"
+      ? (row.mode === "maintain" ? "prompt, strict depth" : "prompt")
+      : "full SKILL.md");
   }
   const optimize = readFileSync(join(extracted, "skills/optimize/SKILL.md"), "utf8");
   assert.match(optimize, /^description: .*session retrospective/m);
