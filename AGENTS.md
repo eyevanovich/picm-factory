@@ -31,6 +31,8 @@ You are working on PiCM Factory, shared workspace and coding-context guidance wi
 
 ## Task routing
 
+For product terminology and scope, read [CONTEXT.md](CONTEXT.md).
+
 | Task | Start here | Supporting files |
 | --- | --- | --- |
 | Change Pi commands, tool wiring, or reminders | `pi/extensions/picm-factory.ts` | `pi/extensions/runtime/`, `pi/HOST.md`, Pi documentation |
