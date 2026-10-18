@@ -82,6 +82,8 @@ test("release zip is self-contained outside the checkout with explicit-only comm
     assert.match(text, /Claude Code 2\.1\.277 or newer/);
     assert.match(text, /Use canonical root\/nested `AGENTS.md`/);
     assert.match(text, /If status fails or is malformed, stop workspace discovery/);
+    assert.match(text, /Prior reports are leads, not independent evidence/);
+    assert.match(text, /Maintainer-only routing and privacy exclusions don't establish Git-ignore status/);
     assert.doesNotMatch(text, /@AGENTS\.md|create or merge a neighboring/);
     assert.doesNotMatch(text, /## Mode routing|read `\$\{CLAUDE_PLUGIN_ROOT\}\/HOST\.md`/);
     assert.match(text, /\$ARGUMENTS/);
@@ -119,6 +121,9 @@ test("release zip is self-contained outside the checkout with explicit-only comm
     assert.match(text, /Documentation only triggers no history discovery/);
     assert.doesNotMatch(text, /^# Session retrospective$|CLAUDE_CONFIG_DIR/m);
   }
+  const settings = readFileSync(join(extracted, "shared/picm-factory/references/settings-guide.md"), "utf8");
+  assert.match(settings, /Omitting it still conditionally expects no stored policy/);
+  assert.match(settings, /effectiveMode: "manual".*doesn't establish a stored manual policy/);
   const retro = readFileSync(join(extracted, "shared/picm-factory/references/session-retrospective.md"), "utf8");
   assert.match(retro, /maintain or optimize includes session evidence/);
   assert.match(retro, /shared pre-read privacy boundary to history discovery/);
@@ -194,6 +199,32 @@ test("settings CLI preserves opaque fields, projects results, and rejects stale 
   assert.equal(persisted.unrelated, "synthetic-opaque-marker");
   assert.equal(persisted.privacy.custom, "synthetic-private-field");
   assert.deepEqual(persisted.privacy.excludedPaths, ["private", "資料"]);
+});
+
+test("settings CLI checks observed policy absence when expectedMaintenance is omitted", (t) => {
+  const root = fixture(t);
+  const bundle = buildClaudeBundle({ root });
+  const workspace = join(root, "workspace");
+  mkdirSync(join(workspace, ".picm"), { recursive: true });
+  const config = join(workspace, ".picm/config.json");
+  writeFileSync(config, JSON.stringify({ version: 1, unrelated: "synthetic-opaque-marker" }));
+  const observed = result(cli(bundle, workspace, "maintenance", { action: "status" }));
+  assert.equal(observed.maintenance, undefined);
+  assert.equal(observed.effectiveMode, "manual");
+
+  const concurrent = result(cli(bundle, workspace, "maintenance", {
+    action: "configure", mode: "nudge", intervalValue: 3, intervalUnit: "weeks",
+  }));
+  assert.equal(concurrent.committed, true);
+  const beforeConflict = readFileSync(config, "utf8");
+  const conflict = result(cli(bundle, workspace, "maintenance", {
+    action: "configure", mode: "nudge", intervalValue: 1, intervalUnit: "weeks",
+  }), 2);
+  assert.equal(conflict.code, "MAINTENANCE_POLICY_CONFLICT");
+  assert.equal(conflict.changed, false);
+  assert.deepEqual(conflict.maintenance, concurrent.maintenance);
+  assert.equal(readFileSync(config, "utf8"), beforeConflict);
+  assert.doesNotMatch(JSON.stringify(conflict), /synthetic-|"config"/);
 });
 
 test("settings CLI rejects invalid requests and unsafe roots without mutation", (t) => {

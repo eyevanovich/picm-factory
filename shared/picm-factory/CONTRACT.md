@@ -25,6 +25,8 @@ For new, adopt, maintain, and optimize modifications:
 
 Inspection/report requests and help are no-edit; saving a report is an edit. Cancellation stops future work, though issued operations may finish. Retain and report completed effects. Do not automatically roll back or blindly replay uncertain operations. A new task needs fresh scope, not a lingering lock.
 
+Ground findings in inspected source text or projected helper results; name the supporting location and distinguish explicit statements from inference. Prior reports are leads, not independent evidence: recheck the relevant eligible source before carrying a finding forward, or mark it unverified. Maintainer-only routing and privacy exclusions don't establish Git-ignore status; report that only from inspected ignore policy.
+
 Finish with changes, checks, known effects, and remaining uncertainty. A report or tool's availability isn't proof of success. Local validation doesn't authorize deployment, publication, or authenticated external effects. For consequential review or failed-operation recovery, load [change/review guidance](references/preview-review-protocol.md).
 
 A user-created Git checkpoint is optional advice for substantial existing-content edits. Never initialize, stage, commit, reset, clean, or restore Git for the user, or inspect history/status to verify checkpoint coverage.

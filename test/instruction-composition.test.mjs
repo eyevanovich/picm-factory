@@ -28,6 +28,9 @@ test("each mode includes the complete common contract, host rules, and only its 
       assert.match(output, /\[shared contract\]\(#shared-trusted-assistant-contract\)/);
       assert.match(output, /Wait for conversational sign-off/);
       assert.match(output, /sanitizing after disclosure is too late/);
+      assert.match(output, /Prior reports are leads, not independent evidence/);
+      assert.match(output, /recheck the relevant eligible source/);
+      assert.match(output, /Maintainer-only routing and privacy exclusions don't establish Git-ignore status/);
       assert.doesNotMatch(output, /^# (?:Coding adoption|Redundancy review|Layout profiles and first runs|Session retrospective|Session history)$/m);
       assert.doesNotMatch(output, /PI_SESSION_FILE|CLAUDE_CODE_PROJECT_DIR_NAME/);
     }
