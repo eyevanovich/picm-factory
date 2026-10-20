@@ -34,8 +34,10 @@ test("each mode includes the complete common contract, host rules, and only its 
       assert.match(output, /Report persisted adoption status as unknown unless already available eligible evidence explicitly establishes it/);
       assert.match(output, /projected privacy status and declining a metadata write establish neither its presence nor absence/);
       assert.match(output, /Don't expand discovery or open raw config to resolve it/);
-      assert.match(output, /Omit incidental counts such as file line counts/);
-      assert.match(output, /measure necessary factual counts from eligible evidence and state their scope/);
+      assert.match(output, /Describe coverage with named inspected paths\/boundaries and omissions, not totals/);
+      assert.match(output, /Include file\/path\/line counts only when requested or decision-relevant/);
+      assert.match(output, /use tool-computed counts from already eligible evidence, separating regular files, directories, and root/);
+      assert.match(output, /Don't infer totals from a listing or truncated output, or substitute estimates for inventory counts/);
       if (mode === "adopt") {
         assert.match(output, /Persisted adoption status: evidence-backed value \/ unknown/);
         assert.doesNotMatch(output, /Inferred profile, routing source, and adoption status/);
@@ -43,6 +45,12 @@ test("each mode includes the complete common contract, host rules, and only its 
         assert.match(output, /load and apply \[coding maintenance\]\([^\)\n]*\/coding-maintenance-rubric\.md>?\) and \[redundancy review\]\([^\)\n]*\/redundancy-review\.md>?\) before the readiness report/);
         assert.match(output, /Report-only limits writes, not inspection depth; privacy exclusions, authorized scope, and access limits still apply/);
         assert.match(output, /mark blocked or uninspected required checks as incomplete/);
+      }
+      if (mode === "optimize") {
+        assert.match(output, /coding tests\/checks and verification pointers/);
+        assert.match(output, /Use Unverified per criterion when evidence is unavailable, uninspected, excluded, or outside scope/);
+        assert.match(output, /Not applicable needs inspected evidence of inapplicability/);
+        assert.match(output, /reading a check definition doesn't establish that it passed, and execution isn't required/);
       }
       assert.doesNotMatch(output, /^# (?:Coding adoption|Redundancy review|Layout profiles and first runs|Session retrospective|Session history)$/m);
       assert.doesNotMatch(output, /PI_SESSION_FILE|CLAUDE_CODE_PROJECT_DIR_NAME/);

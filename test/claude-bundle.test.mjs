@@ -87,8 +87,10 @@ test("release zip is self-contained outside the checkout with explicit-only comm
     assert.match(text, /Report persisted adoption status as unknown unless already available eligible evidence explicitly establishes it/);
     assert.match(text, /projected privacy status and declining a metadata write establish neither its presence nor absence/);
     assert.match(text, /Don't expand discovery or open raw config to resolve it/);
-    assert.match(text, /Omit incidental counts such as file line counts/);
-    assert.match(text, /measure necessary factual counts from eligible evidence and state their scope/);
+    assert.match(text, /Describe coverage with named inspected paths\/boundaries and omissions, not totals/);
+    assert.match(text, /Include file\/path\/line counts only when requested or decision-relevant/);
+    assert.match(text, /use tool-computed counts from already eligible evidence, separating regular files, directories, and root/);
+    assert.match(text, /Don't infer totals from a listing or truncated output, or substitute estimates for inventory counts/);
     if (mode === "adopt") {
       assert.match(text, /Persisted adoption status: evidence-backed value \/ unknown/);
       assert.doesNotMatch(text, /Inferred profile, routing source, and adoption status/);
@@ -96,6 +98,12 @@ test("release zip is self-contained outside the checkout with explicit-only comm
       assert.match(text, /load and apply \[coding maintenance\]\([^\)\n]*\/coding-maintenance-rubric\.md>?\) and \[redundancy review\]\([^\)\n]*\/redundancy-review\.md>?\) before the readiness report/);
       assert.match(text, /Report-only limits writes, not inspection depth; privacy exclusions, authorized scope, and access limits still apply/);
       assert.match(text, /mark blocked or uninspected required checks as incomplete/);
+    }
+    if (mode === "optimize") {
+      assert.match(text, /coding tests\/checks and verification pointers/);
+      assert.match(text, /Use Unverified per criterion when evidence is unavailable, uninspected, excluded, or outside scope/);
+      assert.match(text, /Not applicable needs inspected evidence of inapplicability/);
+      assert.match(text, /reading a check definition doesn't establish that it passed, and execution isn't required/);
     }
     assert.doesNotMatch(text, /@AGENTS\.md|create or merge a neighboring/);
     assert.doesNotMatch(text, /## Mode routing|read `\$\{CLAUDE_PLUGIN_ROOT\}\/HOST\.md`/);

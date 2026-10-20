@@ -39,10 +39,10 @@ Begin the first discovery response with `### Writing-lens audit` and these five 
 | **Context pointers** | Target plus distinct read conditions; always-needed prerequisites remain reachable. |
 | **Information hierarchy** | Shared constraints near execution; conditional reference disclosed; definitions/rules/caveats co-located. |
 | **Canonical home** | Equivalent guidance at one supported reachable home; conflicts need a decision. |
-| **Completion criteria** | Recognizable existing results, without invented requirements/gates. |
+| **Completion criteria** | Existing success conditions: workflow outputs/review gates or coding tests/checks and verification pointers, without inventing requirements. |
 | **Pruning** | True duplication, stale cheap-lookup caches, and behavioral no-ops; retain intentional safety/review/local repetition. |
 
-For each row use **Pass**, **Opportunity**, or **Not applicable**, with inspected paths and evidence. An uninspected category isn't Pass or Not applicable. Reference one redundancy finding from multiple rows instead of repeating its payload.
+For each row use **Pass**, **Opportunity**, **Not applicable**, or **Unverified**, with inspected paths and evidence. Use Unverified per criterion when evidence is unavailable, uninspected, excluded, or outside scope; name the gap. A missing required definition supported by inspected evidence is an Opportunity, not Unverified. Not applicable needs inspected evidence of inapplicability; an unopened manifest or absence of workflow stages isn't enough. Inspect eligible pointed-to verification definitions when needed and within scope; reading a check definition doesn't establish that it passed, and execution isn't required for this audit. Reference one redundancy finding from multiple rows instead of repeating its payload.
 
 Each opportunity needs visible evidence and an expected behavioral or efficiency benefit, not cosmetic cleanup alone. State paths, problem, proposed change, expected benefit, preserved requirements or intentional correction, risk/unknowns, and useful diff. Explain what the agent should do differently and relevant context/tool cost qualitatively; quantify only when measured. Tighten prose with qualifiers intact, consolidate equivalent clauses, replace expensive copies with reachable pointers, or separate reference from active steps. Leave short, clear, intentionally local, well-routed documents alone.
 

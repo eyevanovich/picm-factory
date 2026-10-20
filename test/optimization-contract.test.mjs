@@ -20,7 +20,13 @@ test("optimization retains documentation-only exclusions, preservation and order
     previous = index;
   }
   assert.match(guide, /Begin the first discovery response[\s\S]*before opportunities, direction, or no-op/);
-  assert.match(guide, /uninspected category isn't Pass or Not applicable/);
+  assert.match(guide, /coding tests\/checks and verification pointers/);
+  assert.match(guide, /\*\*Pass\*\*, \*\*Opportunity\*\*, \*\*Not applicable\*\*, or \*\*Unverified\*\*/);
+  assert.match(guide, /Use Unverified per criterion when evidence is unavailable, uninspected, excluded, or outside scope/);
+  assert.match(guide, /missing required definition supported by inspected evidence is an Opportunity, not Unverified/);
+  assert.match(guide, /Not applicable needs inspected evidence of inapplicability/);
+  assert.match(guide, /an unopened manifest or absence of workflow stages isn't enough/);
+  assert.match(guide, /reading a check definition doesn't establish that it passed, and execution isn't required/);
   assert.match(guide, /every ledger constraint/);
   assert.match(guide, /required audit, then use exactly this conclusion/);
   assert.doesNotMatch(guide, /picm_scan_control|protected execution phase|proposal batch/);
