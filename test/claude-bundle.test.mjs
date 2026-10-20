@@ -84,6 +84,15 @@ test("release zip is self-contained outside the checkout with explicit-only comm
     assert.match(text, /If status fails or is malformed, stop workspace discovery/);
     assert.match(text, /Prior reports are leads, not independent evidence/);
     assert.match(text, /Maintainer-only routing and privacy exclusions don't establish Git-ignore status/);
+    assert.match(text, /Report persisted adoption status as unknown unless already available eligible evidence explicitly establishes it/);
+    assert.match(text, /projected privacy status and declining a metadata write establish neither its presence nor absence/);
+    assert.match(text, /Don't expand discovery or open raw config to resolve it/);
+    assert.match(text, /Omit incidental counts such as file line counts/);
+    assert.match(text, /measure necessary factual counts from eligible evidence and state their scope/);
+    if (mode === "adopt") {
+      assert.match(text, /Persisted adoption status: evidence-backed value \/ unknown/);
+      assert.doesNotMatch(text, /Inferred profile, routing source, and adoption status/);
+    }
     assert.doesNotMatch(text, /@AGENTS\.md|create or merge a neighboring/);
     assert.doesNotMatch(text, /## Mode routing|read `\$\{CLAUDE_PLUGIN_ROOT\}\/HOST\.md`/);
     assert.match(text, /\$ARGUMENTS/);

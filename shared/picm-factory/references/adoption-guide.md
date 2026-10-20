@@ -60,7 +60,8 @@ Use relevant sections rather than empty headings:
 # PiCM Adoption Report
 ## Summary
 - Compatibility: Ready / Ready with warnings / Needs routing before adoption / Scanned only
-- Inferred profile, routing source, and adoption status:
+- Profile and routing source:
+- Persisted adoption status: evidence-backed value / unknown
 ## Existing structure and routing readiness
 ## PiCM compatibility and coding adoption
 ## Evidence and unknowns

@@ -31,6 +31,15 @@ test("each mode includes the complete common contract, host rules, and only its 
       assert.match(output, /Prior reports are leads, not independent evidence/);
       assert.match(output, /recheck the relevant eligible source/);
       assert.match(output, /Maintainer-only routing and privacy exclusions don't establish Git-ignore status/);
+      assert.match(output, /Report persisted adoption status as unknown unless already available eligible evidence explicitly establishes it/);
+      assert.match(output, /projected privacy status and declining a metadata write establish neither its presence nor absence/);
+      assert.match(output, /Don't expand discovery or open raw config to resolve it/);
+      assert.match(output, /Omit incidental counts such as file line counts/);
+      assert.match(output, /measure necessary factual counts from eligible evidence and state their scope/);
+      if (mode === "adopt") {
+        assert.match(output, /Persisted adoption status: evidence-backed value \/ unknown/);
+        assert.doesNotMatch(output, /Inferred profile, routing source, and adoption status/);
+      }
       assert.doesNotMatch(output, /^# (?:Coding adoption|Redundancy review|Layout profiles and first runs|Session retrospective|Session history)$/m);
       assert.doesNotMatch(output, /PI_SESSION_FILE|CLAUDE_CODE_PROJECT_DIR_NAME/);
     }

@@ -27,6 +27,8 @@ Inspection/report requests and help are no-edit; saving a report is an edit. Can
 
 Ground findings in inspected source text or projected helper results; name the supporting location and distinguish explicit statements from inference. Prior reports are leads, not independent evidence: recheck the relevant eligible source before carrying a finding forward, or mark it unverified. Maintainer-only routing and privacy exclusions don't establish Git-ignore status; report that only from inspected ignore policy.
 
+Keep persisted adoption status separate from visible routing readiness. Report persisted adoption status as unknown unless already available eligible evidence explicitly establishes it; projected privacy status and declining a metadata write establish neither its presence nor absence. Don't expand discovery or open raw config to resolve it. Omit incidental counts such as file line counts; measure necessary factual counts from eligible evidence and state their scope. Label estimates as estimates.
+
 Finish with changes, checks, known effects, and remaining uncertainty. A report or tool's availability isn't proof of success. Local validation doesn't authorize deployment, publication, or authenticated external effects. For consequential review or failed-operation recovery, load [change/review guidance](references/preview-review-protocol.md).
 
 A user-created Git checkpoint is optional advice for substantial existing-content edits. Never initialize, stage, commit, reset, clean, or restore Git for the user, or inspect history/status to verify checkpoint coverage.
