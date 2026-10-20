@@ -4,6 +4,8 @@ Use for `adopt` under the [shared contract](../CONTRACT.md). Inspect existing ma
 
 For explicit `coding`, selected coding adoption, or hybrid codebase mapping: Load [coding adoption](coding-adoption-guide.md) for this branch before assessing readiness or producing a report. The shortcut skips classification, not its mapping decisions or Strict examination.
 
+Report-only coding adoption still requires the Strict examination: load and apply [coding maintenance](coding-maintenance-rubric.md) and [redundancy review](redundancy-review.md) before the readiness report. Report-only limits writes, not inspection depth; privacy exclusions, authorized scope, and access limits still apply. State inspected coverage and omissions; mark blocked or uninspected required checks as incomplete.
+
 ## Read-first orientation
 
 After successful projected settings status and path eligibility, inspect routing/context: `AGENTS.md`, `CONTEXT.md`, `REFERENCES.md`, identity/rules/examples, references, workflows, handoffs, stages, and relevant projected configuration. Inspect eligible legacy instructions only for the migration cases below; don't open raw config to determine profile or adoption status. For a complex workspace, offer a representative path-to-role-to-rationale inventory; classification informs proposals, never migration authority.

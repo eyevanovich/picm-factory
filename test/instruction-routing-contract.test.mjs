@@ -67,7 +67,7 @@ test("required downstream references remain reachable for every affected branch"
   for (const [source, targets] of [
     ["references/interview-guide.md", ["references/layout-profiles.md", "references/settings-guide.md", "templates/root-agents.md", "templates/stage-context.md"]],
     ["references/layout-profiles.md", ["references/specialist-guide.md", "references/coding-adoption-guide.md"]],
-    ["references/adoption-guide.md", ["references/coding-adoption-guide.md", "references/settings-guide.md"]],
+    ["references/adoption-guide.md", ["references/coding-adoption-guide.md", "references/coding-maintenance-rubric.md", "references/redundancy-review.md", "references/settings-guide.md"]],
     ["references/coding-adoption-guide.md", ["references/coding-maintenance-rubric.md", "references/layout-profiles.md"]],
     ["references/coding-maintenance-rubric.md", ["references/maintenance-rubric.md", "references/redundancy-review.md"]],
     ["references/maintenance-rubric.md", ["references/coding-maintenance-rubric.md", "references/redundancy-review.md", "references/optimization-guide.md", "references/session-retrospective.md", "references/settings-guide.md"]],

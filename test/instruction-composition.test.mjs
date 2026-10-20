@@ -39,6 +39,10 @@ test("each mode includes the complete common contract, host rules, and only its 
       if (mode === "adopt") {
         assert.match(output, /Persisted adoption status: evidence-backed value \/ unknown/);
         assert.doesNotMatch(output, /Inferred profile, routing source, and adoption status/);
+        assert.match(output, /Report-only coding adoption still requires the Strict examination/);
+        assert.match(output, /load and apply \[coding maintenance\]\([^\)\n]*\/coding-maintenance-rubric\.md>?\) and \[redundancy review\]\([^\)\n]*\/redundancy-review\.md>?\) before the readiness report/);
+        assert.match(output, /Report-only limits writes, not inspection depth; privacy exclusions, authorized scope, and access limits still apply/);
+        assert.match(output, /mark blocked or uninspected required checks as incomplete/);
       }
       assert.doesNotMatch(output, /^# (?:Coding adoption|Redundancy review|Layout profiles and first runs|Session retrospective|Session history)$/m);
       assert.doesNotMatch(output, /PI_SESSION_FILE|CLAUDE_CODE_PROJECT_DIR_NAME/);

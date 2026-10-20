@@ -92,6 +92,10 @@ test("release zip is self-contained outside the checkout with explicit-only comm
     if (mode === "adopt") {
       assert.match(text, /Persisted adoption status: evidence-backed value \/ unknown/);
       assert.doesNotMatch(text, /Inferred profile, routing source, and adoption status/);
+      assert.match(text, /Report-only coding adoption still requires the Strict examination/);
+      assert.match(text, /load and apply \[coding maintenance\]\([^\)\n]*\/coding-maintenance-rubric\.md>?\) and \[redundancy review\]\([^\)\n]*\/redundancy-review\.md>?\) before the readiness report/);
+      assert.match(text, /Report-only limits writes, not inspection depth; privacy exclusions, authorized scope, and access limits still apply/);
+      assert.match(text, /mark blocked or uninspected required checks as incomplete/);
     }
     assert.doesNotMatch(text, /@AGENTS\.md|create or merge a neighboring/);
     assert.doesNotMatch(text, /## Mode routing|read `\$\{CLAUDE_PLUGIN_ROOT\}\/HOST\.md`/);
