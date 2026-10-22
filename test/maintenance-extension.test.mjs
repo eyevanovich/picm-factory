@@ -8,7 +8,7 @@ const commands = ["picm-new", "picm-adopt", "picm-maintain", "picm-optimize", "p
 test("extension registers five thin commands and only local utility tools", () => {
   const h = harness();
   assert.deepEqual([...h.commands.keys()], commands);
-  assert.deepEqual([...h.tools.keys()].sort(), ["picm_decision", "picm_maintenance_policy", "picm_settings"]);
+  assert.deepEqual([...h.tools.keys()].sort(), ["picm_decision", "picm_evidence_report", "picm_maintenance_policy", "picm_settings"]);
   assert.equal(h.handlers.has("tool_call"), false);
   assert.equal(h.handlers.has("input"), false);
   assert.equal(h.handlers.has("agent_settled"), false);

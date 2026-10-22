@@ -47,6 +47,11 @@ test("each mode includes the complete common contract, host rules, and only its 
         assert.match(output, /mark blocked or uninspected required checks as incomplete/);
       }
       if (mode === "optimize") {
+        assert.match(output, /The helper report is the required audit/);
+        assert.match(output, /Decide the outcome from the agreed inspection, preservation, and redundancy review, not audit ratings alone/);
+        assert.match(output, /The report owns named source coverage and declared omissions/);
+        assert.match(output, /Do not write a separate audit or reproduce the helper report/);
+        assert.doesNotMatch(output, /Begin the first discovery response|After the audit and required reviews/);
         assert.match(output, /coding tests\/checks and verification pointers/);
         assert.match(output, /Use Unverified per criterion when evidence is unavailable, uninspected, excluded, or outside scope/);
         assert.match(output, /Not applicable needs inspected evidence of inapplicability/);

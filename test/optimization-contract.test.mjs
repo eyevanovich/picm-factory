@@ -19,7 +19,10 @@ test("optimization retains documentation-only exclusions, preservation and order
     assert.ok(index > previous, `missing/out-of-order audit row: ${label}`);
     previous = index;
   }
-  assert.match(guide, /Begin the first discovery response[\s\S]*before opportunities, direction, or no-op/);
+  assert.match(guide, /The helper report is the required audit/);
+  assert.match(guide, /before opportunities, direction, or no-op/);
+  assert.match(guide, /Do not write a separate audit or reproduce the helper report/);
+  assert.doesNotMatch(guide, /Begin the first discovery response|After the audit and required reviews/);
   assert.match(guide, /coding tests\/checks and verification pointers/);
   assert.match(guide, /\*\*Pass\*\*, \*\*Opportunity\*\*, \*\*Not applicable\*\*, or \*\*Unverified\*\*/);
   assert.match(guide, /Use Unverified per criterion when evidence is unavailable, uninspected, excluded, or outside scope/);
@@ -28,8 +31,22 @@ test("optimization retains documentation-only exclusions, preservation and order
   assert.match(guide, /an unopened manifest or absence of workflow stages isn't enough/);
   assert.match(guide, /reading a check definition doesn't establish that it passed, and execution isn't required/);
   assert.match(guide, /every ledger constraint/);
-  assert.match(guide, /required audit, then use exactly this conclusion/);
+  assert.match(guide, /then use exactly this conclusion/);
   assert.doesNotMatch(guide, /picm_scan_control|protected execution phase|proposal batch/);
+});
+
+test("optimization instructions separate scoped outcomes from criterion ratings and assign coverage to the report", () => {
+  const guide = read(`${base}/references/optimization-guide.md`);
+  assert.match(guide, /Decide the outcome from the agreed inspection, preservation, and redundancy review, not audit ratings alone/);
+  assert.match(guide, /An excluded definition may remain Unverified without making that agreed review incomplete/);
+  assert.match(guide, /Missing findings or absent Opportunity ratings don't establish completed review or a no-op/);
+  assert.match(guide, /required eligible inspection or review is unfinished[\s\S]*report the outstanding path\/operation[\s\S]*don't give the no-op conclusion/);
+  assert.match(guide, /review is complete and worthwhile opportunities are supported[\s\S]*present them/);
+  assert.match(guide, /review is complete and no worthwhile opportunities were found[\s\S]*inspected scope named in the report[\s\S]*No worthwhile optimizations found/);
+  assert.match(guide, /The report owns named source coverage and declared omissions; don't write a separate coverage recap/);
+  assert.match(guide, /Final chat acknowledges the native report and gives the outcome\/next action, known effects, or unresolved operation/);
+  assert.doesNotMatch(guide, /For a no-op, provide the helper audit/);
+  assert.match(read(`${base}/references/evidence-report-guide.md`), /Completion and final-chat decisions belong to the \[optimization procedure\]/);
 });
 
 test("maintenance optional optimization defaults No without widening edit scope", () => {

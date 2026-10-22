@@ -34,6 +34,10 @@ SIGINT/SIGTERM request cancellation before publication where possible. Killing a
 
 There is no startup reminder hook in this version. Cadence can be inspected and recorded, but nothing runs because it is due.
 
+## Experimental evidence reports
+
+For optimization, after shared eligibility checks, invoke `node "${CLAUDE_PLUGIN_ROOT}/claude-code/report.ts" --root "/absolute/workspace"` with the shared [evidence-report request](../shared/picm-factory/references/evidence-report-guide.md) as JSON on stdin. Use a quoted heredoc as with settings. Success prints canonical report text; failure prints sanitized JSON and exits nonzero. Don't summarize a failed invocation as a checked report. This helper reads named Markdown files only; it doesn't enforce exclusions, save reports, or verify model judgments.
+
 ## Generated instruction loading
 
 Target Claude Code 2.1.277 or newer with Project instructions configured to load `AGENTS.md`. Use canonical root/nested `AGENTS.md`; route from it to local `CONTEXT.md` and maps without copying their contents. Generate no compatibility shim. For existing legacy instructions, apply [adoption migration](../shared/picm-factory/references/adoption-guide.md#instruction-file-migration) before claiming native loading works. Report unsupported versions or inactive instruction loading as setup limitations; don't change host settings automatically.

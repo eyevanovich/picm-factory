@@ -8,6 +8,7 @@ import { buildClaudeBundle } from "../scripts/build-claude-bundle.mjs";
 import { settingsRequest } from "../claude-code/settings.ts";
 import { commandPrompt } from "../pi/extensions/runtime/command-dispatch.ts";
 import { instructionSizeReport } from "../scripts/report-instructions.mjs";
+import { evidenceReport, REPORT_CRITERIA } from "../shared/runtime/evidence-report.ts";
 
 function fixture(t) {
   const root = mkdtempSync(join(tmpdir(), "picm-claude-bundle-"));
@@ -37,11 +38,11 @@ function result(run, status = 0) {
   return JSON.parse(run.stdout);
 }
 
-test("release zip is self-contained outside the checkout with explicit-only commands and matching versions", (t) => {
+test("release zip is self-contained outside the checkout with explicit-only commands and matching versions", async (t) => {
   const root = fixture(t);
   const bundle = buildClaudeBundle({ root });
   const version = JSON.parse(readFileSync(join(root, "package.json"), "utf8")).version;
-  const expected = [".claude-plugin/plugin.json", "package.json", "README.md", "LICENSE", "claude-code/settings.ts", "claude-code/session-history.md",
+  const expected = [".claude-plugin/plugin.json", "package.json", "README.md", "LICENSE", "claude-code/settings.ts", "claude-code/report.ts", "claude-code/session-history.md",
     ...["new", "adopt", "maintain", "optimize", "help"].map((mode) => `skills/${mode}/SKILL.md`),
     ...files(join(root, "shared")).filter((path) => path !== "compose-instructions.ts").map((path) => `shared/${path}`)].sort();
   const procedures = Object.fromEntries(Object.entries({ new: "interview-guide", adopt: "adoption-guide", maintain: "maintenance-rubric", optimize: "optimization-guide", help: "help-guide" })
@@ -100,6 +101,11 @@ test("release zip is self-contained outside the checkout with explicit-only comm
       assert.match(text, /mark blocked or uninspected required checks as incomplete/);
     }
     if (mode === "optimize") {
+      assert.match(text, /The helper report is the required audit/);
+      assert.match(text, /Decide the outcome from the agreed inspection, preservation, and redundancy review, not audit ratings alone/);
+      assert.match(text, /The report owns named source coverage and declared omissions/);
+      assert.match(text, /Do not write a separate audit or reproduce the helper report/);
+      assert.doesNotMatch(text, /Begin the first discovery response|After the audit and required reviews/);
       assert.match(text, /coding tests\/checks and verification pointers/);
       assert.match(text, /Use Unverified per criterion when evidence is unavailable, uninspected, excluded, or outside scope/);
       assert.match(text, /Not applicable needs inspected evidence of inapplicability/);
@@ -157,6 +163,17 @@ test("release zip is self-contained outside the checkout with explicit-only comm
   const workspace = join(root, "workspace");
   mkdirSync(workspace);
   assert.deepEqual(result(cli(extracted, workspace, "settings", { action: "status" })), { ok: true, exists: false, privacy: null });
+  assert.equal(existsSync(join(workspace, ".picm")), false);
+  writeFileSync(join(workspace, "AGENTS.md"), "# Synthetic instructions\n\nRead the context map.\n");
+  const request = {
+    documents: [{ path: "AGENTS.md" }],
+    citations: [{ id: "route", path: "AGENTS.md", quote: "Read the context map." }],
+    assessments: REPORT_CRITERIA.map((criterion) => ({ criterion, status: "Unverified", reason: "Only one document inspected.", evidence: ["route"] })),
+    omissions: [{ path: "package.json", reason: "Session exclusion." }],
+  };
+  const report = spawnSync(process.execPath, [join(extracted, "claude-code/report.ts"), "--root", workspace], { encoding: "utf8", input: JSON.stringify(request) });
+  assert.equal(report.status, 0, report.stderr || report.stdout);
+  assert.equal(report.stdout, (await evidenceReport(workspace, request)).report);
   assert.equal(existsSync(join(workspace, ".picm")), false);
 });
 

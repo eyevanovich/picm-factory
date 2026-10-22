@@ -15,6 +15,7 @@ import { commandPrompt, maintenanceRequest } from "./runtime/command-dispatch.ts
 import { createMaintenanceConfigStore } from "../../shared/runtime/maintenance-config-store.ts";
 import { createMaintenanceController } from "../../shared/runtime/maintenance-controller.ts";
 import { createMaintenanceReminder } from "./runtime/maintenance-reminder.ts";
+import { evidenceReport } from "../../shared/runtime/evidence-report.ts";
 
 const commandDescriptions = {
   "picm-new": "Create a workspace; optionally add a workflow description after the command",
@@ -102,6 +103,24 @@ export default function picmFactoryExtension(pi: ExtensionAPI) {
         const result = await store.compareAndUpdateMaintenance(params.expectedMaintenance, calculated.maintenance, { signal });
         return { ok: result.ok, changed: result.changed, committed: result.committed, conflict: result.conflict, code: result.code, warning: result.warning, message: result.message, maintenance: result.maintenance };
       }));
+    },
+  });
+
+  pi.registerTool({
+    name: "picm_evidence_report",
+    label: "PiCM Evidence Report",
+    description: "Experimental read-only optimization report. After successful projected settings status and path eligibility checks, provide only named eligible Markdown documents, unique exact quotes, model assessments, and declared omissions. Returns canonical report text, not verified judgments. No discovery, execution, or saving; this tool does not enforce privacy exclusions.",
+    parameters: Type.Object({
+      documents: Type.Array(Type.Object({ path: Type.String(), sha256: Type.Optional(Type.String()) }), { maxItems: 20 }),
+      citations: Type.Array(Type.Object({ id: Type.String(), path: Type.String(), quote: Type.String() }), { maxItems: 40 }),
+      assessments: Type.Array(Type.Object({
+        criterion: Type.String(), status: Type.String(), reason: Type.String(), evidence: Type.Array(Type.String()),
+      }), { minItems: 5, maxItems: 5 }),
+      omissions: Type.Array(Type.Object({ path: Type.String(), reason: Type.String() }), { maxItems: 20 }),
+    }),
+    async execute(_id, params, signal, _onUpdate, ctx) {
+      const result = await evidenceReport(ctx.cwd, params, signal);
+      return { content: [{ type: "text" as const, text: result.ok ? result.report : JSON.stringify(result) }], details: result, ...(!result.ok ? { isError: true } : {}) };
     },
   });
 

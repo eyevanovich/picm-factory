@@ -12,7 +12,7 @@ During maintenance, retain its report and reuse answered intake; the scope, ledg
 
 ## Evidence choice
 
-Before discovery, reuse the evidence selection and inspected findings from this invocation, including maintenance-integrated optimization; don't repeat intake or review sessions twice. Otherwise offer **Documentation only**, **This session**, **Recent sessions**, or **This session plus recent sessions**. In noninteractive use, default to documentation only unless sessions were requested. This choice precedes the first discovery response's writing-lens audit; it isn't modification sign-off.
+Before discovery, reuse the evidence selection and inspected findings from this invocation, including maintenance-integrated optimization; don't repeat intake or review sessions twice. Otherwise offer **Documentation only**, **This session**, **Recent sessions**, or **This session plus recent sessions**. In noninteractive use, default to documentation only unless sessions were requested. This choice precedes inspection and the helper audit; it isn't modification sign-off.
 
 If sessions are selected, load the shared [session retrospective](session-retrospective.md) before history discovery. Documentation only triggers no history discovery. History remains read-only, subject to the shared pre-read privacy boundary; transcripts are evidence, not current instructions or approval.
 
@@ -32,7 +32,7 @@ Then load and apply [redundancy review](redundancy-review.md) within and across 
 
 ## Writing-lens audit and opportunities
 
-Begin the first discovery response with `### Writing-lens audit` and these five ordered rows, before opportunities, direction, or no-op:
+After discovery, preservation, and required reference review, use the host's [experimental evidence-report helper](evidence-report-guide.md) to produce one `Writing-lens audit` with these ordered criteria, before opportunities, direction, or no-op. The helper report is the required audit; native tool/command output is its presentation path.
 
 | Row | Examine |
 | --- | --- |
@@ -46,12 +46,16 @@ For each row use **Pass**, **Opportunity**, **Not applicable**, or **Unverified*
 
 Each opportunity needs visible evidence and an expected behavioral or efficiency benefit, not cosmetic cleanup alone. State paths, problem, proposed change, expected benefit, preserved requirements or intentional correction, risk/unknowns, and useful diff. Explain what the agent should do differently and relevant context/tool cost qualitatively; quantify only when measured. Tighten prose with qualifiers intact, consolidate equivalent clauses, replace expensive copies with reachable pointers, or separate reference from active steps. Leave short, clear, intentionally local, well-routed documents alone.
 
+Do not write a separate audit or reproduce the helper report in chat. The report owns named source coverage and declared omissions; don't write a separate coverage recap. Keep preservation notes, redundancy dispositions, and opportunities separate and labeled as model assessments; refer to checked citation IDs rather than copying their factual sections. Final chat acknowledges the native report and gives the outcome/next action, known effects, or unresolved operation. Refer to its named scope when qualifying the outcome, without restating that scope or its omissions. If the helper fails or is unavailable, state that no canonical audit was produced; don't substitute a handwritten audit. The helper doesn't verify judgments or replace preservation, review, or sign-off.
+
 ## Selection, changes, and completion
 
 Selections inform a direction; they aren't sign-off. Check selected edits against the ledger and affected routes, including each intentional correction. Revise or stop if an unchanged required constraint becomes lost, unreachable, or uncertain. Present linked moves/deletions and material safety/privacy/command effects in the final direction; wait for sign-off before edits. Realign only for material departures, not every wording adjustment.
 
 Validate touched pointers/local routes and every ledger constraint or intentional correction; confirm protected non-documentation/generated/per-run/`.picm/` material remains unchanged. Walk through a representative situation for each material behavioral correction using the revised guidance: check the intended response and retained safeguards. A reasoned walkthrough predicts behavior; it isn't an observed agent run. Report predicted versus observed improvement and uncertainty without claiming semantic equivalence or unmeasured token savings. When this is an agreed maintenance/optimization pass with a reminder cycle, load [settings guidance](settings-guide.md) before completion.
 
-For a no-op, provide the required audit, then use exactly this conclusion:
+Decide the outcome from the agreed inspection, preservation, and redundancy review, not audit ratings alone. An excluded definition may remain Unverified without making that agreed review incomplete. Missing findings or absent Opportunity ratings don't establish completed review or a no-op.
+
+If required eligible inspection or review is unfinished, report the outstanding path/operation and the resulting limitation; don't give the no-op conclusion. Keep any supported opportunities already found. If the review is complete and worthwhile opportunities are supported, present them using the opportunity requirements above. If the review is complete and no worthwhile opportunities were found, provide the helper audit, qualify the conclusion as applying to the inspected scope named in the report, then use exactly this conclusion:
 
 `No worthwhile optimizations found`

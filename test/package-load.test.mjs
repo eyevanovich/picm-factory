@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import test from "node:test";
@@ -31,7 +31,7 @@ test("packed TypeScript runtime loads through Pi from node_modules", async (t) =
     "picm-adopt", "picm-help", "picm-maintain", "picm-new", "picm-optimize",
   ]);
   assert.deepEqual([...extension.tools.keys()].sort(), [
-    "picm_decision", "picm_maintenance_policy", "picm_settings",
+    "picm_decision", "picm_evidence_report", "picm_maintenance_policy", "picm_settings",
   ]);
   const prompts = {};
   const installedRoot = realpathSync(packageRoot);
@@ -70,6 +70,16 @@ test("packed TypeScript runtime loads through Pi from node_modules", async (t) =
   assert.match(readFileSync(join(installedRoot, "pi/session-history.md"), "utf8"), /PI_SESSION_FILE/);
   assert.match(prompts.maintain, /One-run depth: balanced/);
   assert.match(prompts.help, /without inspecting or editing the workspace/);
+  writeFileSync(join(cwd, "AGENTS.md"), "# Synthetic instructions\n\nRead the context map.\n");
+  const report = await extension.tools.get("picm_evidence_report").definition.execute("report", {
+    documents: [{ path: "AGENTS.md" }],
+    citations: [{ id: "route", path: "AGENTS.md", quote: "Read the context map." }],
+    assessments: ["Context pointers", "Information hierarchy", "Canonical home", "Completion criteria", "Pruning"].map((criterion) => ({ criterion, status: "Unverified", reason: "Only root instructions inspected.", evidence: ["route"] })),
+    omissions: [],
+  }, undefined, undefined, { cwd });
+  assert.equal(report.details.ok, true);
+  assert.match(report.content[0].text, /AGENTS\.md:3/);
+  assert.match(report.content[0].text, /Writing-lens audit \(model assessments, not verified conclusions\)/);
   const status = await extension.tools.get("picm_maintenance_policy").definition.execute(
     "package-status", { action: "status" }, undefined, undefined, { cwd },
   );
