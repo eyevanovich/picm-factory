@@ -5,7 +5,7 @@ Use for `maintain` under the [shared contract](../CONTRACT.md). Keep guidance al
 ## Intake and discovery
 
 1. Establish general health, focused check, or trace scope from supplied arguments. Identify the visible profile before the summary; custom layouts remain valid. Identity/rules/reference/workflows suggesting one helper indicate **Specialist Folder**; examples are optional. Check its actual routes, not a mandatory file set.
-2. Offer optional agent-document optimization with **No** as the default. Reuse an already supplied answer. When included, load [optimization](optimization-guide.md); keep its documentation-only scope, preservation checks, and audit within the normal maintenance report.
+2. Offer optional agent-document optimization with **No** as the default. Reuse an already supplied answer. When included, load [optimization](optimization-guide.md); keep its documentation-only scope, preservation checks, and proposals within the normal maintenance report; don't add a separate optimization audit.
 3. Inspect eligible task-relevant context. Load [coding maintenance](coding-maintenance-rubric.md) for a Coding Repository profile, codebase-map capability, or visible `CONTEXT-MAP.md`; apply supplied one-run depth without mutating stored metadata.
 4. Load and apply [redundancy review](redundancy-review.md) to compare instructions/pointers within and across inspected files. This is required even when optional optimization is declined. Focused checks/trace keep it relevant to the requested scope; report dispositions and coverage before repair proposals.
 

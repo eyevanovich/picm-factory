@@ -20,7 +20,7 @@ const messages: Record<string, string> = {
 type Document = { path: string; sha256?: string };
 type Citation = { id: string; path: string; quote: string };
 type Assessment = { criterion: string; status: string; reason: string; evidence: string[] };
-type Omission = { path: string; reason: string };
+type Omission = { path: string; reason: string; blocksVerificationOf: string[] };
 type Request = { documents: Document[]; citations: Citation[]; assessments: Assessment[]; omissions: Omission[] };
 export type EvidenceReportResult = { ok: true; report: string } | { ok: false; code: string; message: string };
 
@@ -87,8 +87,12 @@ function request(value: unknown): Request {
     return assessment;
   });
   const omissions = array(input.omissions, 20).map((value) => {
-    const row = object(value, ["path", "reason"]);
-    const omission = { path: path(row.path), reason: text(row.reason, 300) };
+    const row = object(value, ["path", "reason", "blocksVerificationOf"]);
+    const omission = { path: path(row.path), reason: text(row.reason, 300),
+      blocksVerificationOf: array(row.blocksVerificationOf, REPORT_CRITERIA.length).map((criterion) => text(criterion, 40)) };
+    unique(omission.blocksVerificationOf);
+    if (omission.blocksVerificationOf.some((criterion) => !REPORT_CRITERIA.some((known) => known === criterion)
+      || assessments.find((assessment) => assessment.criterion === criterion)?.status !== "Unverified")) fail();
     if (documents.some((d) => d.path === omission.path || d.path.startsWith(`${omission.path}/`))) fail();
     return omission;
   });
@@ -178,7 +182,10 @@ export async function evidenceReport(root: string, input: unknown, signal?: Abor
       lines.push(`| ${criterion} | ${row.status} | ${inline(row.reason)} | ${row.evidence.length ? [...row.evidence].sort().join(", ") : "none supplied"} |`);
     }
     lines.push("", "## Declared omissions (not inspected by this helper)");
-    for (const omission of [...params.omissions].sort((a, b) => a.path.localeCompare(b.path, "en"))) lines.push(`- ${inline(omission.path)} — ${inline(omission.reason)}`);
+    for (const omission of [...params.omissions].sort((a, b) => a.path.localeCompare(b.path, "en"))) {
+      const blocked = REPORT_CRITERIA.filter((criterion) => omission.blocksVerificationOf.includes(criterion));
+      lines.push(`- ${inline(omission.path)} — ${inline(omission.reason)} — Blocks verification of (model-declared): ${blocked.length ? blocked.join(", ") : "none declared"}`);
+    }
     if (!params.omissions.length) lines.push("None declared; this does not establish complete coverage.");
     signal?.throwIfAborted();
     const report = lines.join("\n") + "\n";

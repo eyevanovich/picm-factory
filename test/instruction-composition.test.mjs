@@ -47,15 +47,19 @@ test("each mode includes the complete common contract, host rules, and only its 
         assert.match(output, /mark blocked or uninspected required checks as incomplete/);
       }
       if (mode === "optimize") {
-        assert.match(output, /The helper report is the required audit/);
-        assert.match(output, /Decide the outcome from the agreed inspection, preservation, and redundancy review, not audit ratings alone/);
-        assert.match(output, /The report owns named source coverage and declared omissions/);
-        assert.match(output, /Do not write a separate audit or reproduce the helper report/);
-        assert.doesNotMatch(output, /Begin the first discovery response|After the audit and required reviews/);
-        assert.match(output, /coding tests\/checks and verification pointers/);
-        assert.match(output, /Use Unverified per criterion when evidence is unavailable, uninspected, excluded, or outside scope/);
-        assert.match(output, /Not applicable needs inspected evidence of inapplicability/);
-        assert.match(output, /reading a check definition doesn't establish that it passed, and execution isn't required/);
+        assert.match(output, /Ordinary optimization returns improvement proposals, not an audit/);
+        assert.match(output, /future workflow and coding tasks/);
+        assert.match(output, /Token savings don't justify worse output/);
+        assert.match(output, /Workflow.*worked example.*Coding.*troubleshooting/s);
+        assert.match(output, /Briefly name inspected paths\/boundaries and material limitations/);
+        assert.match(output, /No grades, fixed finding count, or mandatory five-row report/);
+        assert.match(output, /Only when the user explicitly requests an experimental audit/);
+        assert.match(output, /Ordinary optimization does not require this helper/);
+        assert.match(output, /Report-only limits writes; it doesn't request an experimental audit/);
+        assert.match(output, /If the requested helper fails[\s\S]*no experimental audit was produced[\s\S]*don't substitute/);
+        assert.match(output, /Decide the outcome from the agreed inspection, preservation, and redundancy review/);
+        assert.match(output, /reading a check definition doesn't establish that it passed/);
+        assert.doesNotMatch(output, /The helper report is the required audit|The report owns named source coverage|For each omission, declare blocksVerificationOf/);
       }
       assert.doesNotMatch(output, /^# (?:Coding adoption|Redundancy review|Layout profiles and first runs|Session retrospective|Session history)$/m);
       assert.doesNotMatch(output, /PI_SESSION_FILE|CLAUDE_CODE_PROJECT_DIR_NAME/);

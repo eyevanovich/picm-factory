@@ -36,7 +36,7 @@ There is no startup reminder hook in this version. Cadence can be inspected and 
 
 ## Experimental evidence reports
 
-For optimization, after shared eligibility checks, invoke `node "${CLAUDE_PLUGIN_ROOT}/claude-code/report.ts" --root "/absolute/workspace"` with the shared [evidence-report request](../shared/picm-factory/references/evidence-report-guide.md) as JSON on stdin. Use a quoted heredoc as with settings. Success prints canonical report text; failure prints sanitized JSON and exits nonzero. Don't summarize a failed invocation as a checked report. This helper reads named Markdown files only; it doesn't enforce exclusions, save reports, or verify model judgments.
+Only when the user explicitly requests an experimental audit, after shared eligibility checks, invoke `node "${CLAUDE_PLUGIN_ROOT}/claude-code/report.ts" --root "/absolute/workspace"` with the shared [evidence-report request](../shared/picm-factory/references/evidence-report-guide.md) as JSON on stdin. Ordinary optimization does not require this helper; report-only isn't an audit request. Use a quoted heredoc as with settings. Success prints canonical report text; failure prints sanitized JSON and exits nonzero. Don't summarize a failed invocation as a checked report. This helper reads named Markdown files only; it doesn't enforce exclusions, save reports, or verify model judgments.
 
 ## Generated instruction loading
 

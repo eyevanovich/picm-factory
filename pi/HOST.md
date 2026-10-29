@@ -1,6 +1,6 @@
 # Pi host adapter
 
-For experimental optimization evidence reports, use `picm_evidence_report` after the shared eligibility checks. Its returned report is canonical tool output; semantic conclusions remain model assessments. The helper reads only named Markdown files and doesn't enforce exclusions or save reports.
+Only when the user explicitly requests an experimental audit, load the [evidence-report guide](../shared/picm-factory/references/evidence-report-guide.md) and use `picm_evidence_report` after the shared eligibility checks. Ordinary optimization does not require this helper; report-only isn't an audit request. Its returned report is canonical tool output; semantic conclusions remain model assessments. The helper reads only named Markdown files and doesn't enforce exclusions or save reports.
 
 Apply these host rules alongside the included shared contract and selected procedure.
 

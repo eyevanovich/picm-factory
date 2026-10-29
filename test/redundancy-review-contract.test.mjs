@@ -33,7 +33,8 @@ test("shared review covers applicability, preservation, dispositions, and bounde
     "each candidate has a disposition", "final-direction/sign-off",
   ]) assert.ok(guide.includes(signal), `missing redundancy guidance: ${signal}`);
   assert.match(guide, /In maintenance[\s\S]*\*\*Suggestion\*\*[\s\S]*\*\*Warning\*\*/);
-  assert.match(guide, /In optimization[\s\S]*existing five-row audit/);
+  assert.match(guide, /In optimization[\s\S]*improvement proposals/);
+  assert.doesNotMatch(guide, /existing five-row audit/);
   assert.match(read(`${references}/coding-maintenance-rubric.md`), /Both depths apply the general rubric's redundancy review/);
 });
 

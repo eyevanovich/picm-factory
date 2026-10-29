@@ -116,7 +116,10 @@ export default function picmFactoryExtension(pi: ExtensionAPI) {
       assessments: Type.Array(Type.Object({
         criterion: Type.String(), status: Type.String(), reason: Type.String(), evidence: Type.Array(Type.String()),
       }), { minItems: 5, maxItems: 5 }),
-      omissions: Type.Array(Type.Object({ path: Type.String(), reason: Type.String() }), { maxItems: 20 }),
+      omissions: Type.Array(Type.Object({
+        path: Type.String(), reason: Type.String(),
+        blocksVerificationOf: Type.Array(Type.String(), { maxItems: 5, description: "Criteria this omission prevents assessing; listed rows must be Unverified. Empty if none." }),
+      }), { maxItems: 20 }),
     }),
     async execute(_id, params, signal, _onUpdate, ctx) {
       const result = await evidenceReport(ctx.cwd, params, signal);

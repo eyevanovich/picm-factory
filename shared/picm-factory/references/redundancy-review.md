@@ -22,11 +22,11 @@ Keep pointer targets and every distinct read condition. Keep always-needed prere
 
 ## Reporting and completion
 
-Each group reports locations, meaning/target, disposition/evidence, retained unique constraints, smallest safe action, and proposed home or unresolved decision. Keep sensitive content out of examples/findings.
+For each group, record locations, meaning/target, disposition/evidence, retained unique constraints, smallest safe action, and proposed home or unresolved decision; use the calling procedure's reporting scope below. Keep sensitive content out of examples/findings.
 
 In maintenance, harmless removable repetition is a **Suggestion**; behavior/safety/routing divergence is a **Warning**, with likely cause and repair tier. Repetition alone isn't hard failure. Retained/uncertain groups are coverage notes, not removable duplicates.
 
-In optimization, pointer findings belong in **Context pointers**, ownership/pruning in **Canonical home** or **Pruning** within the existing five-row audit. Refer to one finding per group across rows; check edits against the preservation ledger.
+In optimization, use these dispositions to support improvement proposals or explain material uncertainty, not a separate scored audit. Keep retained repetition as working review notes unless it affects a proposal or limitation. Describe each supported finding once; check edits against the preservation ledger.
 
 Finish when the inspected set has been compared within and across files, each candidate has a disposition, and coverage limits are stated. No findings means only that inspected scope; uninspected areas aren't Pass. This is qualitative review, not equivalence proof or measured token savings.
 

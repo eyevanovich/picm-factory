@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { spawnSync } from "node:child_process";
@@ -20,7 +20,7 @@ function request() {
     documents: [{ path: "AGENTS.md" }],
     citations: [{ id: "route", path: "AGENTS.md", quote: "Read `MAP.md`." }],
     assessments: REPORT_CRITERIA.map((criterion) => ({ criterion, status: "Unverified", reason: "Only routing text inspected.", evidence: ["route"] })),
-    omissions: [{ path: "package.json", reason: "Session exclusion; command definition unavailable." }],
+    omissions: [{ path: "package.json", reason: "Session exclusion; command definition unavailable.", blocksVerificationOf: ["Completion criteria"] }],
   };
 }
 
@@ -49,6 +49,71 @@ test("one renderer-owned audit contains all ordered criteria without a second as
   assert.equal([...result.report.matchAll(/^### (?:Context pointers|Information hierarchy|Canonical home|Completion criteria|Pruning):/gm)].length, 0);
 });
 
+test("declared blocking omissions require Unverified rows and reject conflicts before source reads", async (t) => {
+  const root = fixture(t);
+  const input = request();
+  const result = await evidenceReport(root, input);
+  assert.equal(result.ok, true);
+  assert.match(result.report, /package\.json — Session exclusion; command definition unavailable\. — Blocks verification of \(model-declared\): Completion criteria/);
+  for (const status of ["Pass", "Opportunity", "Not applicable"]) {
+    input.assessments.find((row) => row.criterion === "Completion criteria").status = status;
+    assert.equal((await evidenceReport(join(root, "nonexistent"), input)).code, "INVALID_REPORT", status);
+  }
+});
+
+test("permission-restricted required comparison omissions constrain only declared criteria", async (t) => {
+  const root = fixture(t);
+  const required = join(root, "required-review.md");
+  writeFileSync(required, "Synthetic required comparison.\n");
+  chmodSync(required, 0);
+  const input = request();
+  input.omissions.push({ path: "required-review.md", reason: "Required comparison could not be read.", blocksVerificationOf: ["Pruning", "Canonical home"] });
+  input.assessments[0].status = "Pass";
+  const result = await evidenceReport(root, input);
+  assert.equal(result.ok, true);
+  assert.match(result.report, /Blocks verification of \(model-declared\): Canonical home, Pruning/);
+  assert.match(result.report, /\| Context pointers \| Pass \|/);
+  assert.match(result.report, /\| Canonical home \| Unverified \|/);
+  assert.match(result.report, /\| Pruning \| Unverified \|/);
+  assert.equal(statSync(required).mode & 0o777, 0);
+  for (const criterion of ["Canonical home", "Pruning"]) {
+    const contradictory = structuredClone(input);
+    contradictory.assessments.find((row) => row.criterion === criterion).status = "Pass";
+    assert.equal((await evidenceReport(join(root, "nonexistent"), contradictory)).code, "INVALID_REPORT");
+  }
+});
+
+test("unrelated omissions preserve supported Opportunity and Not applicable assessments", async (t) => {
+  const root = fixture(t);
+  writeFileSync(join(root, "AGENTS.md"), "The required verify command is undefined.\nThis glossary has no intended deliverables, review gates, tests, or verification commands.\n");
+  const input = request();
+  input.citations = [
+    { id: "missing", path: "AGENTS.md", quote: "The required verify command is undefined." },
+    { id: "glossary", path: "AGENTS.md", quote: "This glossary has no intended deliverables, review gates, tests, or verification commands." },
+  ];
+  input.assessments.forEach((row) => { row.evidence = []; });
+  Object.assign(input.assessments[3], { status: "Opportunity", reason: "Inspected instructions establish the missing required definition.", evidence: ["missing"] });
+  input.omissions = [{ path: ".picm/", reason: "Unrelated maintainer metadata.", blocksVerificationOf: [] }];
+  const result = await evidenceReport(root, input);
+  assert.equal(result.ok, true);
+  assert.match(result.report, /\| Completion criteria \| Opportunity \|/);
+  assert.match(result.report, /Blocks verification of \(model-declared\): none declared/);
+  writeFileSync(join(root, "AGENTS.md"), "This glossary has no intended deliverables, review gates, tests, or verification commands.\n");
+  input.citations = [input.citations[1]];
+  Object.assign(input.assessments[3], { status: "Not applicable", reason: "The glossary explicitly excludes completion requirements.", evidence: ["glossary"] });
+  const glossary = await evidenceReport(root, input);
+  assert.equal(glossary.ok, true);
+  assert.match(glossary.report, /\| Completion criteria \| Not applicable \|/);
+});
+
+test("undeclared blocking dependencies remain a model limitation, not inferred from prose", async (t) => {
+  const root = fixture(t);
+  const input = request();
+  input.omissions[0].blocksVerificationOf = [];
+  Object.assign(input.assessments[3], { status: "Pass", reason: "The excluded command definition remains unverified." });
+  assert.equal((await evidenceReport(root, input)).ok, true);
+});
+
 test("citations reject invented, ambiguous, and stale evidence without echoing source content", async (t) => {
   const root = fixture(t);
   const input = request();
@@ -74,6 +139,14 @@ test("strict input validation runs before reads, including assessment references
     (r) => { r.assessments.pop(); },
     (r) => { r.documents.push(r.documents[0]); },
     (r) => { r.omissions[0].path = "AGENTS.md"; },
+    (r) => { delete r.omissions[0].blocksVerificationOf; },
+    (r) => { r.omissions[0].blocksVerificationOf = null; },
+    (r) => { r.omissions[0].blocksVerificationOf = "Pruning"; },
+    (r) => { r.omissions[0].blocksVerificationOf = [null]; },
+    (r) => { r.omissions[0].blocksVerificationOf = ["Invented criterion"]; },
+    (r) => { r.omissions[0].blocksVerificationOf = ["Pruning", "Pruning"]; },
+    (r) => { r.omissions[0].blocksVerificationOf = [...REPORT_CRITERIA, "Pruning"]; },
+    (r) => { r.omissions[0].extra = true; },
   ]) {
     const input = request();
     change(input);
@@ -108,15 +181,15 @@ test("reads are bounded and UTF-8 only; cancellation returns no partial report",
 test("omitted directory spellings normalize without reads and cannot contain named sources", async (t) => {
   const root = fixture(t);
   const input = request();
-  input.omissions.push({ path: ".picm/", reason: "Maintainer metadata, not inspected." });
+  input.omissions.push({ path: ".picm/", reason: "Maintainer metadata, not inspected.", blocksVerificationOf: [] });
   assert.equal((await evidenceReport(root, input)).ok, true);
-  input.omissions.push({ path: "AGENTS.md/", reason: "Contradictory omission." });
+  input.omissions.push({ path: "AGENTS.md/", reason: "Contradictory omission.", blocksVerificationOf: [] });
   assert.equal((await evidenceReport(root, input)).code, "INVALID_REPORT");
-  input.omissions = [{ path: "docs/", reason: "Excluded directory." }];
+  input.omissions = [{ path: "docs/", reason: "Excluded directory.", blocksVerificationOf: [] }];
   input.documents[0].path = "docs/AGENTS.md";
   input.citations[0].path = "docs/AGENTS.md";
   assert.equal((await evidenceReport(root, input)).code, "INVALID_REPORT");
-  input.omissions = [{ path: "../outside", reason: "Invalid declaration." }];
+  input.omissions = [{ path: "../outside", reason: "Invalid declaration.", blocksVerificationOf: [] }];
   assert.equal((await evidenceReport(root, input)).code, "INVALID_REPORT");
 });
 
@@ -185,6 +258,15 @@ test("Pi tool and Claude CLI emit identical canonical report text", async (t) =>
   assert.equal(cli.stdout, pi.content[0].text);
   assert.equal(pi.details.ok, true);
   assert.equal(pi.details.report, pi.content[0].text);
+  assert.ok(tool.parameters.properties.omissions.items.required.includes("blocksVerificationOf"));
+  assert.equal(tool.parameters.properties.omissions.items.properties.blocksVerificationOf.maxItems, 5);
+  input.assessments[3].status = "Pass";
+  const invalidPi = await tool.execute("contradiction", input, undefined, undefined, h.context(root));
+  const invalidCli = spawnSync(process.execPath, ["claude-code/report.ts", "--root", root], { encoding: "utf8", input: JSON.stringify(input) });
+  assert.equal(invalidPi.isError, true);
+  assert.equal(invalidCli.status, 1);
+  assert.deepEqual(JSON.parse(invalidCli.stdout), invalidPi.details);
+  assert.deepEqual(invalidPi.details, { ok: false, code: "INVALID_REPORT", message: "Provide a bounded report request with named documents, citations, assessments, and omissions." });
   assert.equal((await tool.execute("bad", {}, undefined, undefined, h.context(root))).isError, true);
 });
 

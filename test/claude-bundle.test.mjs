@@ -101,15 +101,19 @@ test("release zip is self-contained outside the checkout with explicit-only comm
       assert.match(text, /mark blocked or uninspected required checks as incomplete/);
     }
     if (mode === "optimize") {
-      assert.match(text, /The helper report is the required audit/);
-      assert.match(text, /Decide the outcome from the agreed inspection, preservation, and redundancy review, not audit ratings alone/);
-      assert.match(text, /The report owns named source coverage and declared omissions/);
-      assert.match(text, /Do not write a separate audit or reproduce the helper report/);
-      assert.doesNotMatch(text, /Begin the first discovery response|After the audit and required reviews/);
-      assert.match(text, /coding tests\/checks and verification pointers/);
-      assert.match(text, /Use Unverified per criterion when evidence is unavailable, uninspected, excluded, or outside scope/);
-      assert.match(text, /Not applicable needs inspected evidence of inapplicability/);
-      assert.match(text, /reading a check definition doesn't establish that it passed, and execution isn't required/);
+      assert.match(text, /Ordinary optimization returns improvement proposals, not an audit/);
+      assert.match(text, /future workflow and coding tasks/);
+      assert.match(text, /Token savings don't justify worse output/);
+      assert.match(text, /Workflow.*worked example.*Coding.*troubleshooting/s);
+      assert.match(text, /Briefly name inspected paths\/boundaries and material limitations/);
+      assert.match(text, /No grades, fixed finding count, or mandatory five-row report/);
+      assert.match(text, /Only when the user explicitly requests an experimental audit/);
+      assert.match(text, /Ordinary optimization does not require this helper/);
+      assert.match(text, /Report-only limits writes; it doesn't request an experimental audit/);
+      assert.match(text, /If the requested helper fails[\s\S]*no experimental audit was produced[\s\S]*don't substitute/);
+      assert.match(text, /Decide the outcome from the agreed inspection, preservation, and redundancy review/);
+      assert.match(text, /reading a check definition doesn't establish that it passed/);
+      assert.doesNotMatch(text, /The helper report is the required audit|The report owns named source coverage|For each omission, declare blocksVerificationOf/);
     }
     assert.doesNotMatch(text, /@AGENTS\.md|create or merge a neighboring/);
     assert.doesNotMatch(text, /## Mode routing|read `\$\{CLAUDE_PLUGIN_ROOT\}\/HOST\.md`/);
@@ -169,11 +173,18 @@ test("release zip is self-contained outside the checkout with explicit-only comm
     documents: [{ path: "AGENTS.md" }],
     citations: [{ id: "route", path: "AGENTS.md", quote: "Read the context map." }],
     assessments: REPORT_CRITERIA.map((criterion) => ({ criterion, status: "Unverified", reason: "Only one document inspected.", evidence: ["route"] })),
-    omissions: [{ path: "package.json", reason: "Session exclusion." }],
+    omissions: [{ path: "package.json", reason: "Session exclusion.", blocksVerificationOf: ["Completion criteria"] }],
   };
   const report = spawnSync(process.execPath, [join(extracted, "claude-code/report.ts"), "--root", workspace], { encoding: "utf8", input: JSON.stringify(request) });
   assert.equal(report.status, 0, report.stderr || report.stdout);
   assert.equal(report.stdout, (await evidenceReport(workspace, request)).report);
+  assert.match(report.stdout, /Blocks verification of \(model-declared\): Completion criteria/);
+  request.assessments[3].status = "Pass";
+  const invalid = spawnSync(process.execPath, [join(extracted, "claude-code/report.ts"), "--root", workspace], { encoding: "utf8", input: JSON.stringify(request) });
+  assert.equal(invalid.status, 1);
+  assert.equal(invalid.stderr, "");
+  assert.equal(JSON.parse(invalid.stdout).code, "INVALID_REPORT");
+  assert.deepEqual(JSON.parse(invalid.stdout), await evidenceReport(workspace, request));
   assert.equal(existsSync(join(workspace, ".picm")), false);
 });
 
