@@ -42,7 +42,7 @@ test("release zip is self-contained outside the checkout with explicit-only comm
   const root = fixture(t);
   const bundle = buildClaudeBundle({ root });
   const version = JSON.parse(readFileSync(join(root, "package.json"), "utf8")).version;
-  const expected = [".claude-plugin/plugin.json", "package.json", "README.md", "LICENSE", "claude-code/settings.ts", "claude-code/report.ts", "claude-code/session-history.md",
+  const expected = [".claude-plugin/plugin.json", "package.json", "README.md", "LICENSE", "claude-code/settings.ts", "claude-code/report.ts", "claude-code/read-document.ts", "claude-code/session-history.md",
     ...["new", "adopt", "maintain", "optimize", "help"].map((mode) => `skills/${mode}/SKILL.md`),
     ...files(join(root, "shared")).filter((path) => path !== "compose-instructions.ts").map((path) => `shared/${path}`)].sort();
   const procedures = Object.fromEntries(Object.entries({ new: "interview-guide", adopt: "adoption-guide", maintain: "maintenance-rubric", optimize: "optimization-guide", help: "help-guide" })
@@ -83,6 +83,9 @@ test("release zip is self-contained outside the checkout with explicit-only comm
     assert.match(text, /Claude Code 2\.1\.277 or newer/);
     assert.match(text, /Use canonical root\/nested `AGENTS.md`/);
     assert.match(text, /If status fails or is malformed, stop workspace discovery/);
+    assert.match(text, /before opening candidate content or expanding into a directory's children, successfully read/i);
+    assert.match(text, /Stop the affected expansion and ask if a policy read fails/);
+    assert.match(text, /Metadata checks or a successful inventory\/ignore-tool command don't prove/);
     assert.match(text, /Prior reports are leads, not independent evidence/);
     assert.match(text, /Maintainer-only routing and privacy exclusions don't establish Git-ignore status/);
     assert.match(text, /Report persisted adoption status as unknown unless already available eligible evidence explicitly establishes it/);
@@ -125,6 +128,16 @@ test("release zip is self-contained outside the checkout with explicit-only comm
     assert.ok(text.indexOf("Wait for conversational sign-off") < text.indexOf("# Claude Code host adapter"));
     assert.ok(text.indexOf("# Claude Code host adapter") < procedure);
     assert.ok(procedure < text.indexOf("User arguments: $ARGUMENTS"));
+    assert.equal([...text.matchAll(/^# Redundancy review$/gm)].length, mode === "optimize" ? 1 : 0);
+    if (mode === "optimize") {
+      const redundancy = readFileSync(join(extracted, "shared/picm-factory/references/redundancy-review.md"), "utf8").trim();
+      assert.equal(text.split(redundancy).length - 1, 1);
+      const review = text.indexOf("\n# Redundancy review\n");
+      assert.ok(procedure < review && review < text.indexOf("User arguments: $ARGUMENTS"));
+    }
+    assert.doesNotMatch(text, /^# Experimental optimization evidence report$/m);
+    const labels = [...text.matchAll(/^ {0,3}\[([^\]\n]+)\]:/gm)].map(([, label]) => label.trim().replace(/\s+/g, " ").toLowerCase());
+    assert.equal(new Set(labels).size, labels.length, `${mode}: conflicting reference labels`);
     for (const [other, heading] of Object.entries(procedures)) {
       if (other !== mode) assert.equal(text.includes(`\n${heading}\n`), false);
     }
@@ -152,6 +165,9 @@ test("release zip is self-contained outside the checkout with explicit-only comm
     assert.match(text, /Documentation only triggers no history discovery/);
     assert.doesNotMatch(text, /^# Session retrospective$|CLAUDE_CONFIG_DIR/m);
   }
+  const rootTemplate = readFileSync(join(extracted, "shared/picm-factory/templates/root-agents.md"), "utf8");
+  assert.match(rootTemplate, /before opening candidate content or expanding into a directory's children, successfully read/i);
+  assert.match(rootTemplate, /confirmed absence from denied, unreadable, or unresolved policy/);
   const settings = readFileSync(join(extracted, "shared/picm-factory/references/settings-guide.md"), "utf8");
   assert.match(settings, /Omitting it still conditionally expects no stored policy/);
   assert.match(settings, /effectiveMode: "manual".*doesn't establish a stored manual policy/);

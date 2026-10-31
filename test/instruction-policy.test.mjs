@@ -11,6 +11,9 @@ test("both hosts require successful projected settings before workspace content 
       const text = composeModeInstructions({ mode, hostFile });
       assert.match(text, /Before workspace content reads\/searches, first obtain successful projected settings status/);
       assert.match(text, /even when no config is expected/);
+      assert.match(text, /before opening candidate content or expanding into a directory's children, successfully read/i);
+      assert.match(text, /Stop the affected expansion and ask if a policy read fails/);
+      assert.match(text, /Metadata checks or a successful inventory\/ignore-tool command don't prove/);
       assert.match(text, /If status fails or is malformed, stop workspace discovery/);
       assert.match(text, /trusted helper may read configuration internally/);
       assert.match(text, /preserving intended exclusions outside the conversation/);

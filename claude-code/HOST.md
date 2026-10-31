@@ -34,6 +34,12 @@ SIGINT/SIGTERM request cancellation before publication where possible. Killing a
 
 There is no startup reminder hook in this version. Cadence can be inspected and recorded, but nothing runs because it is due.
 
+## Optional named Markdown reads
+
+For a known Markdown path, `node "${CLAUDE_PLUGIN_ROOT}/claude-code/read-document.ts" --root "/absolute/workspace"` accepts `{"path":"docs/guide.md","excludedPaths":["private-notes"]}` on stdin. Use a quoted heredoc as with settings. It combines projected settings, policy checks, and one read (64 KiB), returning JSON on success or sanitized JSON and a nonzero exit on failure. No separate settings call is needed for that invocation. SIGINT/SIGTERM request cancellation and discard the result.
+
+This is optional convenience, not a discovery prerequisite or approval gate. Native Git configuration bootstrap can access includes/links before rejecting them; other tools and startup loading remain outside its checks. See the [supported subset and trust boundary](../shared/picm-factory/references/named-document-read.md). Ordinary tools remain available when existing eligibility rules can be satisfied.
+
 ## Experimental evidence reports
 
 Only when the user explicitly requests an experimental audit, after shared eligibility checks, invoke `node "${CLAUDE_PLUGIN_ROOT}/claude-code/report.ts" --root "/absolute/workspace"` with the shared [evidence-report request](../shared/picm-factory/references/evidence-report-guide.md) as JSON on stdin. Ordinary optimization does not require this helper; report-only isn't an audit request. Use a quoted heredoc as with settings. Success prints canonical report text; failure prints sanitized JSON and exits nonzero. Don't summarize a failed invocation as a checked report. This helper reads named Markdown files only; it doesn't enforce exclusions, save reports, or verify model judgments.

@@ -72,6 +72,7 @@ test("maintenance optional optimization defaults No without widening edit scope"
 test("optimization entry points require the shared contract and preservation procedure", () => {
   const guide = read(`${base}/references/optimization-guide.md`);
   assert.match(commandPrompt("picm-optimize"), /# Documentation optimization/);
+  assert.match(guide, /load it only if it isn't already included in this invocation/);
   assert.match(guide, /Selections inform a direction; they aren't sign-off/);
   assert.match(guide, /wait for sign-off before edits/);
   assert.match(read("prompts/picm-optimize.md"), /shared trusted-assistant contract/);

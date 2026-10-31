@@ -6,12 +6,13 @@ import { composeModeInstructions, MODE_GUIDES, rebaseInstructionLinks } from "..
 
 const read = (file) => readFileSync(resolve(file), "utf8").trim();
 
-test("each mode includes the complete common contract, host rules, and only its primary procedure in order", () => {
+test("each mode includes its contract, host rules, primary procedure, and required inline references in order", () => {
   for (const [hostFile, resourceRoot] of [["pi/HOST.md", "/installed package"], ["claude-code/HOST.md", "${CLAUDE_PLUGIN_ROOT}"]]) {
     for (const [mode, guide] of Object.entries(MODE_GUIDES)) {
       const output = composeModeInstructions({ mode, hostFile, resourceRoot });
       let previous = -1;
-      for (const source of ["shared/picm-factory/CONTRACT.md", hostFile, `shared/picm-factory/references/${guide}`]) {
+      for (const source of ["shared/picm-factory/CONTRACT.md", hostFile, `shared/picm-factory/references/${guide}`,
+        ...(mode === "optimize" ? ["shared/picm-factory/references/redundancy-review.md"] : [])]) {
         const section = rebaseInstructionLinks(read(source), source, resourceRoot);
         assert.equal(output.split(section).length - 1, 1, `${mode}: ${source}`);
         const index = output.indexOf(section);
@@ -61,7 +62,8 @@ test("each mode includes the complete common contract, host rules, and only its 
         assert.match(output, /reading a check definition doesn't establish that it passed/);
         assert.doesNotMatch(output, /The helper report is the required audit|The report owns named source coverage|For each omission, declare blocksVerificationOf/);
       }
-      assert.doesNotMatch(output, /^# (?:Coding adoption|Redundancy review|Layout profiles and first runs|Session retrospective|Session history)$/m);
+      assert.equal([...output.matchAll(/^# Redundancy review$/gm)].length, mode === "optimize" ? 1 : 0);
+      assert.doesNotMatch(output, /^# (?:Coding adoption|Layout profiles and first runs|Session retrospective|Session history|Experimental optimization evidence report)$/m);
       assert.doesNotMatch(output, /PI_SESSION_FILE|CLAUDE_CODE_PROJECT_DIR_NAME/);
     }
   }

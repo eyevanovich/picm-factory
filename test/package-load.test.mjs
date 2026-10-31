@@ -21,6 +21,9 @@ test("packed TypeScript runtime loads through Pi from node_modules", async (t) =
   const entry = readFileSync(join(packageRoot, "pi/HOST.md"), "utf8");
   assert.match(entry, /# Pi host adapter/);
   assert.ok(readFileSync(join(packageRoot, "shared/picm-factory/CONTRACT.md"), "utf8").includes("Wait for conversational sign-off"));
+  const rootTemplate = readFileSync(join(packageRoot, "shared/picm-factory/templates/root-agents.md"), "utf8");
+  assert.match(rootTemplate, /before opening candidate content or expanding into a directory's children, successfully read/i);
+  assert.match(rootTemplate, /Stop the affected expansion and ask if a policy read fails/);
   assert.equal(existsSync(join(packageRoot, "dist")), false);
   const result = await discoverAndLoadExtensions(manifest.pi.extensions.map((path) =>
     join(packageRoot, path)), cwd, join(cwd, "agent"));
@@ -31,7 +34,7 @@ test("packed TypeScript runtime loads through Pi from node_modules", async (t) =
     "picm-adopt", "picm-help", "picm-maintain", "picm-new", "picm-optimize",
   ]);
   assert.deepEqual([...extension.tools.keys()].sort(), [
-    "picm_decision", "picm_evidence_report", "picm_maintenance_policy", "picm_settings",
+    "picm_decision", "picm_evidence_report", "picm_maintenance_policy", "picm_read_document", "picm_settings",
   ]);
   const prompts = {};
   const installedRoot = realpathSync(packageRoot);
@@ -50,10 +53,19 @@ test("packed TypeScript runtime loads through Pi from node_modules", async (t) =
     prompts[mode] = prompt;
     assert.match(prompt, /## Shared trusted-assistant contract/);
     assert.match(prompt, /# Pi host adapter/);
+    assert.match(prompt, /before opening candidate content or expanding into a directory's children, successfully read/i);
+    assert.match(prompt, /Metadata checks or a successful inventory\/ignore-tool command don't prove/);
     assert.match(prompt, /User arguments: bounded focus/);
     assert.ok(prompt.includes(`Mode: ${mode}`));
     assert.doesNotMatch(prompt, /Load the picm-factory skill|## Mode routing/);
     assert.equal(prompt.includes(resolve(".")), false, "prompt depends on source checkout");
+    assert.equal([...prompt.matchAll(/^# Redundancy review$/gm)].length, mode === "optimize" ? 1 : 0);
+    if (mode === "optimize") {
+      const redundancy = readFileSync(join(installedRoot, "shared/picm-factory/references/redundancy-review.md"), "utf8").trim();
+      assert.equal(prompt.split(redundancy).length - 1, 1);
+      assert.ok(prompt.indexOf("# Documentation optimization") < prompt.indexOf("\n# Redundancy review\n"));
+    }
+    assert.doesNotMatch(prompt, /^# Experimental optimization evidence report$/m);
     for (const [, target] of prompt.matchAll(/\]\(<([^<>\n]+\.md)(?:#[^<>\n]*)?>\)/g)) {
       assert.ok(target.startsWith(`${installedRoot}/`), target);
       assert.ok(existsSync(target), target);

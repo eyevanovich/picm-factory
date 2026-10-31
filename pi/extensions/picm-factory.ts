@@ -16,6 +16,7 @@ import { createMaintenanceConfigStore } from "../../shared/runtime/maintenance-c
 import { createMaintenanceController } from "../../shared/runtime/maintenance-controller.ts";
 import { createMaintenanceReminder } from "./runtime/maintenance-reminder.ts";
 import { evidenceReport } from "../../shared/runtime/evidence-report.ts";
+import { readNamedDocument } from "../../shared/runtime/named-document-read.ts";
 
 const commandDescriptions = {
   "picm-new": "Create a workspace; optionally add a workflow description after the command",
@@ -103,6 +104,21 @@ export default function picmFactoryExtension(pi: ExtensionAPI) {
         const result = await store.compareAndUpdateMaintenance(params.expectedMaintenance, calculated.maintenance, { signal });
         return { ok: result.ok, changed: result.changed, committed: result.committed, conflict: result.conflict, code: result.code, warning: result.warning, message: result.message, maintenance: result.maintenance };
       }));
+    },
+  });
+
+  pi.registerTool({
+    name: "picm_read_document",
+    label: "PiCM Named Document Read",
+    description: "Optional read of one named UTF-8 Markdown file (64 KiB) in an ordinary Git worktree. Checks projected settings and applicable policies internally. excludedPaths adds caller-supplied session restrictions; it does not parse conversation scope. Unsupported cases return a sanitized failure, not workflow state. Native Git configuration bootstrap is trusted and may follow includes/links before rejection. No discovery, writes, or general tool enforcement.",
+    parameters: Type.Object({
+      path: Type.String({ minLength: 1, maxLength: 1024 }),
+      excludedPaths: Type.Optional(Type.Array(Type.String({ minLength: 1, maxLength: 1024 }), { maxItems: 100 })),
+    }, { additionalProperties: false }),
+    annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+    async execute(_id, params, signal, _onUpdate, ctx) {
+      const result = await readNamedDocument(ctx.cwd, params, signal);
+      return { ...response(result), ...(!result.ok ? { isError: true } : {}) };
     },
   });
 

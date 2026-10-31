@@ -42,7 +42,7 @@ For each inspected document, record unique constraints: privacy/safety, permissi
 
 Preserve each in place or at a clearly reachable authoritative home unless it is an identified instruction the user explicitly agrees to correct. Record that instruction's current and intended behavior as an intentional correction in the ledger and final direction, separate from preserved requirements. This doesn't waive shared safety/privacy boundaries or authorize executable changes. Preserve unrelated constraints. Intentional repetition, transition cases, fixtures, and compatibility shims are also constraints; retain them or ask for a preservation mechanism. The ledger aids review, not proof of equivalence. Keep ledger detail and retained-duplicate dispositions as working review notes; surface constraints and unresolved decisions material to proposals or scope limitations.
 
-Then load and apply [redundancy review](redundancy-review.md) within and across the discovered set before opportunities or a no-op conclusion. Use dispositions to support proposals and material limitations; compare authoritative-home claims across every inspected document. Contradictions or repeated claims without a supported canonical home need an opportunity or user decision.
+Then apply [redundancy review](redundancy-review.md) within and across the discovered set before opportunities or a no-op conclusion; load it only if it isn't already included in this invocation. Use dispositions to support proposals and material limitations; compare authoritative-home claims across every inspected document. Contradictions or repeated claims without a supported canonical home need an opportunity or user decision.
 
 ## Inspection lenses and improvement proposals
 

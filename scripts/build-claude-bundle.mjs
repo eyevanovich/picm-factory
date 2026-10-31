@@ -49,6 +49,7 @@ export function buildClaudeBundle({ root = repositoryRoot } = {}) {
     }
     copy("claude-code/settings.ts", "claude-code/settings.ts");
     copy("claude-code/report.ts", "claude-code/report.ts");
+    copy("claude-code/read-document.ts", "claude-code/read-document.ts");
     copy("claude-code/session-history.md", "claude-code/session-history.md");
     copy("LICENSE", "LICENSE");
     copy("shared/picm-factory/CONTRACT.md", "shared/picm-factory/CONTRACT.md");

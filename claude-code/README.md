@@ -1,6 +1,6 @@
 # PiCM Factory for Claude Code
 
-The build embeds the common contract, Claude instructions, and selected primary procedure into each command's `SKILL.md`. Supporting references and templates remain separate and load only when needed. All behavioral text comes from canonical shared or host sources, not hand-maintained copies.
+The build embeds the common contract, Claude instructions, and selected primary procedure into each command's `SKILL.md`. Optimization also includes the required redundancy review from its canonical source. Other supporting references and templates remain separate and load only when needed. All behavioral text comes from canonical shared or host sources, not hand-maintained copies.
 
 This adapter is bundled with shared PiCM guidance, templates, and a dependency-free settings helper. Node 24 or newer is required for settings operations. Use Claude Code 2.1.277 or newer with Project instructions configured for native `AGENTS.md` loading; older versions aren't supported for automatic instruction loading. After upgrading, start a new session if **Project instructions** is missing from `/config`. Verify the loaded `AGENTS.md` in `/memory`; manual file inspection by a command isn't proof of automatic loading.
 
@@ -29,5 +29,7 @@ Releases produced by the updated release workflow attach `picm-claude-code-VERSI
 Extract the archive into a stable trusted directory, then load that directory with `claude --plugin-dir /absolute/path/to/extracted-plugin`. The extracted directory must contain `.claude-plugin/plugin.json`, `skills/`, and `shared/`. This flag loads the plugin for that session; it doesn't install a persistent marketplace entry or update it automatically. To update, extract a new release into a new directory and restart Claude using its path.
 
 For interactive validation, follow the [Claude QA guide](https://github.com/eyevanovich/picm-factory/blob/main/docs/claude-code-qa.md) on an explicitly approved disposable target. Automated package checks aren't conversational QA.
+
+The optional `claude-code/read-document.ts` helper combines settings and policy checks with one named Markdown read in supported Git workspaces. Its supported subset and trusted native Git bootstrap are described in the bundled `shared/picm-factory/references/named-document-read.md`. It isn't a workflow prerequisite or a replacement for ordinary tools.
 
 There are no startup reminder hooks in this version. Privacy settings and cadence operations are available through the helper described in the bundled host instructions. Modification commands inspect first and wait for conversational sign-off before editing. Host permissions and privacy exclusions are not a universal sandbox.

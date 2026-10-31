@@ -36,7 +36,7 @@ Create a focused branch and keep unrelated changes separate.
 
 `pi/` and `claude-code/` own host-specific entry points. `shared/` owns the behavior contract, references, templates, and portable settings runtime. The root npm package remains Pi's installation entry point.
 
-`shared/compose-instructions.ts` combines the common contract, host instructions, and selected primary procedure in that order. Detailed branch references and templates stay on demand. Pi sends the composed text directly from its slash dispatcher; it needs no skill router or build step.
+`shared/compose-instructions.ts` combines the common contract, host instructions, and selected primary procedure in that order. Optimization appends the canonical required redundancy review; other supporting references and templates stay on demand. Pi sends the composed text directly from its slash dispatcher; it needs no skill router or build step.
 
 Run `npm run build:claude` to generate `dist/claude-code/` with the same sections embedded in each command's `SKILL.md`. This self-contained directory is the plugin root; the source adapter alone lacks shared resources. Edit canonical sources only. Entry skill sources hold only Claude frontmatter and request placement; edit the common contract or mode procedure to change behavior. Relative supporting links are rebased for installed resources. The bundle version comes from `package.json`, so there is no second release version to synchronize. Tests extract the release-format zip outside the source checkout and exercise its helper.
 
@@ -62,7 +62,7 @@ Avoid brittle assertions against exact model wording. Prefer structural checks a
 
 Run `npm run report:instructions` with Node 24. It rebuilds the ignored `dist/claude-code/` bundle using the existing builder, then prints lines, whitespace-separated words, and UTF-8 bytes for each host/mode. Compare output before and after instruction edits; there's no enforced size cap.
 
-Pi rows measure the actual empty-argument dispatched prompt, including default Strict depth for maintenance. Claude rows measure the complete generated `SKILL.md`, including frontmatter and the request placeholder. These are different payload boundaries, not a model-to-model cost comparison. Pi's rebased links include the installation path, so compare from the same checkout path. Supporting references, user-supplied arguments, and the rest of the conversation aren't counted. Empty text has zero lines; a final newline terminates a line without adding another. Counts aren't token estimates or evidence of savings.
+Pi rows measure the actual empty-argument dispatched prompt, including default Strict depth for maintenance. Claude rows measure the complete generated `SKILL.md`, including frontmatter and the request placeholder. These are different payload boundaries, not a model-to-model cost comparison. Pi's rebased links include the installation path, so compare from the same checkout path. Deferred supporting references, user-supplied arguments, and the rest of the conversation aren't counted. Empty text has zero lines; a final newline terminates a line without adding another. Counts aren't token estimates or evidence of savings.
 
 Extracted-bundle tests check skill names against their directories, nonempty plain single-line descriptions, and explicit-only invocation. Keep source frontmatter in that restricted format; a general YAML parser isn't part of these checks.
 

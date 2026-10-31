@@ -12,7 +12,7 @@ test("both workflows require the shared redundancy procedure during discovery", 
   for (const name of ["maintenance-rubric", "optimization-guide"]) {
     const guide = read(`${references}/${name}.md`);
     assert.match(guide, /redundancy review/i);
-    assert.match(guide, /load and apply \[redundancy review\]\(redundancy-review\.md\)/i);
+    assert.match(guide, /apply \[redundancy review\]\(redundancy-review\.md\)/i);
     assert.match(guide, /within and across/);
     assert.ok(existsSync(resolve(references, "redundancy-review.md")));
   }
