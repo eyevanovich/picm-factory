@@ -8,7 +8,7 @@ For maintain or optimize with previous sessions, load [session history](session-
 
 ## Optional named Markdown reads
 
-When useful, `picm_read_document` combines projected settings, policy checks, and one named Markdown read (64 KiB); no separate settings call is needed for that invocation. Pass `path` and optional additive session `excludedPaths`. It's not a discovery prerequisite or approval gate. Native Git configuration bootstrap can access includes/links before rejecting them; the helper doesn't protect other tools or startup loading. See the [supported subset and trust boundary](../shared/picm-factory/references/named-document-read.md). Ordinary tools remain available when existing eligibility rules can be satisfied.
+When useful, `picm_read_document` combines projected settings, policy checks, and one named Markdown read (64 KiB); no separate settings call is needed for that invocation. Pass `path` and optional additive session `excludedPaths`. It's not a discovery prerequisite or approval gate. Native Git configuration bootstrap can access unsupported sources before the helper rejects them; the helper doesn't protect other tools or startup loading. See the [supported subset and trust boundary](../shared/picm-factory/references/named-document-read.md). Ordinary tools remain available when existing eligibility rules can be satisfied.
 
 ## Host operations
 

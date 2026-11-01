@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { appendFileSync, chmodSync, linkSync, mkdirSync, readFileSync, symlinkSync, unlinkSync, writeFileSync } from "node:fs";
+import { appendFileSync, chmodSync, linkSync, mkdirSync, readFileSync, renameSync, symlinkSync, unlinkSync, writeFileSync } from "node:fs";
 import fs from "node:fs/promises";
 import { syncBuiltinESMExports } from "node:module";
 import { join } from "node:path";
@@ -161,7 +161,7 @@ test("actual policy EACCES under the executing UID stops before candidate access
 });
 
 test("nonregular and linked policy sources are rejected before candidate content", async (t) => {
-  for (const kind of ["symlink", "directory", "fifo", "hardlink", "linked-parent"]) {
+  for (const kind of ["symlink", "directory", "fifo", "hardlink", "linked-parent", "workspace-global", "repository-exclude"]) {
     await t.test(kind, async (t) => {
       const f = fixture(t);
       const source = join(f.root, ".gitignore");
@@ -172,8 +172,17 @@ test("nonregular and linked policy sources are rejected before candidate content
       if (kind === "linked-parent") {
         const external = join(f.base, "policies"); mkdirSync(external);
         writeFileSync(join(external, "ignore"), "# POLICY_MARKER\n");
-        symlinkSync(external, join(f.base, "policy-link"));
-        f.git("config", "core.excludesFile", join(f.base, "policy-link/ignore"));
+        symlinkSync(external, join(f.root, "policy-link"));
+        f.git("config", "core.excludesFile", join(f.root, "policy-link/ignore"));
+      }
+      if (kind === "workspace-global") {
+        const linked = join(f.root, "local.ignore");
+        symlinkSync(f.put("policy", "# POLICY_MARKER\n"), linked);
+        f.git("config", "core.excludesFile", linked);
+      }
+      if (kind === "repository-exclude") {
+        unlinkSync(join(f.root, ".git/info/exclude"));
+        symlinkSync(f.put("policy", "# POLICY_MARKER\n"), join(f.root, ".git/info/exclude"));
       }
       const opened = watchCandidate(t, f.root);
       failure(await readNamedDocument(f.root, { path: "guide.md" }), "READ_POLICY_FAILED");
@@ -182,8 +191,192 @@ test("nonregular and linked policy sources are rejected before candidate content
   }
 });
 
-test("unsupported includes, malformed configs, links, and FIFO bootstrap never open candidate content", async (t) => {
-  for (const kind of ["include", "includeIf", "malformed", "config-link", "config-fifo", "worktree-config"]) {
+test("linked system and global configs retain native exclusion and precedence behavior", async (t) => {
+  for (const source of ["system", "global", "global-parent"]) {
+    await t.test(source, async (t) => {
+      const f = fixture(t);
+      const target = join(f.base, "managed.config");
+      const intermediate = join(f.base, "managed-link");
+      const ignore = join(f.base, "managed.ignore");
+      writeFileSync(ignore, "guide.md\n");
+      f.git("config", "--file", target, "core.excludesFile", ignore);
+      symlinkSync(target, intermediate);
+      if (source === "system") { unlinkSync(f.system); symlinkSync(intermediate, f.system); }
+      else if (source === "global") symlinkSync(intermediate, join(f.home, ".config/git/config"));
+      else {
+        const directory = join(f.base, "managed-git"); mkdirSync(directory);
+        symlinkSync(intermediate, join(directory, "config"));
+        renameSync(join(f.home, ".config/git"), join(f.home, ".config/old-git"));
+        symlinkSync(directory, join(f.home, ".config/git"));
+      }
+      const opened = watchCandidate(t, f.root);
+      failure(await readNamedDocument(f.root, { path: "guide.md" }), "READ_EXCLUDED");
+      assert.equal(opened.includes(join(f.root, "guide.md")), false);
+      assert.ok(opened.includes(target));
+      f.git("config", "core.excludesFile", join(f.base, "absent.ignore"));
+      assert.equal((await readNamedDocument(f.root, { path: "guide.md" })).ok, true);
+    });
+  }
+});
+
+test("linked external global ignores preserve exclusions and native precedence", async (t) => {
+  for (const source of ["default", "configured", "linked-parent"]) {
+    await t.test(source, async (t) => {
+      const f = fixture(t);
+      const directory = join(f.base, "managed-ignore"); mkdirSync(directory);
+      const target = join(directory, "ignore");
+      const intermediate = join(f.base, "ignore-link");
+      writeFileSync(target, "guide.md\n"); symlinkSync(target, intermediate);
+      if (source === "default") symlinkSync(intermediate, join(f.home, ".config/git/ignore"));
+      else if (source === "configured") f.git("config", "core.excludesFile", intermediate);
+      else {
+        symlinkSync(directory, join(f.base, "ignore-directory"));
+        f.git("config", "core.excludesFile", join(f.base, "ignore-directory/ignore"));
+      }
+      const opened = watchCandidate(t, f.root);
+      failure(await readNamedDocument(f.root, { path: "guide.md" }), "READ_EXCLUDED");
+      assert.equal(opened.includes(join(f.root, "guide.md")), false);
+      assert.ok(opened.includes(target));
+      writeFileSync(target, "# POLICY_MARKER\n");
+      assert.equal((await readNamedDocument(f.root, { path: "guide.md" })).ok, true);
+      writeFileSync(target, "guide.md\n");
+      f.put(".gitignore", "!guide.md\n");
+      assert.equal((await readNamedDocument(f.root, { path: "guide.md" })).ok, true);
+    });
+  }
+});
+
+test("linked global ignore failures and aliases stop before candidate access", async (t) => {
+  for (const kind of ["dangling", "loop", "candidate", "hardlink", "unreadable", "oversized"]) {
+    await t.test(kind, async (t) => {
+      const f = fixture(t);
+      const target = join(f.base, "managed.ignore");
+      if (kind === "candidate") symlinkSync(join(f.root, "guide.md"), target);
+      else if (kind === "loop") symlinkSync(target, target);
+      else if (kind !== "dangling") {
+        writeFileSync(target, kind === "oversized" ? "# POLICY_MARKER\n".repeat(20000) : "# POLICY_MARKER\n");
+        if (kind === "hardlink") linkSync(target, join(f.base, "alias.ignore"));
+        if (kind === "unreadable") {
+          chmodSync(target, 0);
+          try { readFileSync(target); t.skip("Executing UID can read mode-000 policy; EACCES not established"); return; }
+          catch (error) { assert.equal(error.code, "EACCES"); }
+        }
+      }
+      symlinkSync(target, join(f.home, ".config/git/ignore"));
+      const opened = watchCandidate(t, f.root);
+      failure(await readNamedDocument(f.root, { path: "guide.md" }));
+      assert.equal(opened.includes(join(f.root, "guide.md")), false);
+    });
+  }
+});
+
+test("linked global ignore retargeting and target replacement discard document content", async (t) => {
+  for (const kind of ["source", "intermediate", "parent", "target"]) {
+    await t.test(kind, async (t) => {
+      const f = fixture(t);
+      const directory = join(f.base, "managed"); mkdirSync(directory);
+      const target = join(directory, "ignore");
+      const replacement = join(f.base, "replacement.ignore");
+      const intermediate = join(f.base, "intermediate.ignore");
+      const source = join(f.home, ".config/git/ignore");
+      writeFileSync(target, "# POLICY_MARKER\n");
+      writeFileSync(replacement, "guide.md\n");
+      symlinkSync(target, intermediate); symlinkSync(intermediate, source);
+      watchCandidate(t, f.root, () => {
+        if (kind === "target") renameSync(replacement, target);
+        else if (kind === "parent") {
+          renameSync(directory, `${directory}-old`); mkdirSync(directory);
+          writeFileSync(target, "guide.md\n");
+        } else {
+          const link = kind === "source" ? source : intermediate;
+          unlinkSync(link); symlinkSync(replacement, link);
+        }
+      });
+      failure(await readNamedDocument(f.root, { path: "guide.md" }), "READ_CHANGED");
+    });
+  }
+});
+
+test("linked config failures and candidate aliases never open helper-controlled candidate content", async (t) => {
+  for (const kind of ["dangling", "loop", "candidate", "include", "hardlink"]) {
+    await t.test(kind, async (t) => {
+      const f = fixture(t);
+      const target = join(f.base, "managed.config");
+      if (kind === "candidate") {
+        f.put("guide.md", "# CANDIDATE_MARKER\n");
+        symlinkSync(join(f.root, "guide.md"), target);
+      } else if (kind === "loop") symlinkSync(target, target);
+      else if (kind !== "dangling") {
+        writeFileSync(target, "# CONFIG_MARKER\n");
+        if (kind === "include") f.git("config", "--file", target, "include.path", f.system);
+        if (kind === "hardlink") linkSync(target, join(f.base, "alias.config"));
+      }
+      symlinkSync(target, join(f.home, ".config/git/config"));
+      const opened = watchCandidate(t, f.root);
+      failure(await readNamedDocument(f.root, { path: "guide.md" }));
+      assert.equal(opened.includes(join(f.root, "guide.md")), false);
+    });
+  }
+});
+
+test("linked config retargeting and target replacement discard document content", async (t) => {
+  for (const kind of ["source", "intermediate", "parent", "target"]) {
+    await t.test(kind, async (t) => {
+      const f = fixture(t);
+      const directory = join(f.base, "managed"); mkdirSync(directory);
+      const target = join(directory, "config");
+      const replacement = join(f.base, "replacement.config");
+      const intermediate = join(f.base, "intermediate.config");
+      const source = join(f.home, ".config/git/config");
+      writeFileSync(target, "# CONFIG_MARKER\n");
+      writeFileSync(replacement, "# replacement\n");
+      symlinkSync(target, intermediate);
+      symlinkSync(intermediate, source);
+      watchCandidate(t, f.root, () => {
+        if (kind === "target") renameSync(replacement, target);
+        else if (kind === "parent") {
+          renameSync(directory, `${directory}-old`);
+          mkdirSync(directory);
+          writeFileSync(target, "# replacement\n");
+        } else {
+          const link = kind === "source" ? source : intermediate;
+          unlinkSync(link); symlinkSync(replacement, link);
+        }
+      });
+      failure(await readNamedDocument(f.root, { path: "guide.md" }), "READ_CHANGED");
+    });
+  }
+});
+
+test("revisiting a config as the global ignore cannot replace its original resolution", async (t) => {
+  const f = fixture(t);
+  const source = join(f.home, ".config/git/config");
+  const intermediate = join(f.base, "intermediate.config");
+  const target = join(f.base, "managed.config");
+  const replacement = join(f.base, "replacement.config");
+  f.git("config", "--file", target, "core.excludesFile", source);
+  writeFileSync(replacement, readFileSync(target));
+  symlinkSync(target, intermediate); symlinkSync(intermediate, source);
+  const opened = watchCandidate(t, f.root);
+  const original = fs.open;
+  t.mock.method(fs, "open", async (path, ...args) => {
+    const handle = await original(path, ...args);
+    if (path === target) {
+      const close = handle.close.bind(handle);
+      handle.close = async () => {
+        await close();
+        unlinkSync(intermediate); symlinkSync(replacement, intermediate);
+      };
+    }
+    return handle;
+  });
+  syncBuiltinESMExports();
+  failure(await readNamedDocument(f.root, { path: "guide.md" }), "READ_CHANGED");
+  assert.equal(opened.includes(join(f.root, "guide.md")), false);
+});
+
+test("unsupported includes, malformed configs, repository links, and FIFO bootstrap never open candidate content", async (t) => {
+  for (const kind of ["include", "includeIf", "malformed", "repository-config-link", "config-fifo", "worktree-config"]) {
     await t.test(kind, async (t) => {
       const f = fixture(t);
       const included = join(f.base, "included.config");
@@ -191,7 +384,7 @@ test("unsupported includes, malformed configs, links, and FIFO bootstrap never o
       if (kind === "include") f.git("config", "include.path", included);
       if (kind === "includeIf") f.git("config", 'includeIf.gitdir:/not-this-repo/.path', included);
       if (kind === "malformed") writeFileSync(f.system, "[CONFIG_MARKER\n");
-      if (kind === "config-link") { unlinkSync(f.system); symlinkSync(included, f.system); }
+      if (kind === "repository-config-link") { unlinkSync(join(f.root, ".git/config")); symlinkSync(included, join(f.root, ".git/config")); }
       if (kind === "config-fifo") { unlinkSync(f.system); execFileSync("mkfifo", [f.system]); }
       if (kind === "worktree-config") f.git("config", "extensions.worktreeConfig", "true");
       const opened = watchCandidate(t, f.root);

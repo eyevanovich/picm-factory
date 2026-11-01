@@ -38,7 +38,7 @@ There is no startup reminder hook in this version. Cadence can be inspected and 
 
 For a known Markdown path, `node "${CLAUDE_PLUGIN_ROOT}/claude-code/read-document.ts" --root "/absolute/workspace"` accepts `{"path":"docs/guide.md","excludedPaths":["private-notes"]}` on stdin. Use a quoted heredoc as with settings. It combines projected settings, policy checks, and one read (64 KiB), returning JSON on success or sanitized JSON and a nonzero exit on failure. No separate settings call is needed for that invocation. SIGINT/SIGTERM request cancellation and discard the result.
 
-This is optional convenience, not a discovery prerequisite or approval gate. Native Git configuration bootstrap can access includes/links before rejecting them; other tools and startup loading remain outside its checks. See the [supported subset and trust boundary](../shared/picm-factory/references/named-document-read.md). Ordinary tools remain available when existing eligibility rules can be satisfied.
+This is optional convenience, not a discovery prerequisite or approval gate. Native Git configuration bootstrap can access unsupported sources before the helper rejects them; other tools and startup loading remain outside its checks. See the [supported subset and trust boundary](../shared/picm-factory/references/named-document-read.md). Ordinary tools remain available when existing eligibility rules can be satisfied.
 
 ## Experimental evidence reports
 

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFileSync, spawn, spawnSync } from "node:child_process";
-import { chmodSync, cpSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, cpSync, existsSync, mkdirSync, readFileSync, rmSync, symlinkSync, unlinkSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import test from "node:test";
 import { discoverAndLoadExtensions } from "@earendil-works/pi-coding-agent";
@@ -54,6 +54,21 @@ test("extracted Pi and Claude named readers agree on the same synthetic fixtures
     return expected;
   }
   assert.equal((await parity()).ok, true);
+  const managedConfig = join(f.base, "managed.config");
+  const managedIgnore = join(f.base, "managed.ignore");
+  const globalConfig = join(f.home, ".config/git/config");
+  const globalIgnore = join(f.home, ".config/git/ignore");
+  writeFileSync(managedConfig, "# CONFIG_MARKER\n");
+  writeFileSync(managedIgnore, "guide.md\n");
+  symlinkSync(managedConfig, globalConfig);
+  symlinkSync(managedIgnore, globalIgnore);
+  assert.equal((await parity()).code, "READ_EXCLUDED");
+  writeFileSync(managedIgnore, "# POLICY_MARKER\n");
+  assert.equal((await parity()).ok, true);
+  unlinkSync(globalIgnore);
+  symlinkSync(join(f.root, "guide.md"), globalIgnore);
+  assert.equal((await parity()).code, "READ_UNSUPPORTED_CONFIGURATION");
+  unlinkSync(globalIgnore); unlinkSync(globalConfig);
   f.put("docs/guide.md", "資料\n");
   assert.equal((await parity({ path: "docs/guide.md" })).ok, true);
   assert.equal((await parity({ ...request, excludedPaths: ["guide.md"] })).code, "READ_EXCLUDED");

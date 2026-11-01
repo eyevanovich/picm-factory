@@ -78,6 +78,7 @@ export async function readNamedDocument(root: string, input: unknown, signal?: A
     if (typeof root !== "string" || !isAbsolute(root) || /[\x00-\x1f\x7f]/.test(root) || resolve(root) !== await realpath(root)) fail("READ_INVALID_PATH");
     root = resolve(root);
     const snapshots = new Map<string, Stats | null>();
+    const sourceResolutions = new Map<string, string>();
     async function remember(path: string) {
       signal?.throwIfAborted();
       const info = await optionalStat(path);
@@ -89,6 +90,12 @@ export async function readNamedDocument(root: string, input: unknown, signal?: A
       for (const [path, before] of snapshots) {
         signal?.throwIfAborted();
         if (!same(before, await optionalStat(path))) fail("READ_CHANGED");
+      }
+      for (const [path, canonical] of sourceResolutions) {
+        signal?.throwIfAborted();
+        try {
+          if (await realpath(path) !== canonical) fail("READ_CHANGED");
+        } catch { fail("READ_CHANGED"); }
       }
     }
     async function noLinks(path: string, code: string) {
@@ -170,21 +177,31 @@ export async function readNamedDocument(root: string, input: unknown, signal?: A
         child.stdin?.end(stdin);
       });
     }
-    // Trusted bootstrap: native Git can parse includes/links before we reject them.
+    // Trusted bootstrap: native Git can read unsupported sources before we reject them.
     const system = (await git(["var", "GIT_CONFIG_SYSTEM"])).output.replace(/\n$/, "").split("\n");
     const global = (await git(["var", "GIT_CONFIG_GLOBAL"])).output.replace(/\n$/, "").split("\n");
     if (system.length !== 1 || global.length !== 2) fail(stage);
-    const configs = [...system, ...global, join(root, ".git/config")];
     stage = "READ_POLICY_FAILED";
     let policyBytes = 0;
-    async function policy(path: string) {
+    async function policy(path: string, externalSource = false): Promise<void> {
       if (!isAbsolute(path) || /[\x00-\x1f\x7f]/.test(path)) fail("READ_UNSUPPORTED_CONFIGURATION");
       if (resolve(path).normalize("NFC").toLowerCase() === candidate.normalize("NFC").toLowerCase()) fail("READ_UNSUPPORTED_CONFIGURATION");
+      if (externalSource && await remember(path)) {
+        for (let parent = dirname(path); ; parent = dirname(parent)) {
+          await remember(parent);
+          if (parent === dirname(parent)) break;
+        }
+        const canonical = await realpath(path);
+        if (sourceResolutions.has(path) && sourceResolutions.get(path) !== canonical) fail("READ_CHANGED");
+        sourceResolutions.set(path, canonical);
+        if (canonical !== path) return policy(canonical);
+      }
       const bytes = await boundedFile(path, POLICY_LIMIT, "READ_POLICY_FAILED", true);
       policyBytes += bytes?.length ?? 0;
       if (policyBytes > 1048576) fail("READ_POLICY_FAILED");
     }
-    for (const path of configs) await policy(path);
+    for (const path of [...system, ...global]) await policy(path, true);
+    await policy(join(root, ".git/config"));
     stage = "READ_UNSUPPORTED_CONFIGURATION";
     const keys = (await git(["config", "--no-includes", "--null", "--name-only", "--list"])).output.split("\0");
     if (keys.some((key) => key === "include.path" || /^includeif\..*\.path$/.test(key)
@@ -216,7 +233,10 @@ export async function readNamedDocument(root: string, input: unknown, signal?: A
     stage = "READ_POLICY_FAILED";
     for (const directory of directories) await policy(join(directory, ".gitignore"));
     await policy(join(root, ".git/info/exclude"));
-    if (globalExclude) await policy(globalExclude);
+    if (globalExclude) {
+      const external = !privacyPathMatches(root.normalize("NFC").toLowerCase(), globalExclude.normalize("NFC").toLowerCase());
+      await policy(globalExclude, external);
+    }
     await revalidate();
     const ignored = await git(["check-ignore", "--no-index", "--stdin", "-z"], true, `${name}\0`);
     if (ignored.status === 0) fail("READ_EXCLUDED");
