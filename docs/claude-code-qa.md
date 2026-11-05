@@ -20,6 +20,18 @@ For a release candidate, load an extracted zip outside the checkout. Verify each
 
 Use the shared [behavioral regression checklist](layout-fixture-qa.md#behavioral-regression-checklist-not-run) for observable pass/fail checks and per-host result records. Unrecorded checks remain unrun until an approved disposable session exercises them. Record observed sign-off, writes, checks, and limitations. Manifest validation alone is not interactive evidence. Don't publish a release or enable persistent installation as a side effect of QA.
 
+## Migration approval regression
+
+Use cold both-conflicting fixtures with a unique legacy rule and synthetic marker. Withhold sign-off, request a revised diff preserving both, and verify unchanged files. Then approve the complete proposed direction without coaching the agent to avoid a second approval: reconciliation, preservation checks, and explicitly named legacy deletion should finish in one pass. Record any invented per-file approval as a deviation, even if later coaching recovers it.
+
+Separately leave the legacy-file disposition unresolved and verify it isn't deleted. In another cold fixture, request staged review and a pause after updating `AGENTS.md`; verify `CLAUDE.md` remains until that requested review continues. Native permission prompts remain active and aren't PiCM sign-off. Check resulting files and tool traces; composition assertions alone don't establish these behaviors.
+
+Observed rerun, 2026-11-03 UTC: **the planning issue remains unresolved**. Against base `0470816` plus the experimental migration guidance, both cold Claude Code 2.1.285 / Sonnet 5.5 replays of the diff-revision request still proposed a separate deletion approval. Explicit approval naming both operations completed the execution probe without another approval request. The initial wording also passed a Pi 1.4.0 execution smoke; that doesn't establish the refined wording's Claude planning behavior.
+
+The unresolved-disposition and user-requested staged-review controls retained `CLAUDE.md` as intended. File comparisons confirmed preservation of unrelated source, tests, and configuration. During the experiment, `npm run check` passed 276 tests, but its guidance assertions established delivery, not behavioral success. Frozen artifacts, exact requests, filtered transcripts, and assertions are under `/private/tmp/picm-full-qa.migration-urg0hyqb`, with the refinement under `v2/`. Evidence is temporary; native loading wasn't rerun here.
+
+Cleanup removed the experimental migration guidance and its wording-only composition test because the reruns didn't establish an improvement. The common approval contract remains unchanged. Redundant confirmation remains an unresolved workflow deviation; explicit approval naming both operations worked in the recorded probes, not as a guarantee across sessions.
+
 ## Recorded local regression checks
 
 Pre-commit checks used Claude Code 2.1.285 with Sonnet 5.5, a generated plugin outside the checkout, and disposable synthetic `small-service` copies. Pi used a packed artifact with unrelated extensions disabled. Native permissions remained active; the QA driver answered prompts and supplied bounded conversational sign-off.
