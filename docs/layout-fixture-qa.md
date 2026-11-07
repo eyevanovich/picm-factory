@@ -4,7 +4,7 @@ Use these fixtures for manual smoke testing of PiCM layout guidance, `/picm-main
 
 Interactive command tests should run in a visible Herdr pane. Do not rely on a headless `bash` run for `/picm-maintain`, `/picm-adopt`, or `/picm-optimize` because the flows may ask clarifying questions and require conversational sign-off before edits. Follow [`qa-runner/CONTEXT.md`](../qa-runner/CONTEXT.md) for the current Herdr input procedure.
 
-Dated observations below retain the multiplexer used when they were recorded; use the current Herdr procedure for new QA.
+Dated observations below retain the multiplexer used when they were recorded; use the current Herdr procedure for new QA. The [2026-11-05 cross-host merge QA](merge-release-qa.md) used visible Rex tabs because Herdr wasn't running and retains the observed failures.
 
 ## Setup pattern
 

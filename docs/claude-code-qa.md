@@ -2,6 +2,8 @@
 
 Automated artifact checks run in `npm run check`. They don't prove conversational behavior.
 
+Latest cross-host candidate results: [merge and release QA, 2026-11-05](merge-release-qa.md). Automated gates passed; reporting and inspection failures keep release acceptance open.
+
 Before interactive testing, agree on an explicit disposable target and allowed writes. Use synthetic content only, never real credentials or private material. Build with `npm run build:claude`, then start Claude from that target with `--plugin-dir` pointing at the generated bundle or an extracted release. Record the Claude and Node versions. Native instruction-loading checks require Claude Code 2.1.277 or newer with `AGENTS.md` loading enabled; don't infer native support from a command manually reading a file.
 
 ## Scenarios
