@@ -1,18 +1,18 @@
 # Coding maintenance
 
-Load for initial coding adoption, or maintenance with a Coding Repository profile, `capabilities.codebaseMap`, or visible `CONTEXT-MAP.md`. Apply the [shared contract](../CONTRACT.md) and the general [maintenance rubric](maintenance-rubric.md) for severity, repair tiers, and reporting. During adoption, use those definitions plus the checks here; no separate broad workflow audit or optimization interview is required.
+Load for maintenance with a Coding Repository profile, `capabilities.codebaseMap`, or visible `CONTEXT-MAP.md`. Apply the [shared contract](../CONTRACT.md) and the general [maintenance rubric](maintenance-rubric.md) for severity, repair tiers, and reporting. Initial adoption has its own self-contained [coding onboarding procedure](adoption-guide.md#coding-onboarding); this rubric adds no adoption prerequisite.
 
 Use bounded eligible inspection. Respect generated/do-not-edit and nested-repository boundaries; ask before following unclear symlink targets. Keep sensitive findings generic.
 
 ## One-run depth
 
-Use the supplied Strict/Balanced depth; initial adoption uses Strict. Strict gives broader systematic coverage across declared roots/mapped contexts at higher cost. Balanced samples major boundaries and one coding path at lower cost. Neither implies exhaustive source understanding, provenance, security authority, or automatic rewrite.
+Use the supplied Strict/Balanced maintenance depth. Strict gives broader systematic coverage across declared roots/mapped contexts at higher cost. Balanced samples major boundaries and one coding path at lower cost. Neither implies exhaustive source understanding, provenance, security authority, or automatic rewrite.
 
-Interactive maintenance offers Strict first; explicit depth bypasses the selector, and non-TUI commands default to Strict. Preserve `capabilities.codebaseMap.maintenancePreset`: legacy `light`, `balanced`, and `strict` values don't select later depth. Don't offer Light for adoption or active selection.
+Interactive maintenance offers Strict first; explicit depth bypasses the selector, and non-TUI commands default to Strict. Preserve `capabilities.codebaseMap.maintenancePreset`: legacy `light`, `balanced`, and `strict` values don't select later depth. Don't offer Light for active selection.
 
 ### Balanced
 
-At manifest/documentation level, check:
+Check relevant manifests and documentation, plus the representative source and test contents required by the cold-agent walk:
 
 - canonical routing, configured map/equivalent, declared roots, and local-context paths;
 - map links to deleted/excluded paths and entry/manifest/test/verification targets;
@@ -29,18 +29,24 @@ Avoid a full semantic dependency graph.
 
 Run Balanced, then inventory meaningful boundaries across all declared roots; check independent apps/services/packages for context coverage; compare manifest-level internal dependencies with documented constraints; inspect mapped local contexts for stale paths, conflicting responsibilities, and duplicated facts; review relevant agent/developer/architecture docs for consolidation; and walk more than one materially different boundary when needed.
 
-Both depths apply the general rubric's redundancy review to inspected instructions/pointers. Balanced remains representative; Strict uses broader coverage. Neither is an exhaustive workspace-wide duplicate scan. During initial adoption, load and apply [redundancy review](redundancy-review.md) directly after inventorying the inspected documents.
+Both depths apply the general rubric's redundancy review to inspected instructions/pointers, using the [shared comparison procedure](redundancy-review.md). Balanced remains representative; Strict uses broader coverage. Neither is an exhaustive workspace-wide duplicate scan.
 
 ## Coding cold-agent walk
 
 Choose a visible representative task or ask the user. From root:
 
 1. Reach coding/workflow routing and the map/equivalent, then locate the owner without whole-repo reading.
-2. Recover a supported entry/public surface, constraints, and adjacent dependencies. Impact notes expose non-obvious effects, not imports/wiring.
-3. Locate authoritative tests/checks and command definitions; identify generated, security, migration, and coordination boundaries.
-4. Confirm the review surface: code diff plus check result, with cross-boundary effects and unknowns.
+2. Read relevant source contents to recover a supported entry/public surface, constraints, and adjacent dependencies. Impact notes expose non-obvious effects, not imports/wiring.
+3. Read representative test contents and authoritative check definitions, not only filenames or pointers; identify generated, security, migration, and coordination boundaries.
+4. Identify the review surface: code diff and applicable checks, with cross-boundary effects and unknowns. Definition inspection is not check execution; record actual results or state that checks weren't run.
 
 Warn when owner, entry, or checks require guesswork. A longer chain is acceptable when each read narrows context.
+
+## Readiness
+
+Focused maintenance applies the requested scope and supplied depth; it doesn't require unrelated inspection. Documentation-only changes don't waive the applicable inspection checks.
+
+Coding is **Ready** only after the required inspection is complete: the cold-agent walk reaches root routing, the map/equivalent, relevant local context, an entry/public surface, and verification definitions, with generated/security boundaries visible and `.picm/` excluded from normal routing. Report blocked or uninspected required checks as incomplete rather than issuing readiness wording. Exclusions, authorized scope, and access limits still apply; request sanitized evidence rather than bypassing them. Running checks is a separately agreed validation action, not a prerequisite for this readiness review.
 
 ## Drift and repair
 

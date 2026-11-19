@@ -1,24 +1,52 @@
 # Adoption
 
-Use for `adopt` under the [shared contract](../CONTRACT.md). Inspect existing material, preserve what works, and propose the smallest routing improvement. Adoption isn't automatic conversion.
+Use for `adopt` under the [shared contract](../CONTRACT.md). Onboard existing material: assess how an agent can use its guidance, gather task-relevant context, and work effectively. Preserve what works and propose the smallest complete improvements, not automatic conversion.
 
-For explicit `coding`, selected coding adoption, or hybrid codebase mapping: Load [coding adoption](coding-adoption-guide.md) for this branch before assessing readiness or producing a report. The shortcut skips classification, not its mapping decisions or Strict examination.
-
-Report-only coding adoption still requires the Strict examination: load and apply [coding maintenance](coding-maintenance-rubric.md) and [redundancy review](redundancy-review.md) before the readiness report. Report-only limits writes, not inspection depth; privacy exclusions, authorized scope, and access limits still apply. State inspected coverage and omissions; mark blocked or uninspected required checks as incomplete.
-
-## Read-first orientation
-
-After successful projected settings status and path eligibility, inspect routing/context: `AGENTS.md`, `CONTEXT.md`, `REFERENCES.md`, identity/rules/examples, references, workflows, handoffs, stages, and relevant projected configuration. Inspect eligible legacy instructions only for the migration cases below; don't open raw config to determine profile or adoption status. For a complex workspace, offer a representative path-to-role-to-rationale inventory; classification informs proposals, never migration authority.
+For explicit `coding`, selected Coding Repository adoption, or hybrid codebase mapping, follow **Coding onboarding** below. The shortcut skips classification, not inspection. For other requests, use bounded classification and the read-first orientation below; offer coding onboarding when relevant. A coding profile can be primary or complement an existing workflow profile.
 
 For sensitive non-Git material, recommend storage/sharing review and exact `.gitignore` patterns when future commits are plausible. Discovery exclusions aren't commit protection. Leave Git initialization to the user; ignore-file edits require sign-off. Describe sensitive findings generically, without opening or quoting protected content.
 
-## Routing readiness and outcomes
+## Coding onboarding
 
-Adequate visible routing identifies purpose, core read-first context, common task starts, meaningful local boundaries, relevant privacy/coding rules, and `.picm/` exclusion. Classify it as **adequate**, **partial**, **placeholder/unrelated**, or **conflicting/risky**.
+Use one default inspection path, not an upfront profile/map/depth questionnaire. Recommend from repository evidence; ask only about consequential uncertainty or choices. Report-only limits writes, not coding inspection. The steps here include the initial Strict examination; no separate maintenance pass, optimization interview, or supporting-guide load is required for the coding examination.
 
-Preserve adequate `AGENTS.md` routing. Use the migration cases below for legacy instructions; creating or migrating routing still requires a final direction and sign-off.
+### 1. Prepare eligible inspection
 
-### Instruction-file migration
+Apply the included contract's workspace-read preparation before repository prerequisites. For ordinary tools, obtain successful projected settings status and read applicable ignore policy before opening candidate content or expanding directory children. Keep inspection bounded to eligible paths; unresolved policy or access blocks the affected inspection, not the exclusions. Settings failure stops workspace discovery under the contract's bounded failure response. The optional named reader prepares only its individual read. Skip unrelated/generated/dependency trees and history; don't follow unclear links or nested repositories unless explicitly scoped and eligible.
+
+### 2. Inspect the existing setup
+
+Read root instructions, relevant context/maps or equivalent architecture/developer guidance, manifests, and build/lint/test/CI definitions. Inventory meaningful boundaries across all declared roots within eligible scope; record excluded/blocked coverage rather than treating it as inspected. Check independent apps/services/packages for context coverage. Compare visible topology and manifest-level internal dependencies with documented responsibilities and constraints. Inspect mapped local contexts for stale/deleted/excluded pointers, root/local conflicts, duplicated facts, and unsupported impact/status claims. Identify generated, restricted, and cross-boundary areas without opening protected content.
+
+Compare instructions and pointers within and across inspected documents by meaning and applicability: action, trigger, scope, precedence, exceptions, and qualifiers. Distinguish consolidation candidates, partial overlap, intentional repetition, and unresolved conflicts. Preserve unique constraints and distinct read conditions; a proposed canonical home must be reachable from every affected route. Keep coverage bounded, not an exhaustive duplicate scan.
+
+### 3. Exercise context gathering
+
+Choose a representative visible coding task, or ask when none is apparent. Follow root routing through the map/equivalent and relevant local context to the owner. Read relevant source contents, representative test contents, and authoritative check definitions, not just filenames. Recover the entry/public surface, constraints, adjacent dependencies, and generated/security/migration/coordination boundaries. Walk more than one materially different boundary when ownership or verification contracts differ.
+
+Distinguish a followed route from independently discovered context. Identify the diff/check review surface and cross-boundary effects or unknowns. Definition inspection is not check execution; running checks is separately agreed validation, not a prerequisite for this assessment.
+
+### 4. Assess and propose
+
+Report what works, shortcomings with supporting source evidence, and omissions blocking required inspection. Recommend the smallest complete documentation improvement; no findings means only the inspected scope. Preserve suitable routes, names, conventions, and human knowledge. Handle existing instruction files using the migration cases below.
+
+Reuse adequate architecture/developer guidance; omit optional impact/status notes by default. Keep a small map in root routing; use `CONTEXT-MAP.md` for substantial/hybrid mapping. Make the map/equivalent and relevant local contexts reachable from canonical `AGENTS.md` task routes. Root instructions own behavior/task routes; maps index responsibilities, authoritative context, entry/public surfaces, verification, and cross-boundary constraints. Local `CONTEXT.md` holds purpose, read-first files, dependencies, constraints, risks, checks, coordination, and unknowns. Add it only for distinct ownership, independent entry/check contracts, material constraints, frequent independent work, or coordination risk—not every package. Prefer authoritative pointers over copied commands/dependency lists. Keep private fixtures, local configuration, and sensitive findings out of reusable maps/context.
+
+Offer root/distributed or scan-and-recommend mapping and additive/curated work when relevant to the proposal, not as mandatory intake. Confirm consequential ownership boundaries with the user. For consolidation, separate document-role inventory from proposed merges/moves/deletes; preserve unique rules and resolve conflicts with the user. Keep ambiguous status unknown; archive/dead status is a user decision. Code, tests, build systems, and executable tooling changes are separate follow-ups.
+
+### 5. Apply approved changes
+
+Present one concise final direction naming affected files, material creates/moves/deletes/replacements, preserved requirements, and uncertainty. Wait for conversational sign-off; design selections aren't approval. Then complete aligned changes without repeated permission requests. Preserve unrelated content/settings, re-read when concurrent changes are apparent, and realign for material departures. Leave metadata, exclusions, and cadence unchanged unless separately selected and approved under existing configuration safeguards.
+
+Cancellation stops future work; issued operations may finish. Retain and report completed effects without automatic rollback or blind replay.
+
+### 6. Verify and report
+
+Recheck affected routes, pointer targets, preserved instructions, and migration effects. Verify native instruction loading before calling migration complete; unsupported or unverified loading remains a limitation, not authority to change host settings.
+
+Report named inspected paths/boundaries, evidence, omissions, changes, and actual validation. State when checks weren't run. Apply the readiness criteria below; a safe stop isn't completed inspection. Tell the user to state a normal coding task and review the resulting diff/check evidence; following routes and gathering context remain the agent's job. Offer optional initial maintenance after successful adoption, without requiring it or running it automatically. Recommend revisiting context after first real coding use or changes to boundaries, manifests, commands, or architecture guidance.
+
+## Instruction-file migration
 
 `AGENTS.md` is the canonical target at root and meaningful nested instruction boundaries:
 
@@ -29,47 +57,32 @@ Preserve adequate `AGENTS.md` routing. Use the migration cases below for legacy 
 
 Mention `CLAUDE.md` only to explain or carry out an existing-file migration. Generate no import shim. Verify the host can load the resulting `AGENTS.md`; unsupported versions/settings are a setup limitation, not a successful migration.
 
+## Readiness and result
+
+Adequate visible routing identifies purpose, core read-first context, common task starts, meaningful local boundaries, relevant privacy/coding rules, and `.picm/` exclusion from normal work. Classify it as **adequate**, **partial**, **placeholder/unrelated**, or **conflicting/risky**.
+
+For coding, adequate routing also reaches the map/equivalent, relevant local context, owner, entry/public surface, and verification definitions without whole-repo scanning, with generated/security boundaries visible. Map presence alone isn't successful routing.
+
 | Outcome | Meaning |
 | --- | --- |
-| **Scanned only** | Findings or agreed optional metadata; no full adoption. |
-| **Needs routing before adoption** | Routing absent, partial, placeholder, conflicting, or unsafe. |
-| **Ready** | Adequate visible routing exists or was added; minimal metadata only if useful. |
-| **Ready with warnings** | Adequate routing with non-blocking improvements remaining. |
+| **Incomplete** | There are blocked or uninspected required checks; state the missing evidence, not readiness wording. |
+| **Scanned only** | Inspection finished, but full adoption wasn't selected or completed. |
+| **Needs routing before adoption** | Inspection finished; routing is absent, partial, placeholder, conflicting, or unsafe. |
+| **Ready** | Adequate visible routing exists or was added; required coding inspection is complete and any required migration/loading verification is resolved. |
+| **Ready with warnings** | Ready criteria hold; only non-blocking improvements remain. |
 
-Set `adoption.status: "adopted"` only with adequate visible routing. Metadata never replaces the route map. Where routing needs work, offer minimal compatibility, stronger ICM routing, or scanned-only reporting. Preserve existing names, examples, and conventions unless the direction changes them.
+Distinguish a complete assessment finding broken routing from completed adoption. Requested changes must be applied and verified before reporting adoption complete. Set `adoption.status: "adopted"` only with adequate visible routing and completed required inspection/verification. Metadata never replaces the route map. Preserve persisted-status uncertainty; don't open raw config to settle it.
 
-## Coding or hybrid branch
+Keep the result concise: profile/routing source, coding shape when relevant, what works, supported shortcomings, inspection limits, preserved material, proposed/actual changes, and next steps. Include `Persisted adoption status: evidence-backed value / unknown` when relevant. Saving a report or config is an edit.
 
-For other requests, offer coding adoption after shallow, bounded classification; selecting it activates the coding reference above. It owns mapping approach, additive/curated depth, high-value hints, Strict baseline, and codebase-map metadata. A coding profile can be primary or complement an existing workflow profile.
+## Read-first orientation for other workspaces
 
-## Direction and result
+After successful projected settings status and path eligibility, inspect relevant routing/context: `AGENTS.md`, `CONTEXT.md`, `REFERENCES.md`, identity/rules/examples, references, workflows, handoffs, and stages. Use the migration and readiness criteria above. Where routing needs work, offer minimal compatibility, stronger ICM routing, or scanned-only reporting. For a complex workspace, offer a representative path-to-role-to-rationale inventory; classification informs proposals, never migration authority.
 
-Prepare a report covering profile, routing source/readiness, coding shape when relevant, evidence/unknowns, preserved material, optional improvements, and next steps. Keep optional inventory separate from consolidation proposals. Scanned-only/profile/map/depth/cadence choices are design input, not sign-off.
+Recommend concise root routing, local contracts, stable-reference/working-artifact separation, reviewable outputs, and handoffs retaining gaps, uncertainty, and next action. Preserve custom layouts that route clearly. Profile-specific first-run guidance lives in [layout profiles](layout-profiles.md). Completion includes an optional initial maintenance offer after successful adoption; adoption is complete without accepting or running that pass.
 
-Optional metadata is `.picm/config.json` and `.picm/adoption-report.md`: retain only useful profile/routing/path hints, readiness/status, mapping, cadence, and normalized privacy exclusions. Preserve unrelated fields; use [settings guidance](settings-guide.md) for privacy/cadence changes. Saving a report or config is an edit.
+## Optional detail and metadata
 
-Present the final direction before changes. Explicitly name curated merge/move/archive/rewrite/delete effects. Avoid labeling ambiguous content dead or marking inadequate routing adopted. Completion includes an optional initial maintenance offer after successful adoption; state it in the closing response. Adoption is complete without accepting or running that pass.
+Use [coding detail](coding-adoption-guide.md) only for optional mapping, curation, impact/status, metadata, or template elaboration. It adds no required onboarding inspection.
 
-## Optional ICM improvements
-
-Recommend concise root routing, local contracts, stable-reference/working-artifact separation, reviewable outputs, and handoffs retaining gaps, uncertainty, and next action. Preserve custom layouts that route clearly. Profile-specific first-run guidance lives in [layout profiles](layout-profiles.md).
-
-## Report shape
-
-Use relevant sections rather than empty headings:
-
-```markdown
-# PiCM Adoption Report
-## Summary
-- Compatibility: Ready / Ready with warnings / Needs routing before adoption / Scanned only
-- Profile and routing source:
-- Persisted adoption status: evidence-backed value / unknown
-## Existing structure and routing readiness
-## PiCM compatibility and coding adoption
-## Evidence and unknowns
-## Optional file-role inventory
-## Security/privacy notes
-## Preserved as-is
-## Optional changes requiring sign-off
-## Next steps
-```
+Optional metadata is `.picm/config.json` and `.picm/adoption-report.md`: retain only useful profile/routing/path hints, readiness/status, mapping, cadence, and normalized privacy exclusions. Preserve unrelated fields; use [settings guidance](settings-guide.md) before privacy/cadence changes. Neither metadata nor cadence is required for adoption.

@@ -30,8 +30,9 @@ test("shared review covers applicability, preservation, dispositions, and bounde
     "Consolidation candidate", "Partial overlap", "Retain intentionally", "Uncertain or conflicting",
     "independent entry points", "every distinct read condition", "each unique requirement",
     "privacy/generated boundaries", "Focused/trace scope", "State omissions",
-    "each candidate has a disposition", "final-direction/sign-off",
+    "each candidate has a disposition", "[shared contract](../CONTRACT.md)",
   ]) assert.ok(guide.includes(signal), `missing redundancy guidance: ${signal}`);
+  assert.match(read("shared/picm-factory/CONTRACT.md"), /Wait for conversational sign-off/);
   assert.match(guide, /In maintenance[\s\S]*\*\*Suggestion\*\*[\s\S]*\*\*Warning\*\*/);
   assert.match(guide, /In optimization[\s\S]*improvement proposals/);
   assert.doesNotMatch(guide, /existing five-row audit/);

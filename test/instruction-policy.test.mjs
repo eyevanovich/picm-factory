@@ -9,7 +9,9 @@ test("both hosts require successful projected settings before workspace content 
   for (const hostFile of ["pi/HOST.md", "claude-code/HOST.md"]) {
     for (const mode of ["new", "adopt", "maintain", "optimize"]) {
       const text = composeModeInstructions({ mode, hostFile });
-      assert.match(text, /Before workspace content reads\/searches, first obtain successful projected settings status/);
+      assert.match(text, /Workspace-read preparation/);
+      assert.match(text, /obtain successful host `settings` `status`/);
+      assert.match(text, /Named reader:[\s\S]*both checks internally/);
       assert.match(text, /even when no config is expected/);
       assert.match(text, /before opening candidate content or expanding into a directory's children, successfully read/i);
       assert.match(text, /Stop the affected expansion and ask if a policy read fails/);
@@ -43,12 +45,17 @@ test("AGENTS is canonical and legacy migration covers each existing-file case wi
   assert.doesNotMatch(read("shared/picm-factory/references/coding-adoption-guide.md"), /`AGENTS.md`\/`CLAUDE.md`/);
 });
 
-test("coding adoption is an early mandatory branch rather than an optional closing suggestion", () => {
+test("coding onboarding is an inline branch for explicit, selected, and hybrid adoption", () => {
   const guide = read("shared/picm-factory/references/adoption-guide.md");
-  const branch = guide.indexOf("Load [coding adoption](coding-adoption-guide.md)");
+  const branch = guide.indexOf("## Coding onboarding");
   assert.ok(branch >= 0 && branch < guide.indexOf("## Read-first orientation"));
-  assert.match(guide, /before assessing readiness or producing a report/);
-  assert.match(guide, /shortcut skips classification, not its mapping decisions or Strict examination/);
+  assert.match(guide.slice(0, branch), /explicit `coding`, selected Coding Repository adoption, or hybrid codebase mapping/);
+  assert.match(guide, /shortcut skips classification, not inspection/);
+  assert.match(guide, /Report-only limits writes, not coding inspection/);
+  assert.match(guide, /initial Strict examination/);
+  assert.match(guide, /no separate maintenance pass, optimization interview, or supporting-guide load is required/);
+  assert.match(guide, /map\/depth questionnaire/);
+  assert.match(read("shared/picm-factory/references/coding-maintenance-rubric.md"), /this rubric adds no adoption prerequisite/);
 });
 
 test("Claude targets native AGENTS loading and namespaced command guidance without shims", () => {

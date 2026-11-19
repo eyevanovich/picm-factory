@@ -41,7 +41,7 @@ Name the first role, handoff artifact, and receiving role. Human review checks s
 
 Use for source repositories/monorepos where an agent needs a boundary, entry point, constraints, and verification source without loading the whole repository.
 
-A small/cohesive repository can embed its map in root routing. Larger/hybrid repositories may use `CONTEXT-MAP.md` and local context at meaningful boundaries. Reuse adequate architecture/developer guidance instead of duplicating it. Root routing owns behavior/task routes, the map indexes boundaries, and local context holds boundary detail. For mapping choices and evidence requirements, load [coding adoption](coding-adoption-guide.md).
+A small/cohesive repository can embed its map in root routing. Larger/hybrid repositories may use `CONTEXT-MAP.md` and local context at meaningful boundaries. Reuse adequate architecture/developer guidance instead of duplicating it. Root routing owns behavior/task routes, the map indexes boundaries, and local context holds boundary detail. Existing-repository assessment follows the self-contained [coding onboarding procedure](adoption-guide.md#coding-onboarding). Consult [coding detail](coding-adoption-guide.md) only for optional mapping/template elaboration.
 
 ### First run
 

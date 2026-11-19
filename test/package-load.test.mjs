@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import test from "node:test";
 import { discoverAndLoadExtensions } from "@earendil-works/pi-coding-agent";
+import { rebaseInstructionLinks } from "../shared/compose-instructions.ts";
 
 test("packed TypeScript runtime loads through Pi from node_modules", async (t) => {
   const cwd = mkdtempSync(join(tmpdir(), "picm-package-load-"));
@@ -47,7 +48,7 @@ test("packed TypeScript runtime loads through Pi from node_modules", async (t) =
     assert.match(text, /^Running \/picm-(new|adopt|maintain|optimize|help)( \(balanced\))?\.$/);
   };
   for (const mode of ["new", "adopt", "maintain", "optimize", "help"]) {
-    const args = mode === "maintain" ? "balanced bounded focus" : "bounded focus";
+    const args = mode === "maintain" ? "balanced bounded focus" : mode === "adopt" ? "coding report-only bounded focus" : "bounded focus";
     await extension.commands.get(`picm-${mode}`).handler(args, { cwd, mode: "rpc", waitForIdle: async () => {} });
     const prompt = prompts.current;
     prompts[mode] = prompt;
@@ -55,13 +56,22 @@ test("packed TypeScript runtime loads through Pi from node_modules", async (t) =
     assert.match(prompt, /# Pi host adapter/);
     assert.match(prompt, /before opening candidate content or expanding into a directory's children, successfully read/i);
     assert.match(prompt, /Metadata checks or a successful inventory\/ignore-tool command don't prove/);
-    assert.match(prompt, /User arguments: bounded focus/);
+    assert.ok(prompt.includes(`User arguments: ${mode === "adopt" ? args : "bounded focus"}`));
     assert.ok(prompt.includes(`Mode: ${mode}`));
     assert.doesNotMatch(prompt, /Load the picm-factory skill|## Mode routing/);
     assert.equal(prompt.includes(resolve(".")), false, "prompt depends on source checkout");
     assert.equal([...prompt.matchAll(/^# Redundancy review$/gm)].length, mode === "optimize" ? 1 : 0);
+    if (mode === "adopt") {
+      const source = "shared/picm-factory/references/adoption-guide.md";
+      const procedure = rebaseInstructionLinks(readFileSync(join(installedRoot, source), "utf8").trim(), source, installedRoot);
+      assert.equal(prompt.split(procedure).length - 1, 1);
+      assert.match(prompt, /source contents[\s\S]*test contents[\s\S]*check definitions/);
+      assert.match(prompt, /Incomplete.*blocked or uninspected required checks/s);
+      assert.doesNotMatch(prompt, /coding-maintenance-rubric\.md|redundancy-review\.md/);
+    }
     if (mode === "optimize") {
-      const redundancy = readFileSync(join(installedRoot, "shared/picm-factory/references/redundancy-review.md"), "utf8").trim();
+      const source = "shared/picm-factory/references/redundancy-review.md";
+      const redundancy = rebaseInstructionLinks(readFileSync(join(installedRoot, source), "utf8").trim(), source, installedRoot);
       assert.equal(prompt.split(redundancy).length - 1, 1);
       assert.ok(prompt.indexOf("# Documentation optimization") < prompt.indexOf("\n# Redundancy review\n"));
     }

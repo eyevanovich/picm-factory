@@ -170,7 +170,9 @@ Expected behavior:
 
 - Regular `/picm-adopt` uses bounded visible routing and repository signals before offering the Coding Repository profile; it does not require the shortcut.
 - `/picm-adopt coding` skips the initial classification question but preserves the same security, agent-followed privacy, final-direction sign-off, and non-destructive rules.
-- The flow offers root, distributed, and scan-and-recommend mapping plus additive and curated adoption. It does not ask for maintenance depth: it automatically performs the Strict examination and previews `capabilities.codebaseMap.maintenancePreset: "strict"`.
+- The included procedure directly supplies the Strict examination, including report-only adoption: meaningful-boundary coverage across declared roots, manifest-level dependencies, document comparison, and source/test/check-definition walks. Guide-loading counts alone do not establish completed inspection.
+- The flow inspects before asking about root/distributed/scan-and-recommend mapping or additive/curated work; offer these choices when relevant to the proposal, not as an upfront questionnaire. It does not ask for maintenance depth. Metadata is optional; only an agreed metadata write previews `capabilities.codebaseMap.maintenancePreset: "strict"`.
+- Report what works, supported shortcomings, inspection limits, and the smallest complete improvement proposal. A complete assessment finding broken routing is not completed adoption; blocked required inspection is incomplete, not Ready or Ready with warnings.
 - The user can choose Coding Repository as the primary profile or add codebase mapping to another primary profile.
 - No files are written until the agent presents a concise final direction and receives conversational sign-off.
 

@@ -7,6 +7,7 @@ import test from "node:test";
 import { buildClaudeBundle } from "../scripts/build-claude-bundle.mjs";
 import { settingsRequest } from "../claude-code/settings.ts";
 import { commandPrompt } from "../pi/extensions/runtime/command-dispatch.ts";
+import { rebaseInstructionLinks } from "../shared/compose-instructions.ts";
 import { instructionSizeReport } from "../scripts/report-instructions.mjs";
 import { evidenceReport, REPORT_CRITERIA } from "../shared/runtime/evidence-report.ts";
 
@@ -98,10 +99,14 @@ test("release zip is self-contained outside the checkout with explicit-only comm
     if (mode === "adopt") {
       assert.match(text, /Persisted adoption status: evidence-backed value \/ unknown/);
       assert.doesNotMatch(text, /Inferred profile, routing source, and adoption status/);
-      assert.match(text, /Report-only coding adoption still requires the Strict examination/);
-      assert.match(text, /load and apply \[coding maintenance\]\([^\)\n]*\/coding-maintenance-rubric\.md>?\) and \[redundancy review\]\([^\)\n]*\/redundancy-review\.md>?\) before the readiness report/);
-      assert.match(text, /Report-only limits writes, not inspection depth; privacy exclusions, authorized scope, and access limits still apply/);
-      assert.match(text, /mark blocked or uninspected required checks as incomplete/);
+      assert.match(text, /Report-only limits writes, not coding inspection/);
+      const source = "shared/picm-factory/references/adoption-guide.md";
+      const procedure = rebaseInstructionLinks(readFileSync(join(extracted, source), "utf8").trim(), source, "${CLAUDE_PLUGIN_ROOT}");
+      assert.equal(text.split(procedure).length - 1, 1);
+      assert.match(text, /source contents[\s\S]*test contents[\s\S]*check definitions/);
+      assert.match(text, /Incomplete.*blocked or uninspected required checks/s);
+      assert.doesNotMatch(text, /coding-maintenance-rubric\.md|redundancy-review\.md/);
+      assert.match(readFileSync(join(extracted, "shared/picm-factory/references/coding-adoption-guide.md"), "utf8"), /Optional elaboration/);
     }
     if (mode === "optimize") {
       assert.match(text, /Ordinary optimization returns improvement proposals, not an audit/);
@@ -130,7 +135,8 @@ test("release zip is self-contained outside the checkout with explicit-only comm
     assert.ok(procedure < text.indexOf("User arguments: $ARGUMENTS"));
     assert.equal([...text.matchAll(/^# Redundancy review$/gm)].length, mode === "optimize" ? 1 : 0);
     if (mode === "optimize") {
-      const redundancy = readFileSync(join(extracted, "shared/picm-factory/references/redundancy-review.md"), "utf8").trim();
+      const source = "shared/picm-factory/references/redundancy-review.md";
+      const redundancy = rebaseInstructionLinks(readFileSync(join(extracted, source), "utf8").trim(), source, "${CLAUDE_PLUGIN_ROOT}");
       assert.equal(text.split(redundancy).length - 1, 1);
       const review = text.indexOf("\n# Redundancy review\n");
       assert.ok(procedure < review && review < text.indexOf("User arguments: $ARGUMENTS"));

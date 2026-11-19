@@ -39,7 +39,7 @@ For product terminology and scope, read [CONTEXT.md](CONTEXT.md).
 | Change Claude commands or settings access | `claude-code/` | `test/claude-bundle.test.mjs`, Claude plugin documentation |
 | Change configuration integrity, policies, or maintenance depth | `shared/runtime/` | Both host adapters, focused runtime tests |
 | Change scaffold, adoption, maintenance, optimization, or help behavior | `shared/picm-factory/CONTRACT.md` | The relevant file under `shared/picm-factory/references/` |
-| Change coding adoption or context-map behavior | `shared/picm-factory/references/coding-adoption-guide.md` | `coding-maintenance-rubric.md`, `layout-profiles.md`, coding templates |
+| Change coding adoption or context-map behavior | `shared/picm-factory/references/adoption-guide.md` | Optional `coding-adoption-guide.md` detail, `coding-maintenance-rubric.md`, coding templates |
 | Change generated workspace content | `shared/picm-factory/templates/` | `shared/picm-factory/references/layout-profiles.md` |
 | Change instruction composition | `shared/compose-instructions.ts` | Host sources, `test/instruction-composition.test.mjs`, packaged-artifact tests |
 | Change packaging or release validation | `package.json` | `scripts/check-package.mjs`, `scripts/build-claude-bundle.mjs`, `docs/releasing.md` |

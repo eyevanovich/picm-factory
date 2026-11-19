@@ -10,7 +10,7 @@ const base = "shared/picm-factory";
 
 test("optimization retains documentation-only preservation and ungraded inspection lenses", () => {
   const guide = read(`${base}/references/optimization-guide.md`);
-  for (const signal of ["source code, tests, manifests", "executable scripts", ".picm/", "generated docs", "per-run artifacts", "Preservation ledger", "unique constraints", "intentional repetition", "No worthwhile optimizations found"]) {
+  for (const signal of ["source code, tests, manifests", "executable scripts", ".picm/", "generated docs", "per-run artifacts", "Preservation ledger", "No worthwhile optimizations found"]) {
     assert.ok(guide.toLowerCase().includes(signal.toLowerCase()), `missing ${signal}`);
   }
   for (const label of ["Context pointers", "Information hierarchy", "Canonical home", "Completion criteria", "Pruning"]) {
@@ -24,6 +24,9 @@ test("optimization retains documentation-only preservation and ungraded inspecti
   assert.match(guide, /Inapplicability needs inspected evidence/);
   assert.match(guide, /reading a check definition doesn't establish that it passed/);
   assert.match(guide, /every ledger constraint/);
+  const review = read(`${base}/references/redundancy-review.md`);
+  assert.match(review, /unique constraints/);
+  assert.match(review, /intentional repetition/i);
   assert.doesNotMatch(guide, /blocksVerificationOf|The helper report is the required audit|picm_scan_control|protected execution phase|proposal batch/);
 });
 
@@ -73,8 +76,8 @@ test("optimization entry points require the shared contract and preservation pro
   const guide = read(`${base}/references/optimization-guide.md`);
   assert.match(commandPrompt("picm-optimize"), /# Documentation optimization/);
   assert.match(guide, /load it only if it isn't already included in this invocation/);
-  assert.match(guide, /Selections inform a direction; they aren't sign-off/);
-  assert.match(guide, /wait for sign-off before edits/);
+  assert.match(guide, /shared contract's final-direction\/sign-off procedure/);
+  assert.match(commandPrompt("picm-optimize"), /Wait for conversational sign-off/);
   assert.match(read("prompts/picm-optimize.md"), /shared trusted-assistant contract/);
 });
 
@@ -155,9 +158,11 @@ test("shared retrospective preserves selection, privacy, and diagnosis boundarie
 
 test("intentional corrections preserve safeguards and distinguish predicted behavior from observations", () => {
   const guide = read(`${base}/references/optimization-guide.md`);
-  assert.match(guide, /current and intended behavior as an intentional correction in the ledger and final direction/);
-  assert.match(guide, /doesn't waive shared safety\/privacy boundaries or authorize executable changes/);
-  assert.match(guide, /unchanged required constraint becomes lost/);
+  const review = read(`${base}/references/redundancy-review.md`);
+  assert.match(review, /intentional correction needs explicit user agreement/);
+  assert.match(review, /current and intended behavior in the notes and final direction/);
+  assert.match(review, /Shared safety\/privacy boundaries and documentation-only edit scope remain unchanged/);
+  assert.match(guide, /Retain or defer any required constraint whose preservation or reachability is uncertain/);
   assert.match(guide, /representative situation for each material behavioral correction/);
   assert.match(guide, /A reasoned walkthrough predicts behavior; it isn't an observed agent run/);
   assert.match(guide, /Report predicted versus observed improvement/);

@@ -8,7 +8,7 @@ Discover eligible agent-facing instructions, maps, contracts, skills/prompts, ro
 
 Edit documentation only. Keep source code, tests, manifests, build/runtime paths, executable scripts, `.picm/` policy/config/reports, generated docs, per-run artifacts, and unrelated material unchanged. Respect the shared pre-read privacy boundary and generated/do-not-edit exclusions. Build no crawler, optimizer/equivalence engine, orchestration layer, or custom TUI.
 
-During maintenance, retain its report and reuse answered intake; the scope, ledger, proposal, and sign-off requirements below still apply.
+During maintenance, retain its report and reuse answered intake and review notes; apply this procedure's scope and proposal requirements.
 
 ## Evidence choice
 
@@ -38,11 +38,7 @@ Unreliable routing or added lookups can make either change worse; smaller initia
 
 ## Preservation ledger and redundancy
 
-For each inspected document, record unique constraints: privacy/safety, permissions/prohibitions, approval/review, commands/checks, behavior/routing, outputs/handoffs/uncertainty, domain facts/quality/terminology/exceptions, and authoritative/generated boundaries.
-
-Preserve each in place or at a clearly reachable authoritative home unless it is an identified instruction the user explicitly agrees to correct. Record that instruction's current and intended behavior as an intentional correction in the ledger and final direction, separate from preserved requirements. This doesn't waive shared safety/privacy boundaries or authorize executable changes. Preserve unrelated constraints. Intentional repetition, transition cases, fixtures, and compatibility shims are also constraints; retain them or ask for a preservation mechanism. The ledger aids review, not proof of equivalence. Keep ledger detail and retained-duplicate dispositions as working review notes; surface constraints and unresolved decisions material to proposals or scope limitations.
-
-Then apply [redundancy review](redundancy-review.md) within and across the discovered set before opportunities or a no-op conclusion; load it only if it isn't already included in this invocation. Use dispositions to support proposals and material limitations; compare authoritative-home claims across every inspected document. Contradictions or repeated claims without a supported canonical home need an opportunity or user decision.
+Apply [redundancy review](redundancy-review.md) within and across the discovered set before opportunities or a no-op conclusion; load it only if it isn't already included in this invocation. It owns the preservation ledger, meaning/applicability comparison, canonical-home checks, and completion criteria. Use that single review's notes and dispositions for proposals and validation.
 
 ## Inspection lenses and improvement proposals
 
@@ -66,9 +62,9 @@ Only when the user explicitly requests an experimental audit, load the [evidence
 
 ## Selection, changes, and completion
 
-Selections inform a direction; they aren't sign-off. Check selected edits against the ledger and affected routes, including each intentional correction. Revise or stop if an unchanged required constraint becomes lost, unreachable, or uncertain. Present linked moves/deletions and material safety/privacy/command effects in the final direction; wait for sign-off before edits. Realign only for material departures, not every wording adjustment.
+Check selected edits against the review notes and affected routes, including each intentional correction. Retain or defer any required constraint whose preservation or reachability is uncertain. Apply the shared contract's final-direction/sign-off procedure to the selected changes.
 
-Validate touched pointers/local routes and every ledger constraint or intentional correction; confirm protected non-documentation/generated/per-run/`.picm/` material remains unchanged. Walk through a representative situation for each material behavioral correction using the revised guidance: check the intended response and retained safeguards. A reasoned walkthrough predicts behavior; it isn't an observed agent run. Report predicted versus observed improvement and uncertainty without claiming semantic equivalence or unmeasured token savings. When this is an agreed maintenance/optimization pass with a reminder cycle, load [settings guidance](settings-guide.md) before completion.
+Validate every ledger constraint or intentional correction and affected task route using the review notes; confirm protected non-documentation/generated/per-run/`.picm/` material remains unchanged. Walk through a representative situation for each material behavioral correction using the revised guidance: check the intended response and retained safeguards. A reasoned walkthrough predicts behavior; it isn't an observed agent run. Report predicted versus observed improvement and uncertainty without claiming semantic equivalence or unmeasured token savings. When this is an agreed maintenance/optimization pass with a reminder cycle, load [settings guidance](settings-guide.md) before completion.
 
 Decide the outcome from the agreed inspection, preservation, and redundancy review. An excluded definition may remain unverified without making that agreed review incomplete; any conclusion depending on it stays unknown. Missing findings don't establish completed review or a no-op.
 

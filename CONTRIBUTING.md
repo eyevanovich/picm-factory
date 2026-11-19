@@ -36,7 +36,7 @@ Create a focused branch and keep unrelated changes separate.
 
 `pi/` and `claude-code/` own host-specific entry points. `shared/` owns the behavior contract, references, templates, and portable settings runtime. The root npm package remains Pi's installation entry point.
 
-`shared/compose-instructions.ts` combines the common contract, host instructions, and selected primary procedure in that order. Optimization appends the canonical required redundancy review; other supporting references and templates stay on demand. Pi sends the composed text directly from its slash dispatcher; it needs no skill router or build step.
+`shared/compose-instructions.ts` combines the common contract, host instructions, and selected primary procedure in that order. Optimization appends the canonical required redundancy review. Adoption includes its coding onboarding examination directly in the primary procedure; coding detail is optional. Other supporting references and templates stay on demand. Pi sends the composed text directly from its slash dispatcher; it needs no skill router or build step.
 
 Run `npm run build:claude` to generate `dist/claude-code/` with the same sections embedded in each command's `SKILL.md`. This self-contained directory is the plugin root; the source adapter alone lacks shared resources. Edit canonical sources only. Entry skill sources hold only Claude frontmatter and request placement; edit the common contract or mode procedure to change behavior. Relative supporting links are rebased for installed resources. The bundle version comes from `package.json`, so there is no second release version to synchronize. Tests extract the release-format zip outside the source checkout and exercise its helper.
 

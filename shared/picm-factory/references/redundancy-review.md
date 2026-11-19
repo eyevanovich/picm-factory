@@ -4,6 +4,14 @@ Required during maintenance and optimization discovery. Compare meaning and appl
 
 General maintenance includes this even when optimization is declined. Focused/trace scope stays relevant to the symptom/check. Coding Balanced compares its representative set; Strict uses broader inspected coverage. State omissions rather than implying workspace-wide completeness.
 
+## Preservation notes (optimization only)
+
+For optimization, record each inspected document's unique constraints: privacy/safety, permissions/prohibitions, approval/review, commands/checks, behavior/routing, outputs/handoffs/uncertainty, domain facts/quality/terminology/exceptions, and authoritative/generated boundaries. These notes are the preservation ledger for the review and later validation, not a separate audit.
+
+Preserve each constraint in place or at a clearly reachable authoritative home. An intentional correction needs explicit user agreement; record its current and intended behavior in the notes and final direction, separate from preserved requirements. Shared safety/privacy boundaries and documentation-only edit scope remain unchanged. Retain intentional repetition, transition cases, fixtures, and compatibility shims, or ask for a preservation mechanism.
+
+Keep detailed notes and retained-duplicate dispositions as working review notes; surface only constraints or unresolved decisions material to proposals or scope limitations. Notes aren't proof of equivalence.
+
 ## Procedure
 
 1. **Group repeated meaning:** exact copies, paraphrases, overlapping clauses, copied steps, and repeated pointers within and across files. Cite paths/headings or line ranges.
@@ -30,4 +38,4 @@ In optimization, use these dispositions to support improvement proposals or expl
 
 Finish when the inspected set has been compared within and across files, each candidate has a disposition, and coverage limits are stated. No findings means only that inspected scope; uninspected areas aren't Pass. This is qualitative review, not equivalence proof or measured token savings.
 
-Review authorizes no edits. Use the shared final-direction/sign-off contract for repairs, then verify constraints and reachable pointers from every affected entry point.
+Changes follow the [shared contract](../CONTRACT.md). Verify preserved constraints and reachable pointers from every affected entry point against these review notes.

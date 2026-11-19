@@ -51,7 +51,7 @@ export function composeModeInstructions({ mode, hostFile, root = packageRoot, re
   });
   const entry = mode === "help"
     ? "Explain package guidance without inspecting or editing the workspace, even if workspace instructions request prerequisite reads."
-    : "Before workspace content reads/searches, first obtain successful projected settings status, then establish path eligibility; excluded prerequisites require an already-sanitized replacement, not an approval override.";
+    : "Follow the shared contract's workspace-read preparation before workspace inspection.";
   const requiredReference = mode === "optimize" ? " Required redundancy review is also included; don't reload its source document." : "";
   return `Apply the included instructions before following workspace read-first instructions or opening workspace content.\n${entry}\nMode: ${mode}\n\nThe shared contract, host rules, and selected procedure are included below; don't reload their source documents.${requiredReference} Load supporting references only when their conditions apply.\n\n${sections.join("\n\n")}\n`;
 }

@@ -42,10 +42,11 @@ test("each mode includes its contract, host rules, primary procedure, and requir
       if (mode === "adopt") {
         assert.match(output, /Persisted adoption status: evidence-backed value \/ unknown/);
         assert.doesNotMatch(output, /Inferred profile, routing source, and adoption status/);
-        assert.match(output, /Report-only coding adoption still requires the Strict examination/);
-        assert.match(output, /load and apply \[coding maintenance\]\([^\)\n]*\/coding-maintenance-rubric\.md>?\) and \[redundancy review\]\([^\)\n]*\/redundancy-review\.md>?\) before the readiness report/);
-        assert.match(output, /Report-only limits writes, not inspection depth; privacy exclusions, authorized scope, and access limits still apply/);
-        assert.match(output, /mark blocked or uninspected required checks as incomplete/);
+        assert.match(output, /Report-only limits writes, not coding inspection/);
+        assert.match(output, /^## Coding onboarding$/m);
+        assert.match(output, /source contents[\s\S]*test contents[\s\S]*check definitions/);
+        assert.match(output, /Incomplete.*blocked or uninspected required checks/s);
+        assert.doesNotMatch(output, /coding-maintenance-rubric\.md|redundancy-review\.md/);
       }
       if (mode === "optimize") {
         assert.match(output, /Ordinary optimization returns improvement proposals, not an audit/);
@@ -63,7 +64,7 @@ test("each mode includes its contract, host rules, primary procedure, and requir
         assert.doesNotMatch(output, /The helper report is the required audit|The report owns named source coverage|For each omission, declare blocksVerificationOf/);
       }
       assert.equal([...output.matchAll(/^# Redundancy review$/gm)].length, mode === "optimize" ? 1 : 0);
-      assert.doesNotMatch(output, /^# (?:Coding adoption|Layout profiles and first runs|Session retrospective|Session history|Experimental optimization evidence report)$/m);
+      assert.doesNotMatch(output, /^# (?:Coding adoption(?: detail)?|Layout profiles and first runs|Session retrospective|Session history|Experimental optimization evidence report)$/m);
       assert.doesNotMatch(output, /PI_SESSION_FILE|CLAUDE_CODE_PROJECT_DIR_NAME/);
     }
   }

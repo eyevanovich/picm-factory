@@ -14,7 +14,7 @@ For maintain or optimize with previous sessions, load [session history](session-
 
 ## Settings helper
 
-For new, adopt, maintain, and optimize, run `settings` `status` successfully before workspace content inspection, even in an apparently empty folder. Use only the projected result; raw `.picm/config.json` is not discovery input or adoption evidence. If the helper fails or returns an invalid shape, stop discovery and report it.
+The shared contract owns workspace-read preparation. Use this section for Claude's helper invocation.
 
 Node 24 or newer must be available as `node`. Resolve `claude-code/settings.ts` from the plugin root above, not the workspace. The helper accepts an explicit absolute workspace root and one JSON request on stdin:
 
@@ -36,9 +36,9 @@ There is no startup reminder hook in this version. Cadence can be inspected and 
 
 ## Optional named Markdown reads
 
-For a known Markdown path, `node "${CLAUDE_PLUGIN_ROOT}/claude-code/read-document.ts" --root "/absolute/workspace"` accepts `{"path":"docs/guide.md","excludedPaths":["private-notes"]}` on stdin. Use a quoted heredoc as with settings. It combines projected settings, policy checks, and one read (64 KiB), returning JSON on success or sanitized JSON and a nonzero exit on failure. No separate settings call is needed for that invocation. SIGINT/SIGTERM request cancellation and discard the result.
+For named-reader preparation, `node "${CLAUDE_PLUGIN_ROOT}/claude-code/read-document.ts" --root "/absolute/workspace"` accepts `{"path":"docs/guide.md","excludedPaths":["private-notes"]}` on stdin. Use a quoted heredoc as with settings. It combines projected settings, policy checks, and one read (64 KiB), returning JSON on success or sanitized JSON and a nonzero exit on failure. SIGINT/SIGTERM request cancellation and discard the result.
 
-This is optional convenience, not a discovery prerequisite or approval gate. Native Git configuration bootstrap can access unsupported sources before the helper rejects them; other tools and startup loading remain outside its checks. See the [supported subset and trust boundary](../shared/picm-factory/references/named-document-read.md). Ordinary tools remain available when existing eligibility rules can be satisfied.
+See the [supported subset and trust boundary](../shared/picm-factory/references/named-document-read.md) for native Git bootstrap limitations. Reader checks apply only to that invocation.
 
 ## Experimental evidence reports
 
