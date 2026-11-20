@@ -2,9 +2,7 @@
 
 Use these fixtures for manual smoke testing of PiCM layout guidance, `/picm-maintain`, `/picm-adopt`, and `/picm-optimize`.
 
-Interactive command tests should run in a visible Herdr pane. Do not rely on a headless `bash` run for `/picm-maintain`, `/picm-adopt`, or `/picm-optimize` because the flows may ask clarifying questions and require conversational sign-off before edits. Follow [`qa-runner/CONTEXT.md`](../qa-runner/CONTEXT.md) for the current Herdr input procedure.
-
-Dated observations below retain the multiplexer used when they were recorded; use the current Herdr procedure for new QA. The [2026-11-05 cross-host merge QA](merge-release-qa.md) used visible Rex tabs because Herdr wasn't running and retains the observed failures.
+Run interactive command tests in a visible Rex tab so you can observe prompts and give conversational sign-off. Follow [the QA runner guide](../qa-runner/CONTEXT.md) to launch Pi and submit each message. For an example, see the [2026-11-05 cross-host merge QA](merge-release-qa.md).
 
 ## Setup pattern
 
@@ -15,11 +13,10 @@ FIXTURE="test/fixtures/layout-profiles/stage-pipeline/newsletter-production"
 TARGET="$(mktemp -d /tmp/picm-fixture-newsletter-production.XXXXXX)" &&
   cp -R "$FIXTURE/." "$TARGET" &&
   cd "$TARGET" &&
-  pi install -l /path/to/picm-factory &&
-  pi
+  pi install -l /path/to/picm-factory
 ```
 
-Then run the command under test inside Pi:
+Open Pi in Rex with `$TARGET` as its working directory, then submit the command under test:
 
 ```text
 /picm-maintain

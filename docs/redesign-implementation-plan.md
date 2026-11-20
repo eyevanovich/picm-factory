@@ -134,7 +134,7 @@ Retire authority-only tests after retained assertions move: `git-read-gate.test.
 7. Cancel before edits, then request an ordinary task: no lingering lock. Inject a local edit/config conflict or operation failure; completed effects are reported, no automatic rollback, no blind stale overwrite or automatic cadence reset.
 8. Help and documentation/Advisor/local-validation tools work without PiCM blocking; validation permission does not trigger production or publication.
 
-**Evidence:** scenario/target, command, final-direction sign-off, actual changes, checks run, prompts/modals encountered, final result, and defects. Count extra turns qualitatively; do not optimize away meaningful clarification just to meet a turn count. Use visible Herdr QA guidance, synthetic data, and no real deployment/network side effects.
+**Evidence:** scenario/target, command, final-direction sign-off, actual changes, checks run, prompts/modals encountered, final result, and defects. Count extra turns qualitatively; do not optimize away meaningful clarification just to meet a turn count. Follow [the interactive QA guide](../qa-runner/CONTEXT.md). Use synthetic data and avoid real deployment or network side effects.
 
 **Done:** all five commands demonstrated; reported failure scenarios complete through the intended ordinary-tool paths; config/nudges verified; no gate dance or methodological loss; final `npm run check` and package dry-run pass. Manual evidence is separate from unit/package results. Any unresolved task-completion failure blocks declaring the redesign complete.
 
