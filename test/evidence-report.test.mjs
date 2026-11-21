@@ -242,7 +242,7 @@ test("assessment prose is labeled and escaped, not promoted to checked fact", as
   const result = await evidenceReport(root, input);
   assert.equal(result.ok, true);
   assert.match(result.report, /not verified conclusions/);
-  assert.doesNotMatch(result.report, /\n# Verified facts|<script>/);
+  assert.doesNotMatch(result.report, /(?:\n# Verified facts|<script>)/i);
   assert.match(result.report, /Everything is reachable/);
 });
 
