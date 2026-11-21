@@ -84,6 +84,16 @@ test("supporting links retain source-relative meaning, titles, anchors, and reso
   assert.throws(() => rebaseInstructionLinks("[outside](../../../../outside.md)", source, root), /escapes the package/);
 });
 
+test("inline link rebasing leaves an incomplete angled destination alone", () => {
+  const source = "shared/picm-factory/references/example.md";
+  const root = "/installed package";
+  const directory = `${root}/shared/picm-factory/references`;
+  assert.equal(
+    rebaseInstructionLinks('[unfinished](<draft.md) [guide](<guide (draft).md> "Title") [plain](plain.md)', source, root),
+    `[unfinished](<draft.md) [guide](<${directory}/guide (draft).md> "Title") [plain](<${directory}/plain.md>)`,
+  );
+});
+
 test("composition fails closed for unknown modes and sources outside the package", () => {
   for (const mode of ["unknown", "constructor", "toString"]) {
     assert.throws(() => composeModeInstructions({ mode, hostFile: "pi/HOST.md" }), /Unknown PiCM mode/);

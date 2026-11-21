@@ -26,7 +26,7 @@ export function rebaseInstructionLinks(markdown: string, source: string, resourc
 
   // Code examples describe workspace paths, not bundled instruction resources.
   return markdown.split(/(```[\s\S]*?```|~~~[\s\S]*?~~~|`[^`\n]*`)/g).map((part, index) => index % 2 ? part : part
-    .replace(/(\]\()(<[^>\n]+>|[^\s()]+)(?=\s|\))/g, (_match, prefix: string, path: string) => `${prefix}${target(path)}`)
+    .replace(/(\]\()(<[^<>\n]+>|(?!<)[^\s()]+)(?=\s|\))/g, (_match, prefix: string, path: string) => `${prefix}${target(path)}`)
     .replace(/^( {0,3}\[[^\]\n]+\]:\s*)(<[^>\n]+>|\S+)/gm, (_match, prefix: string, path: string) => `${prefix}${target(path)}`))
     .join("");
 }
