@@ -1,9 +1,10 @@
 import assert from "node:assert/strict";
+import { commandPrompt } from "../pi/extensions/runtime/command-dispatch.ts";
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import test from "node:test";
 
-const references = "skills/picm-factory/references";
+const references = "shared/picm-factory/references";
 const fixture = "test/fixtures/layout-profiles/anti-patterns/instruction-redundancy";
 const read = (path) => readFileSync(resolve(path), "utf8");
 
@@ -11,15 +12,14 @@ test("both workflows require the shared redundancy procedure during discovery", 
   for (const name of ["maintenance-rubric", "optimization-guide"]) {
     const guide = read(`${references}/${name}.md`);
     assert.match(guide, /redundancy review/i);
-    assert.match(guide, /load and apply \[redundancy review\]\(redundancy-review\.md\)/i);
+    assert.match(guide, /apply \[redundancy review\]\(redundancy-review\.md\)/i);
     assert.match(guide, /within and across/);
     assert.ok(existsSync(resolve(references, "redundancy-review.md")));
   }
   assert.match(read(`${references}/maintenance-rubric.md`), /required even when optional optimization is declined/);
   assert.match(read(`${references}/optimization-guide.md`), /before opportunities or a no-op conclusion/);
-  const skill = read("skills/picm-factory/SKILL.md");
-  assert.match(skill, /required redundancy review/);
-  assert.match(skill, /required preservation ledger, redundancy review, and writing-lens audit/i);
+  assert.match(commandPrompt("picm-maintain"), /required even when optional optimization is declined/);
+  assert.match(commandPrompt("picm-optimize"), /Preservation ledger and redundancy/);
 });
 
 test("shared review covers applicability, preservation, dispositions, and bounded completion", () => {
@@ -30,10 +30,12 @@ test("shared review covers applicability, preservation, dispositions, and bounde
     "Consolidation candidate", "Partial overlap", "Retain intentionally", "Uncertain or conflicting",
     "independent entry points", "every distinct read condition", "each unique requirement",
     "privacy/generated boundaries", "Focused/trace scope", "State omissions",
-    "each candidate has a disposition", "final-direction/sign-off",
+    "each candidate has a disposition", "[shared contract](../CONTRACT.md)",
   ]) assert.ok(guide.includes(signal), `missing redundancy guidance: ${signal}`);
+  assert.match(read("shared/picm-factory/CONTRACT.md"), /Wait for conversational sign-off/);
   assert.match(guide, /In maintenance[\s\S]*\*\*Suggestion\*\*[\s\S]*\*\*Warning\*\*/);
-  assert.match(guide, /In optimization[\s\S]*existing five-row audit/);
+  assert.match(guide, /In optimization[\s\S]*improvement proposals/);
+  assert.doesNotMatch(guide, /existing five-row audit/);
   assert.match(read(`${references}/coding-maintenance-rubric.md`), /Both depths apply the general rubric's redundancy review/);
 });
 

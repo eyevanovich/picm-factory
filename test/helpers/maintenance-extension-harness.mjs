@@ -2,8 +2,8 @@ import { execFileSync } from "node:child_process";
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import picmFactoryExtension from "../../extensions/picm-factory.ts";
-import { createPolicy } from "../../extensions/runtime/maintenance-policy.ts";
+import picmFactoryExtension from "../../pi/extensions/picm-factory.ts";
+import { createPolicy } from "../../shared/runtime/maintenance-policy.ts";
 
 export function fixture(t, maintenance) {
   const cwd = mkdtempSync(join(tmpdir(), "picm-extension-maintenance-"));
@@ -22,6 +22,8 @@ export function harness(options = {}) {
   const commands = new Map();
   const tools = new Map();
   const sent = [];
+  const instructions = [];
+  const deliveries = [];
   const notifications = [];
   const selections = [];
   const widgets = new Map();
@@ -30,7 +32,8 @@ export function harness(options = {}) {
     registerCommand(name, definition) { commands.set(name, definition); },
     registerTool(definition) { tools.set(definition.name, definition); },
     appendEntry(customType, data) { entries.push({ type: "custom", customType, data }); },
-    sendUserMessage(message) { sent.push(message); },
+    sendMessage(message, options) { instructions.push(message); deliveries.push({ type: "custom", message, options }); },
+    sendUserMessage(message, options) { sent.push(message); deliveries.push({ type: "user", message, options }); },
   };
   picmFactoryExtension(pi);
   const context = (cwd, mode = "tui") => ({
@@ -62,6 +65,8 @@ export function harness(options = {}) {
     settings: tools.get("picm_settings"),
     decision: tools.get("picm_decision"),
     sent,
+    instructions,
+    deliveries,
     notifications,
     selections,
     widgets,

@@ -77,7 +77,7 @@ printf '# Existing context\n' > CONTEXT.md
 
 Expected behavior:
 
-- detects existing architecture from files/folders such as `AGENTS.md`, `CLAUDE.md`, `CONTEXT.md`, `REFERENCES.md`, `identity.md`, `rules.md`, `examples.md`, `workflows/`, `reference/`, numbered stage folders, `stages/`, or `.picm/`
+- detects existing architecture from files/folders such as `AGENTS.md`, `CONTEXT.md`, `REFERENCES.md`, `identity.md`, `rules.md`, `examples.md`, `workflows/`, `reference/`, numbered stage folders, `stages/`, or `.picm/`; legacy-only `CLAUDE.md` triggers an adoption/migration proposal, never an automatic rename
 - recommends `/picm-adopt` and asks the user to choose adoption, an add/replace scaffold direction, or cancellation
 - after a clear add/replace direction, inspects only the needed architecture and drafts a concise final direction
 - waits for conversational sign-off on that final direction before any create, update, or overwrite action
@@ -124,7 +124,7 @@ Expected behavior:
 
 Expected behavior when Stage Pipeline is confirmed:
 
-- follows the Stage Pipeline **Placement decision** in `../skills/picm-factory/references/layout-profiles.md`
+- follows the Stage Pipeline **Placement decision** in `../shared/picm-factory/references/layout-profiles.md`
 - uses the selected placement consistently in the final direction, generated paths, config path hints, and first-run checklist
 - uses local `CONTEXT.md` files for stage-specific context
 - creates local `AGENTS.md` only if a stage needs hard local behavior rules or independent Pi/subagent cwd execution

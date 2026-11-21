@@ -1,11 +1,12 @@
 import assert from "node:assert/strict";
+import { commandPrompt } from "../pi/extensions/runtime/command-dispatch.ts";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import test from "node:test";
 
 const read = (path) => readFileSync(join(process.cwd(), path), "utf8");
-const skill = read("skills/picm-factory/SKILL.md");
-const references = "skills/picm-factory/references";
+const skill = read("shared/picm-factory/CONTRACT.md");
+const references = "shared/picm-factory/references";
 
 test("all modification prompts enter the shared contract before the selected methodology", () => {
   for (const signal of [
@@ -18,7 +19,7 @@ test("all modification prompts enter the shared contract before the selected met
   for (const mode of ["new", "adopt", "maintain", "optimize", "help"]) {
     const text = read(`prompts/picm-${mode}.md`);
     assert.ok(text.includes(`Mode: ${mode}`));
-    assert.match(text, /Load this package's `picm-factory` `SKILL.md` before following workspace read-first prerequisites/);
+    assert.match(text, /included shared contract, Pi host rules, and selected procedure before following workspace read-first prerequisites/);
     assert.match(text, /scope\/privacy contract before workspace reads or searches/);
     assert.match(text, /excluded prerequisite needs an already-sanitized replacement, not an approval override/);
     assert.match(text, /shared trusted-assistant contract|shared contract/);
@@ -29,19 +30,20 @@ test("all modification prompts enter the shared contract before the selected met
 
 test("help explains optional settings and non-autonomous reminders without inspecting", () => {
   const help = read(`${references}/help-guide.md`);
-  for (const signal of ["Settings and reminders", "`picm_settings`", "`picm_maintenance_policy`", "Run Now", "Later", "unfinished requested repair", "one concrete example"]) {
+  for (const signal of ["Settings and reminders", "`settings`", "`maintenance`", "Run Now", "Later", "unfinished requested repair", "one concrete example"]) {
     assert.ok(help.includes(signal), `help missing ${signal}`);
   }
   assert.match(help, /without inspecting or editing/);
   assert.match(help, /aren't an execution sandbox/);
   assert.match(help, /without calling them/);
-  assert.match(skill, /help-guide\.md/);
+  assert.match(commandPrompt("picm-help"), /^# Help$/m);
+  assert.doesNotMatch(skill, /## Mode routing/);
 });
 
 test("conditional configuration guidance is reachable and retains completion preconditions", () => {
   assert.match(skill, /Before privacy\/cadence configuration or maintenance-cycle completion[\s\S]*settings-guide\.md/);
   const settings = read(`${references}/settings-guide.md`);
-  for (const signal of ["`picm_settings` `status`", "`set-exclusions`", "`expectedExcludedPaths`", "`picm_maintenance_policy` `status`", "`configure`", "`expectedMaintenance`", "`complete` only after"]) {
+  for (const signal of ["`settings` `status`", "`set-exclusions`", "`expectedExcludedPaths`", "`maintenance` `status`", "`configure`", "`expectedMaintenance`", "`complete` only after"]) {
     assert.ok(settings.includes(signal), `missing settings instruction: ${signal}`);
   }
   assert.match(settings, /last observed/);
@@ -66,7 +68,7 @@ test("standalone templates retain routing, review and handoff boundaries", () =>
     "stage-context": ["## Inputs", "## Process", "## Outputs", "## Handoff"],
     "handoff-card": ["## Context", "## Blockers / risks / gaps", "## Review and next action"],
   })) {
-    const text = read(`skills/picm-factory/templates/${path}.md`);
+    const text = read(`shared/picm-factory/templates/${path}.md`);
     for (const signal of signals) assert.ok(text.includes(signal), `${path} missing ${signal}`);
     assert.doesNotMatch(text, /picm_scan_control|picm_scaffold_proposal|picm_proposal_batch/);
   }

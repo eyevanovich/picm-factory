@@ -1,0 +1,6 @@
+# Session history
+
+Only when maintain or optimize includes previous sessions, locate local history using available host metadata. Pi exposes `PI_SESSION_FILE` and `PI_SESSION_ID` for the current session; ephemeral sessions may have no file. Its containing directory is a useful starting point, not proof that every file belongs to this workspace. Default history is `~/.pi/agent/sessions/`, grouped by working directory. Storage can be overridden by `--session-dir`, `PI_CODING_AGENT_SESSION_DIR`, or the `sessionDir` setting (CLI takes precedence). Don't dump environment variables or host settings to discover overrides; use available path metadata or ask for the location if unresolved.
+
+Pi JSONL headers contain `type: "session"`, `id`, `timestamp`, `cwd`, and optionally `parentSession`. Verify the workspace using minimal header metadata; use session-file modification times for recent activity ordering and disclose that basis. Exclude the current ID/file for previous-session requests. Entries form a tree through `id`/`parentId`; distinguish branches, compaction summaries, and copied ancestry rather than treating every line as a linear conversation or independent recurrence. Apply the selected procedure's history scope and privacy rules before reads.
+

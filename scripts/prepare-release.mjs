@@ -285,7 +285,7 @@ export function prepareRelease({
   const packageLockPath = resolve(root, "package-lock.json");
   const changelogPath = resolve(root, "CHANGELOG.md");
   const readmePath = resolve(root, "README.md");
-  const skillPath = resolve(root, "skills/picm-factory/SKILL.md");
+  const hostPath = resolve(root, "pi/HOST.md");
   const pkg = JSON.parse(readFileSync(packagePath, "utf8"));
   const packageLock = JSON.parse(readFileSync(packageLockPath, "utf8"));
   const baseTag = latestReleaseTag(root);
@@ -325,7 +325,7 @@ export function prepareRelease({
   const synchronizedPackageLock = synchronizePackageLockVersion(packageLock, version);
   const changelog = readFileSync(changelogPath, "utf8");
   const readme = updatePinnedInstallVersion(readFileSync(readmePath, "utf8"), version);
-  const skill = updatePinnedInstallVersion(readFileSync(skillPath, "utf8"), version);
+  const hostInstructions = updatePinnedInstallVersion(readFileSync(hostPath, "utf8"), version);
   if (changelog.includes(`## [${version}]`)) {
     throw new Error(`CHANGELOG.md already contains version ${version}`);
   }
@@ -336,7 +336,7 @@ export function prepareRelease({
     writeFileSync(packageLockPath, `${JSON.stringify(synchronizedPackageLock, null, 2)}\n`);
     writeFileSync(changelogPath, insertChangelogEntry(changelog, notes));
     writeFileSync(readmePath, readme);
-    writeFileSync(skillPath, skill);
+    writeFileSync(hostPath, hostInstructions);
     if (notesFile) {
       writeFileSync(notesFile, `${notes}\n`);
     }

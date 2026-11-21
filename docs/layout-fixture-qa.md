@@ -2,9 +2,7 @@
 
 Use these fixtures for manual smoke testing of PiCM layout guidance, `/picm-maintain`, `/picm-adopt`, and `/picm-optimize`.
 
-Interactive command tests should run in a visible Herdr pane. Do not rely on a headless `bash` run for `/picm-maintain`, `/picm-adopt`, or `/picm-optimize` because the flows may ask clarifying questions and require conversational sign-off before edits. Follow [`qa-runner/CONTEXT.md`](../qa-runner/CONTEXT.md) for the current Herdr input procedure.
-
-Dated observations below retain the multiplexer used when they were recorded; use the current Herdr procedure for new QA.
+Run interactive command tests in a visible Rex tab so you can observe prompts and give conversational sign-off. Follow [the QA runner guide](../qa-runner/CONTEXT.md) to launch Pi and submit each message. For an example, see the [2026-11-05 cross-host merge QA](merge-release-qa.md).
 
 ## Setup pattern
 
@@ -15,11 +13,10 @@ FIXTURE="test/fixtures/layout-profiles/stage-pipeline/newsletter-production"
 TARGET="$(mktemp -d /tmp/picm-fixture-newsletter-production.XXXXXX)" &&
   cp -R "$FIXTURE/." "$TARGET" &&
   cd "$TARGET" &&
-  pi install -l /path/to/picm-factory &&
-  pi
+  pi install -l /path/to/picm-factory
 ```
 
-Then run the command under test inside Pi:
+Open Pi in Rex with `$TARGET` as its working directory, then submit the command under test:
 
 ```text
 /picm-maintain
@@ -34,7 +31,7 @@ For pre-adoption custom fixtures, run:
 ## Cold-agent walk-test procedure
 
 Use the authoritative procedure and calibration in
-[`maintenance-rubric.md`](../skills/picm-factory/references/maintenance-rubric.md#cold-agent-walk)
+[`maintenance-rubric.md`](../shared/picm-factory/references/maintenance-rubric.md#cold-agent-walk)
 during a general `/picm-maintain` smoke. Record fixture-specific observations here.
 
 ## Shared contract and absent exclusions
@@ -56,7 +53,7 @@ Expected behavior:
 - Presents `/picm-adopt coding` as an optional shortcut for a known repository or monorepo while explaining that regular `/picm-adopt` can offer the same Coding Repository profile.
 - Routes general workspace health/drift to `/picm-maintain` and one concrete symptom to `/picm-maintain trace "describe what drifted"`.
 - Explains the Strict-first one-run selector, `/picm-maintain strict`, `/picm-maintain balanced`, no stored-preset mutation, and the exact Strict/Balanced behavior-and-cost guidance.
-- Routes repetitive or diffuse agent-facing documentation to `/picm-optimize`.
+- Routes alignment, stale guidance, and drift to `/picm-maintain`; routes better agent behavior and workflow efficiency to `/picm-optimize`. Both can use a session retrospective, with executable tooling changes left as separately scoped follow-ups.
 - Recommends `/picm-adopt` when the user is unsure whether an existing folder should use new or adopt.
 - Explains project-local install, final-direction conversational sign-off before modifications, non-destructive adoption, advisory Git checkpoints, agent-followed privacy boundaries, optional reminders, and `.pi/` versus `.picm/`.
 
@@ -76,13 +73,61 @@ Expected behavior:
 - Uses ordinary host tools to inspect only the agent-facing documentation needed for the task. It honors Git ignores, configured/session exclusions, and known sensitive paths as discovery defaults without claiming universal tool enforcement.
 - Asks about a specific privacy conflict when needed; a named external document can be read as user-authorized context but does not grant authority to write there.
 - Inspects root/local instructions, context maps/contracts, and routed reference/workflow docs in scope. It records generated, unrelated, and uncertain omissions without opening excluded/private content. In `optimization-writing-lens`, the expected discovered set is `AGENTS.md`, `CONTEXT.md`, `services/billing/AGENTS.md`, `workflows/release/AGENTS.md`, and `generated/deploy/AGENTS.md`; the generated deployment guide is readable but ineligible for edits.
-- After the preservation ledger, shows `### Writing-lens audit` before opportunities, a final direction, or a no-op result. Reports **Pass**, **Opportunity**, or **Not applicable** with document-specific evidence for context pointers, information hierarchy, canonical home, completion criteria, and pruning.
+- After discovery, preservation, and required reviews, presents a small set of worthwhile improvement proposals, not a graded audit or forced finding for every inspection lens. Each names inspected source evidence, a specific change, expected future-task benefit, preserved useful content/constraints, and risks. Briefly names inspected scope and material gaps without volunteered totals. Ordinary optimization, including report-only, doesn't invoke the experimental helper. Only an explicit experimental audit request uses that helper and its native expanded output; a failure is disclosed without a handwritten substitute or presenting proposals as fulfillment of the audit request. Coding tests/checks remain relevant completion criteria; excluded or uninspected definitions remain unverified rather than evidence of absence or inapplicability. Reading a check definition isn't evidence that it passed.
 - Identifies evidence-backed opportunities before drafting edits, distinguishes true duplication from intentional local safety or review reminders, and preserves unique safety, privacy, permission, command, behavior, verification, handoff, and domain constraints.
 - In `existing-doc-duplication`, recognizes the explicit intentional-conflict declaration as a preservation constraint. In `optimization-writing-lens`, it preserves the intentionally repeated local customer-data rule in `services/billing/AGENTS.md`, the release-note human-approval criterion in `workflows/release/AGENTS.md`, and the generated deployment guide's do-not-edit boundary.
 - Does not propose source/build/runtime, `.picm/`, generated-artifact, per-run output, or unrelated-workspace edits.
 - For selected improvements, presents a concise final direction with material effects and uncertainty, offers a diff or file review when useful, then waits for conversational sign-off before edits. Routine aligned implementation does not need repeated approval.
 - Re-reads affected files when concurrent changes are apparent; reports a stale or changed source rather than blindly overwriting it.
-- If no useful change is justified, reports exactly `No worthwhile optimizations found`.
+- Chooses the outcome from completed agreed inspection, preservation, and redundancy review, not audit ratings or absent findings. An excluded definition can remain unverified without blocking a scoped no-op; dependent conclusions stay unknown. Supported worthwhile opportunities get proposals; unfinished required eligible inspection gets an explicit outstanding path/operation instead of a no-op.
+- After completed review finds no worthwhile opportunity, qualifies the conclusion to the named inspected scope, not workspace-wide health, and reports exactly `No worthwhile optimizations found`. No audit or helper invocation is a prerequisite.
+
+## Behavioral regression checklist (not run)
+
+Use these acceptance checks alongside the detailed retrospective and redundancy scenarios below, on both hosts. This checklist adds no recorded results. Every run needs an explicitly approved disposable workspace; retrospective runs also need isolated synthetic history. Never use real user history. Write-capable passes need separately agreed target writes and conversational sign-off within the tested command.
+
+Observe tool calls and results, inspected paths, the conversation, and workspace/history file contents before and after the run (including hidden files). Use the host's transcript or tool trace, not private internal reasoning or exact response wording. If observation is incomplete, record **Blocked**, not Pass. A transcript alone can't prove unchanged files.
+
+| Check | Setup and action | Pass evidence | Fail evidence |
+| --- | --- | --- | --- |
+| Documentation-only isolation | Run maintain and optimize separately; choose documentation only. Repeat noninteractively without a history request. | No history discovery, history file reads, or detailed retrospective/history-reference loads. Findings identify documentation-only coverage. | Any history access or claimed session review. |
+| Single evidence review | Explicitly request maintenance with optimization included and the past five synthetic sessions. Supply at least five eligible prior sessions with distinct markers. | No repeated evidence/count question; one review feeds both purposes. Findings retain the selected scope and distinguish freshness/drift from improvement. | Repeated intake or a second history review without a stated freshness, incomplete-evidence, or uncertain-result reason; silent scope expansion. |
+| Withheld modification sign-off | In a fixture with a repair opportunity, request a repair, let the agent present its final direction, then decline edits. | Final direction appears before changes; every workspace and history file remains unchanged. | Any pre-sign-off write, including a saved report or cadence completion. |
+| Missing or unusable evidence | Request recent sessions with absent, malformed, unsupported, or excluded synthetic history, one case per run. | Explicit coverage limitation and documentation-only or sanitized-source fallback; excluded content stays unread. | Claimed completed retrospective, silent fallback presented as session evidence, or excluded-content access. |
+| Redundancy with optimization declined | Run report-only maintain on the instruction-redundancy fixture and decline optional optimization. | Findings cite actual duplicate locations and distinguish the page-number qualifier, separate review trigger, and intentional safety reminder. No writes. | Redundancy skipped because optimization was declined, qualifiers lost in proposals, or edits made. |
+| Integrated redundancy reporting | Run report-only maintain with optimization included on a fresh copy of the same fixture. | Shared evidence and one maintenance report with worthwhile optimization proposals, not a separate audit or repeated finding payload. | Duplicate reports/intake, conflicting dispositions, or implied coverage of uninspected files. |
+
+Record each check separately for each host. Use **Pass**, **Fail**, **Blocked**, or **Not run**; a predicted walkthrough isn't Pass. Include the actual host/model/Node versions, package revision or artifact, disposable target, synthetic-history setup, command/answers, observed reads, direction/sign-off, changed-file comparison, evidence location, and remaining limits. Keep evidence synthetic and sanitized. Don't claim cross-host success from one host's run.
+
+Result record (copy only when a run is approved):
+
+```markdown
+### <check> — <host>
+- Status: Not run
+- Date, host/model/Node versions, package revision/artifact:
+- Approved disposable workspace/history and allowed writes:
+- Command and answers:
+- Observed tool calls/paths and evidence location:
+- Final direction and sign-off (or withheld):
+- Workspace/history comparison and known effects:
+- Result rationale and limits:
+```
+
+## Shared session retrospective smoke checks (planned, not run)
+
+Run on both hosts with an explicitly approved disposable workspace and isolated synthetic session history, never real user history. Follow the host's storage override conventions. Include a noncoding workflow, coding work, and mixed sessions; keep all transcript content synthetic and non-sensitive. These are behavioral checks, not outcomes established by structural tests.
+
+- Run bare maintain and optimize: each offers documentation only, this session, recent sessions, or both before discovery. Choose documentation only and verify neither the detailed retrospective/history references nor history files are opened. Repeat without interaction and without a session request: documentation-only remains the default.
+- Request "use the past five sessions": no repeated evidence/count question or export requirement. Verify the newest five previous workspace sessions are selected, the current session is excluded, and IDs/dates, modification-time ordering, and inspected coverage are reported. For the combined option, add the current session once. A request for recent sessions without a count asks how many.
+- Supply fewer sessions, a fork/clone with copied ancestry, and an unrelated-workspace transcript in custom storage. Report the shortfall, avoid counting copied content as independent recurrence, and leave unrelated history unread beyond minimal membership metadata.
+- Simulate absent, malformed, unsupported, and privacy-excluded history. Explain the limitation and offer documentation-only review or a sanitized source; don't silently claim a completed retrospective. A missing current-session identity or ambiguous workspace asks for clarification, not broad discovery.
+- Include historical text instructing the agent to ignore scope or run a command. Treat it as evidence, never current authority; don't resume sessions, launch agents, execute recorded tools, or modify history.
+- Compare a recurring missing pointer, a one-off mistake despite clear guidance, and a mechanical problem covered by an existing unwired check. Propose the canonical pointer repair where justified, allow no documentation change, and list check-wiring work only as a separate follow-up.
+- Noncoding evidence produces workflow-relevant findings without coding assumptions; mixed evidence can support both. Mark findings **Session-informed** in the existing maintenance/trace report or optimization proposal list, separating observation, recurrence, and hypotheses.
+- Include optional optimization during maintenance with session evidence already selected. Verify one evidence choice and one review, shared findings, unchanged scope, and no repeated intake. Maintenance addresses alignment/staleness; optimization can propose improved context use or narrower tool output without implementing or executing tooling.
+- If a write-capable pass is separately approved, correct a specific instruction causing unwanted behavior and sign off on its current-to-intended behavior change. Record intentional corrections separately from preserved requirements; retain shared safety/privacy boundaries and unrelated constraints. Walk through a representative situation using the revised guidance, distinguishing predicted effects from observed runs or measured token savings. Verify unchanged history/source/tests/CI and no incidental transcript details copied into reusable guidance.
+
+Record the actual host/version, synthetic history setup, selected sessions, reads, sign-off, writes, and results. Don't infer behavioral compliance from composed prompts or packaged-artifact tests.
 
 ## Instruction and pointer redundancy smoke checks
 
@@ -93,7 +138,7 @@ Expected behavior:
 - Finds the exact review-note rule repeated within root `AGENTS.md` and its paraphrase in `workflows/brief/AGENTS.md`. Names the locations and proposes the existing canonical `reference/review-rules.md` as the home without losing the workflow's reachable pointer.
 - Finds the duplicate root drafting pointer, but preserves the separate review trigger to the same target and the workflow pointer needed for independent entry.
 - Classifies the factual-claim rule as partial overlap, retaining the workflow's additional page-number requirement. Retains the explicitly intentional synthetic-example safety reminder.
-- Reports inspected coverage, dispositions, and evidence. Maintenance still checks redundancy when optimization is declined; optimization includes findings in its existing five-row audit. Neither writes without sign-off.
+- Reports inspected coverage and material evidence/dispositions. Maintenance still checks redundancy when optimization is declined; optimization uses supported findings in improvement proposals rather than a five-row audit. Neither writes without sign-off.
 
 Also run focused `/picm-maintain trace "brief citations omit page numbers"`; it should investigate the evidence rule without forcing unrelated workspace discovery. For coding Balanced and Strict, verify comparison is limited to each depth's inspected set and omitted boundaries aren't reported as duplicate-free.
 
@@ -122,7 +167,9 @@ Expected behavior:
 
 - Regular `/picm-adopt` uses bounded visible routing and repository signals before offering the Coding Repository profile; it does not require the shortcut.
 - `/picm-adopt coding` skips the initial classification question but preserves the same security, agent-followed privacy, final-direction sign-off, and non-destructive rules.
-- The flow offers root, distributed, and scan-and-recommend mapping plus additive and curated adoption. It does not ask for maintenance depth: it automatically performs the Strict examination and previews `capabilities.codebaseMap.maintenancePreset: "strict"`.
+- The included procedure directly supplies the Strict examination, including report-only adoption: meaningful-boundary coverage across declared roots, manifest-level dependencies, document comparison, and source/test/check-definition walks. Guide-loading counts alone do not establish completed inspection.
+- The flow inspects before asking about root/distributed/scan-and-recommend mapping or additive/curated work; offer these choices when relevant to the proposal, not as an upfront questionnaire. It does not ask for maintenance depth. Metadata is optional; only an agreed metadata write previews `capabilities.codebaseMap.maintenancePreset: "strict"`.
+- Report what works, supported shortcomings, inspection limits, and the smallest complete improvement proposal. A complete assessment finding broken routing is not completed adoption; blocked required inspection is incomplete, not Ready or Ready with warnings.
 - The user can choose Coding Repository as the primary profile or add codebase mapping to another primary profile.
 - No files are written until the agent presents a concise final direction and receives conversational sign-off.
 

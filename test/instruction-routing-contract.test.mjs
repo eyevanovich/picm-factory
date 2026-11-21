@@ -2,11 +2,12 @@ import assert from "node:assert/strict";
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { dirname, join, relative, resolve } from "node:path";
 import test from "node:test";
-import { commandPrompt } from "../extensions/runtime/command-dispatch.ts";
+import { commandPrompt } from "../pi/extensions/runtime/command-dispatch.ts";
 
-const base = resolve("skills/picm-factory");
+const base = resolve("shared/picm-factory");
 const read = (path) => readFileSync(join(base, path), "utf8");
-const linkedPaths = (path) => [...read(path).matchAll(/\]\(([^)]+\.md)\)/g)]
+const linkedPaths = (path) => [...read(path).matchAll(/\]\(([^)#]+\.md)(?:#[^)]*)?\)/g)]
+  .filter(([, target]) => !/^https?:\/\//i.test(target))
   .map(([, target]) => relative(base, resolve(base, dirname(path), target)));
 
 // This requirement matrix is independent of the prose layout and wording tests.
@@ -18,29 +19,26 @@ const routes = {
   help: "references/help-guide.md",
 };
 
-test("every registered command routes through shared privacy and alignment before its guide", () => {
-  const skill = read("SKILL.md");
-  const contract = skill.indexOf("## Shared trusted-assistant contract");
-  const routing = skill.indexOf("## Mode routing");
-  assert.ok(contract >= 0 && routing > contract);
-  assert.ok(skill.indexOf("Before content reads or searches") < routing);
-  assert.ok(skill.indexOf("Wait for conversational sign-off") < routing);
-  assert.match(skill, /\*\*adopt\*\*:[^\n]*`coding` or selected hybrid mapping[^\n]*coding-adoption-guide\.md/);
+test("every command includes shared privacy and alignment before its selected procedure", () => {
+  assert.doesNotMatch(read("CONTRACT.md"), /## Mode routing/);
   for (const [mode, guide] of Object.entries(routes)) {
-    assert.match(commandPrompt(`picm-${mode}`), /shared trusted-assistant contract/);
-    assert.ok(commandPrompt(`picm-${mode}`).includes(`Mode: ${mode}`));
-    assert.ok(linkedPaths("SKILL.md").includes(guide), `${mode} guide not reachable`);
-    assert.ok(linkedPaths(guide).includes("SKILL.md"), `${mode} guide lacks its shared prerequisite`);
-    assert.match(skill, new RegExp(`\\*\\*${mode}\\*\\*:[^\\n]*${guide.replaceAll(".", "\\.")}`));
+    const prompt = commandPrompt(`picm-${mode}`);
+    const procedure = prompt.indexOf(read(guide).split("\n")[0]);
+    assert.ok(prompt.includes(`Mode: ${mode}`));
+    assert.ok(prompt.indexOf("Before content reads or searches") < procedure);
+    assert.ok(prompt.indexOf("Wait for conversational sign-off") < procedure);
+    assert.ok(prompt.indexOf("# Pi host adapter") < procedure);
+    assert.ok(linkedPaths(guide).includes("CONTRACT.md"), `${mode} guide lacks its shared prerequisite`);
   }
+  assert.match(read("references/adoption-guide.md"), /^## Coding onboarding$/m);
 });
 
 test("shared-contract routing avoids lossy tabular compression", () => {
-  assert.doesNotMatch(read("SKILL.md"), /^\|.*\|$/m, "Headroom table extraction can discard the surrounding shared contract");
+  assert.doesNotMatch(read("CONTRACT.md"), /^\|.*\|$/m, "Headroom table extraction can discard the surrounding shared contract");
 });
 
 test("scope and completion criteria cover the observed QA gaps", () => {
-  const skill = read("SKILL.md");
+  const skill = read("CONTRACT.md");
   assert.match(skill, /Keep discovery inside that scope/);
   assert.match(skill, /exact ancestor\/global ignore-policy locations/);
   assert.match(skill, /If policy can't be resolved safely, ask/);
@@ -51,15 +49,15 @@ test("scope and completion criteria cover the observed QA gaps", () => {
   assert.match(read("references/specialist-guide.md"), /Complete only when the checklist identifies those actual routes/);
 });
 
-test("all shipped instruction links resolve inside the packaged skill", () => {
-  const files = ["SKILL.md", ...["references", "templates"].flatMap((directory) =>
+test("all local shipped instruction links resolve inside the packaged skill", () => {
+  const files = ["CONTRACT.md", ...["references", "templates"].flatMap((directory) =>
     readdirSync(join(base, directory)).filter((name) => name.endsWith(".md")).map((name) => `${directory}/${name}`))];
   const pkg = JSON.parse(readFileSync(resolve("package.json"), "utf8"));
   for (const file of files) {
     for (const target of linkedPaths(file)) {
       assert.ok(!target.startsWith(".."), `${file} escapes package: ${target}`);
       assert.ok(existsSync(join(base, target)), `${file} has broken pointer: ${target}`);
-      const packagePath = `skills/picm-factory/${target}`;
+      const packagePath = `shared/picm-factory/${target}`;
       assert.ok(pkg.files.some((entry) => packagePath === entry || packagePath.startsWith(`${entry}/`)), `${target} not publishable`);
     }
   }
@@ -68,17 +66,23 @@ test("all shipped instruction links resolve inside the packaged skill", () => {
 test("required downstream references remain reachable for every affected branch", () => {
   for (const [source, targets] of [
     ["references/interview-guide.md", ["references/layout-profiles.md", "references/settings-guide.md", "templates/root-agents.md", "templates/stage-context.md"]],
-    ["references/layout-profiles.md", ["references/specialist-guide.md", "references/coding-adoption-guide.md"]],
+    ["references/layout-profiles.md", ["references/specialist-guide.md", "references/adoption-guide.md", "references/coding-adoption-guide.md"]],
     ["references/adoption-guide.md", ["references/coding-adoption-guide.md", "references/settings-guide.md"]],
-    ["references/coding-adoption-guide.md", ["references/coding-maintenance-rubric.md", "references/layout-profiles.md"]],
-    ["references/coding-maintenance-rubric.md", ["references/maintenance-rubric.md", "references/redundancy-review.md"]],
-    ["references/maintenance-rubric.md", ["references/coding-maintenance-rubric.md", "references/redundancy-review.md", "references/optimization-guide.md", "references/settings-guide.md"]],
-    ["references/optimization-guide.md", ["references/redundancy-review.md", "references/settings-guide.md"]],
+    ["references/coding-adoption-guide.md", ["references/adoption-guide.md", "references/settings-guide.md", "templates/context-map.md", "templates/code-boundary-context.md"]],
+    ["references/coding-maintenance-rubric.md", ["references/adoption-guide.md", "references/maintenance-rubric.md", "references/redundancy-review.md"]],
+    ["references/maintenance-rubric.md", ["references/coding-maintenance-rubric.md", "references/redundancy-review.md", "references/optimization-guide.md", "references/session-retrospective.md", "references/settings-guide.md"]],
+    ["references/optimization-guide.md", ["references/redundancy-review.md", "references/session-retrospective.md", "references/settings-guide.md"]],
   ]) {
     for (const target of targets) assert.ok(linkedPaths(source).includes(target), `${source} cannot reach ${target}`);
   }
   assert.match(read("references/maintenance-rubric.md"), /required even when optional optimization is declined/);
-  assert.match(read("references/coding-adoption-guide.md"), /performs its \*\*Strict\*\* examination/);
+  for (const source of ["coding-adoption-guide", "coding-maintenance-rubric", "layout-profiles"]) {
+    assert.match(read(`references/${source}.md`), /adoption-guide\.md#coding-onboarding/);
+  }
+  const adoption = read("references/adoption-guide.md");
+  const procedure = adoption.split("## Coding onboarding")[1].split("## Instruction-file migration")[0];
+  assert.doesNotMatch(procedure, /\]\([^)]*\.md/);
+  assert.ok(adoption.includes("## Instruction-file migration"));
   assert.match(read("references/layout-profiles.md"), /For a specialist recipe or its first-run checklist, load/);
   assert.match(read("references/optimization-guide.md"), /settings-guide\.md.*before completion/);
 });
@@ -116,7 +120,8 @@ test("coding depths preserve independent coverage and legacy metadata boundaries
   assert.match(coding, /Preserve `capabilities.codebaseMap.maintenancePreset`/);
   assert.match(coding, /legacy `light`, `balanced`, and `strict` values don't select later depth/);
   assert.match(coding, /No watchers, scheduled scans, automatic commits, or rewrites/);
-  assert.match(coding, /During adoption, use those definitions plus the checks here; no separate broad workflow audit or optimization interview is required/);
+  assert.match(coding, /this rubric adds no adoption prerequisite/);
+  assert.match(read("references/adoption-guide.md"), /no separate maintenance pass, optimization interview, or supporting-guide load is required/);
 });
 
 test("template authoring is separated from standalone runtime boundaries", () => {

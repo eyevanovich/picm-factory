@@ -6,9 +6,9 @@ Thanks for helping improve PiCM Factory. Contributions of bug reports, documenta
 
 For bugs and feature proposals, open a [GitHub Issue](https://github.com/eyevanovich/picm-factory/issues) before investing in a large change. Describe the user-facing problem, the expected behavior, and any safety implications. Please do not include credentials, private/client material, or sensitive source data.
 
-For behavior changes, read `AGENTS.md` and `skills/picm-factory/SKILL.md`. The project follows a few important boundaries:
+For behavior changes, read `AGENTS.md` and `shared/picm-factory/CONTRACT.md`. The project follows a few important boundaries:
 
-- Keep the extension thin; runtime methodology belongs in the skill's references and templates.
+- Keep the extension thin; shared behavior belongs in the common contract, mode procedures, and templates.
 - Preserve final-direction conversational sign-off for modifications, non-destructive adoption, project-local installation, and security-first context handling. Git checkpoints are advice, not a gate; privacy exclusions are agent-followed boundaries, not a sandbox claim.
 - Treat layout profiles as recommendations rather than rigid schemas.
 - Keep fixtures and QA tooling repository-only; they must not be included in the npm package.
@@ -24,13 +24,21 @@ npm ci
 npm run check
 ```
 
-Use Node 24 for development. The project is tested with Node 24.19.0 and npm 11.17.0.
+Use Node 24 for development. The project is tested with Node 24.19.0 and npm 11.17.0. Artifact checks also use Git, tar, zip, and unzip; the release workflow runs on Ubuntu.
 
-The extension and runtime modules use TypeScript. `npm run check` includes strict type checking; run `npm run typecheck` for that check alone. Keep syntax compatible with Node’s type stripping: use explicit `.ts` imports and avoid enums and parameter properties. Pi loads the packaged TypeScript through its extension loader; no build output is published.
+The extension and runtime modules use TypeScript. `npm run check` includes strict type checking; run `npm run typecheck` for that check alone. Keep syntax compatible with Node’s type stripping: use explicit `.ts` imports and avoid enums and parameter properties. Pi loads the packaged TypeScript through its extension loader. Claude's Node 24 helper uses native type stripping. Shared code must use Node built-ins and local imports, not Pi APIs.
 
 Tests, release scripts, and sample repository fixtures remain JavaScript.
 
 Create a focused branch and keep unrelated changes separate.
+
+## Host integrations and bundles
+
+`pi/` and `claude-code/` own host-specific entry points. `shared/` owns the behavior contract, references, templates, and portable settings runtime. The root npm package remains Pi's installation entry point.
+
+`shared/compose-instructions.ts` combines the common contract, host instructions, and selected primary procedure in that order. Optimization appends the canonical required redundancy review. Adoption includes its coding onboarding examination directly in the primary procedure; coding detail is optional. Other supporting references and templates stay on demand. Pi sends the composed text directly from its slash dispatcher; it needs no skill router or build step.
+
+Run `npm run build:claude` to generate `dist/claude-code/` with the same sections embedded in each command's `SKILL.md`. This self-contained directory is the plugin root; the source adapter alone lacks shared resources. Edit canonical sources only. Entry skill sources hold only Claude frontmatter and request placement; edit the common contract or mode procedure to change behavior. Relative supporting links are rebased for installed resources. The bundle version comes from `package.json`, so there is no second release version to synchronize. Tests extract the release-format zip outside the source checkout and exercise its helper.
 
 ## Making changes
 
@@ -48,7 +56,15 @@ npm run check
 
 Interactive `/picm-*` QA is manual because commands may ask questions and modification commands require conversational sign-off on a final direction. Follow `qa-runner/CONTEXT.md` and `docs/layout-fixture-qa.md`, use an explicitly approved disposable project, and report the sign-off, writes, and validation.
 
-Avoid brittle assertions against exact model wording. Prefer structural checks and documented interactive observations.
+Avoid brittle assertions against exact model wording. Prefer structural checks and documented interactive observations. Use the [behavioral regression checklist](docs/layout-fixture-qa.md#behavioral-regression-checklist-not-run) to record observable results; adding a checklist or passing artifact tests isn't an observed agent run.
+
+### Instruction-size report
+
+Run `npm run report:instructions` with Node 24. It rebuilds the ignored `dist/claude-code/` bundle using the existing builder, then prints lines, whitespace-separated words, and UTF-8 bytes for each host/mode. Compare output before and after instruction edits; there's no enforced size cap.
+
+Pi rows measure the actual empty-argument dispatched prompt, including default Strict depth for maintenance. Claude rows measure the complete generated `SKILL.md`, including frontmatter and the request placeholder. These are different payload boundaries, not a model-to-model cost comparison. Pi's rebased links include the installation path, so compare from the same checkout path. Deferred supporting references, user-supplied arguments, and the rest of the conversation aren't counted. Empty text has zero lines; a final newline terminates a line without adding another. Counts aren't token estimates or evidence of savings.
+
+Extracted-bundle tests check skill names against their directories, nonempty plain single-line descriptions, and explicit-only invocation. Keep source frontmatter in that restricted format; a general YAML parser isn't part of these checks.
 
 ## Pull requests
 

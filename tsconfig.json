@@ -13,6 +13,8 @@
     ]
   },
   "include": [
-    "extensions/**/*.ts"
+    "pi/**/*.ts",
+    "claude-code/**/*.ts",
+    "shared/**/*.ts"
   ]
 }

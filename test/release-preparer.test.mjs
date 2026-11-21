@@ -36,9 +36,9 @@ function writePinnedDocs(root, version) {
       "",
     ].join("\n"),
   );
-  mkdirSync(join(root, "skills/picm-factory"), { recursive: true });
+  mkdirSync(join(root, "pi"), { recursive: true });
   writeFileSync(
-    join(root, "skills/picm-factory/SKILL.md"),
+    join(root, "pi/HOST.md"),
     `Install with pi install -l npm:@eyevanovich/picm-factory@${version}\n`,
   );
 }
@@ -77,7 +77,7 @@ function createTaggedReleaseFixture(root, lock = packageLock("0.1.2")) {
   writeFileSync(join(root, "CHANGELOG.md"), files["CHANGELOG.md"]);
   writePinnedDocs(root, "0.1.2");
   writePackageLock(root, lock);
-  for (const path of ["package-lock.json", "README.md", "skills/picm-factory/SKILL.md"]) {
+  for (const path of ["package-lock.json", "README.md", "pi/HOST.md"]) {
     files[path] = readFileSync(join(root, path), "utf8");
   }
 
@@ -91,7 +91,7 @@ function createTaggedReleaseFixture(root, lock = packageLock("0.1.2")) {
     "package-lock.json",
     "CHANGELOG.md",
     "README.md",
-    "skills/picm-factory/SKILL.md",
+    "pi/HOST.md",
   );
   git(root, "commit", "-qm", "chore: bootstrap");
   git(root, "tag", "--no-sign", "v0.1.2");
@@ -370,7 +370,7 @@ test("prepares package, changelog, and release notes from commits after the late
       /pi install npm:@eyevanovich\/picm-factory@0\.2\.0/,
     );
     assert.match(
-      readFileSync(join(root, "skills/picm-factory/SKILL.md"), "utf8"),
+      readFileSync(join(root, "pi/HOST.md"), "utf8"),
       /picm-factory@0\.2\.0/,
     );
     assert.match(readFileSync(notesFile, "utf8"), /Add fixture feature\./);
@@ -426,7 +426,7 @@ test("release workflows install from the committed lockfile before validation", 
   const release = readFileSync(".github/workflows/release.yml", "utf8");
   const publish = readFileSync(".github/workflows/publish.yml", "utf8");
   const releaseCommit =
-    "git add package.json package-lock.json CHANGELOG.md README.md skills/picm-factory/SKILL.md";
+    "git add package.json package-lock.json CHANGELOG.md README.md pi/HOST.md";
 
   assert.ok(release.indexOf(install) >= 0);
   assert.ok(release.indexOf(install) < release.indexOf("npm run check"));

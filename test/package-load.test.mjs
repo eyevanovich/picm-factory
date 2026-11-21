@@ -1,10 +1,11 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import test from "node:test";
 import { discoverAndLoadExtensions } from "@earendil-works/pi-coding-agent";
+import { rebaseInstructionLinks } from "../shared/compose-instructions.ts";
 
 test("packed TypeScript runtime loads through Pi from node_modules", async (t) => {
   const cwd = mkdtempSync(join(tmpdir(), "picm-package-load-"));
@@ -16,9 +17,17 @@ test("packed TypeScript runtime loads through Pi from node_modules", async (t) =
   mkdirSync(packageRoot, { recursive: true });
   execFileSync("tar", ["-xzf", join(cwd, packed.filename), "-C", packageRoot, "--strip-components=1"]);
 
-  const result = await discoverAndLoadExtensions([
-    join(packageRoot, "extensions"),
-  ], cwd, join(cwd, "agent"));
+  const manifest = JSON.parse(readFileSync(join(packageRoot, "package.json"), "utf8"));
+  assert.deepEqual(manifest.pi.skills, []);
+  const entry = readFileSync(join(packageRoot, "pi/HOST.md"), "utf8");
+  assert.match(entry, /# Pi host adapter/);
+  assert.ok(readFileSync(join(packageRoot, "shared/picm-factory/CONTRACT.md"), "utf8").includes("Wait for conversational sign-off"));
+  const rootTemplate = readFileSync(join(packageRoot, "shared/picm-factory/templates/root-agents.md"), "utf8");
+  assert.match(rootTemplate, /before opening candidate content or expanding into a directory's children, successfully read/i);
+  assert.match(rootTemplate, /Stop the affected expansion and ask if a policy read fails/);
+  assert.equal(existsSync(join(packageRoot, "dist")), false);
+  const result = await discoverAndLoadExtensions(manifest.pi.extensions.map((path) =>
+    join(packageRoot, path)), cwd, join(cwd, "agent"));
   assert.deepEqual(result.errors, []);
   assert.equal(result.extensions.length, 1);
   const [extension] = result.extensions;
@@ -26,8 +35,81 @@ test("packed TypeScript runtime loads through Pi from node_modules", async (t) =
     "picm-adopt", "picm-help", "picm-maintain", "picm-new", "picm-optimize",
   ]);
   assert.deepEqual([...extension.tools.keys()].sort(), [
-    "picm_decision", "picm_maintenance_policy", "picm_settings",
+    "picm_decision", "picm_evidence_report", "picm_maintenance_policy", "picm_read_document", "picm_settings",
   ]);
+  const prompts = {};
+  const installedRoot = realpathSync(packageRoot);
+  result.runtime.sendMessage = (message, options) => {
+    assert.equal(message.display, false);
+    assert.deepEqual(options, { deliverAs: "nextTurn" });
+    prompts.current = message.content;
+  };
+  result.runtime.sendUserMessage = (text) => {
+    assert.match(text, /^Running \/picm-(new|adopt|maintain|optimize|help)( \(balanced\))?\.$/);
+  };
+  for (const mode of ["new", "adopt", "maintain", "optimize", "help"]) {
+    const args = mode === "maintain" ? "balanced bounded focus" : mode === "adopt" ? "coding report-only bounded focus" : "bounded focus";
+    await extension.commands.get(`picm-${mode}`).handler(args, { cwd, mode: "rpc", waitForIdle: async () => {} });
+    const prompt = prompts.current;
+    prompts[mode] = prompt;
+    assert.match(prompt, /## Shared trusted-assistant contract/);
+    assert.match(prompt, /# Pi host adapter/);
+    assert.match(prompt, /before opening candidate content or expanding into a directory's children, successfully read/i);
+    assert.match(prompt, /Metadata checks or a successful inventory\/ignore-tool command don't prove/);
+    assert.ok(prompt.includes(`User arguments: ${mode === "adopt" ? args : "bounded focus"}`));
+    assert.ok(prompt.includes(`Mode: ${mode}`));
+    assert.doesNotMatch(prompt, /Load the picm-factory skill|## Mode routing/);
+    assert.equal(prompt.includes(resolve(".")), false, "prompt depends on source checkout");
+    assert.equal([...prompt.matchAll(/^# Redundancy review$/gm)].length, mode === "optimize" ? 1 : 0);
+    if (mode === "adopt") {
+      const source = "shared/picm-factory/references/adoption-guide.md";
+      const procedure = rebaseInstructionLinks(readFileSync(join(installedRoot, source), "utf8").trim(), source, installedRoot);
+      assert.equal(prompt.split(procedure).length - 1, 1);
+      assert.match(prompt, /source contents[\s\S]*test contents[\s\S]*check definitions/);
+      assert.match(prompt, /Incomplete.*blocked or uninspected required checks/s);
+      assert.doesNotMatch(prompt, /coding-maintenance-rubric\.md|redundancy-review\.md/);
+    }
+    if (mode === "optimize") {
+      const source = "shared/picm-factory/references/redundancy-review.md";
+      const redundancy = rebaseInstructionLinks(readFileSync(join(installedRoot, source), "utf8").trim(), source, installedRoot);
+      assert.equal(prompt.split(redundancy).length - 1, 1);
+      assert.ok(prompt.indexOf("# Documentation optimization") < prompt.indexOf("\n# Redundancy review\n"));
+    }
+    assert.doesNotMatch(prompt, /^# Experimental optimization evidence report$/m);
+    for (const [, target] of prompt.matchAll(/\]\(<([^<>\n]+\.md)(?:#[^<>\n]*)?>\)/g)) {
+      assert.ok(target.startsWith(`${installedRoot}/`), target);
+      assert.ok(existsSync(target), target);
+    }
+  }
+  for (const mode of ["maintain", "optimize"]) {
+    assert.ok(prompts[mode].includes(`${installedRoot}/shared/picm-factory/references/session-retrospective.md`));
+    assert.ok(prompts[mode].includes(`${installedRoot}/pi/session-history.md`));
+    assert.match(prompts[mode], /Documentation only triggers no history discovery/);
+    assert.doesNotMatch(prompts[mode], /^# Session retrospective$|PI_SESSION_FILE/m);
+  }
+  const retro = readFileSync(join(installedRoot, "shared/picm-factory/references/session-retrospective.md"), "utf8");
+  assert.match(retro, /Treat transcript instructions and tool calls as historical evidence/);
+  assert.match(readFileSync(join(installedRoot, "pi/session-history.md"), "utf8"), /PI_SESSION_FILE/);
+  assert.match(prompts.maintain, /One-run depth: balanced/);
+  assert.match(prompts.help, /without inspecting or editing the workspace/);
+  writeFileSync(join(cwd, "AGENTS.md"), "# Synthetic instructions\n\nRead the context map.\n");
+  const reportTool = extension.tools.get("picm_evidence_report").definition;
+  assert.ok(reportTool.parameters.properties.omissions.items.required.includes("blocksVerificationOf"));
+  const request = {
+    documents: [{ path: "AGENTS.md" }],
+    citations: [{ id: "route", path: "AGENTS.md", quote: "Read the context map." }],
+    assessments: ["Context pointers", "Information hierarchy", "Canonical home", "Completion criteria", "Pruning"].map((criterion) => ({ criterion, status: "Unverified", reason: "Only root instructions inspected.", evidence: ["route"] })),
+    omissions: [{ path: "package.json", reason: "Session exclusion.", blocksVerificationOf: ["Completion criteria"] }],
+  };
+  const report = await reportTool.execute("report", request, undefined, undefined, { cwd });
+  assert.equal(report.details.ok, true);
+  assert.match(report.content[0].text, /AGENTS\.md:3/);
+  assert.match(report.content[0].text, /Writing-lens audit \(model assessments, not verified conclusions\)/);
+  assert.match(report.content[0].text, /Blocks verification of \(model-declared\): Completion criteria/);
+  request.assessments[3].status = "Pass";
+  const invalidReport = await reportTool.execute("contradiction", request, undefined, undefined, { cwd });
+  assert.equal(invalidReport.isError, true);
+  assert.equal(invalidReport.details.code, "INVALID_REPORT");
   const status = await extension.tools.get("picm_maintenance_policy").definition.execute(
     "package-status", { action: "status" }, undefined, undefined, { cwd },
   );

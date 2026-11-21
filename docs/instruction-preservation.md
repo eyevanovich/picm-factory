@@ -22,7 +22,7 @@ Baseline: commit `700879b` (`fix: add redundancy checks`). This map was recorded
 | Profile recommendations, hybrid coding, meaningful local boundaries rather than per-folder context | Skill, profiles, coding guides | Profiles and coding adoption |
 | Path-specific first-run artifact/review/handoff; preserve gaps and durable-vs-one-off lessons | Interview, profiles, coding guide | Profile first-run sections; conditional specialist guide |
 | Specialist JSON receipt, unique inputs and availability, reviewed artifact equals next source; existing recipe edits agreed | Profiles | Specialist guide reached by the Specialist Folder profile |
-| Adequate/partial/placeholder/conflicting routing; preserve canonical AGENTS/CLAUDE and optional shim | Adopt mode/guide | Adoption guide |
+| Adequate/partial/placeholder/conflicting routing; canonical AGENTS, proposed legacy migration, no shim | Adopt mode/guide | Adoption guide |
 | Ready/Ready with warnings/Needs routing/Scanned only; adequate visible routing before adopted metadata | Adopt mode/guide | Adoption guide and coding readiness |
 | Optional inventory/report/metadata; minimal compatibility/stronger routing/scanned-only and optional initial maintenance | Adoption guide | Adoption guide |
 | Coding shortcut skips classification only; root/distributed/recommend, additive/curated, initial Strict baseline | Adoption guides | Coding adoption guide with mandatory coding rubric |
