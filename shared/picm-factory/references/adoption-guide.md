@@ -12,7 +12,7 @@ Use one default inspection path, not an upfront profile/map/depth questionnaire.
 
 ### 1. Prepare eligible inspection
 
-Apply the included contract's workspace-read preparation before repository prerequisites. For ordinary tools, obtain successful projected settings status and read applicable ignore policy before opening candidate content or expanding directory children. Keep inspection bounded to eligible paths; unresolved policy or access blocks the affected inspection, not the exclusions. Settings failure stops workspace discovery under the contract's bounded failure response. The optional named reader prepares only its individual read. Skip unrelated/generated/dependency trees and history; don't follow unclear links or nested repositories unless explicitly scoped and eligible.
+Apply the included contract's workspace-read preparation before repository prerequisites. For ordinary tools, obtain successful projected settings status before discovery. Follow the contract's rule for names-only root orientation. Read applicable ignore policy before opening candidate content or expanding a subdirectory to list its children. Keep inspection bounded to eligible paths; unresolved policy or access blocks the affected inspection, not the exclusions. Settings failure stops workspace discovery under the contract's bounded failure response. The optional named reader prepares only its individual read. Skip unrelated/generated/dependency trees and history; don't follow unclear links or nested repositories unless explicitly scoped and eligible.
 
 ### 2. Inspect the existing setup
 
