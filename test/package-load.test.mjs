@@ -65,8 +65,8 @@ test("packed TypeScript runtime loads through Pi from node_modules", async (t) =
       const source = "shared/picm-factory/references/adoption-guide.md";
       const procedure = rebaseInstructionLinks(readFileSync(join(installedRoot, source), "utf8").trim(), source, installedRoot);
       assert.equal(prompt.split(procedure).length - 1, 1);
-      assert.match(prompt, /source contents[\s\S]*test contents[\s\S]*check definitions/);
-      assert.match(prompt, /Incomplete.*blocked or uninspected required checks/s);
+      assert.match(prompt, /source contents, a representative test body, and the authoritative check definition/);
+      assert.match(prompt, /required read or comparison is blocked or unperformed, say coverage is incomplete/);
       assert.doesNotMatch(prompt, /coding-maintenance-rubric\.md|redundancy-review\.md/);
     }
     if (mode === "optimize") {

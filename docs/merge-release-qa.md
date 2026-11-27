@@ -162,3 +162,11 @@ A source-only temporary baseline snapshot retains `634e74d`, the pre-edit dirty-
 On Node 24.21.0, `npm run check` passed 281 tests, type checking, and package checks. Focused checks also exercised both extracted distributions outside the checkout. These establish delivery and configuration behavior in automated fixtures, not model compliance or improved onboarding reliability.
 
 The agreed first comparison is bounded to eight fresh command sessions: the existing conflicting-instructions adoption case, both hosts, both frozen arms, twice with reversed arm order. Evaluate required inspection, useful context gathering, supported findings, proposal preservation, approval, and completed work—not guide-loading counts or stock wording. Keep initial failures even if later selections correct them. This comparison doesn't replace the remaining safety controls or full release validation. Exact disposable targets and allowed writes still require separate approval before launch.
+
+## Exclusions and release acceptance
+
+**Decision:** Exclusions are instructions the agent should follow, not access controls. This keeps the [trusted-assistant model](adr/0002-trusted-methodology-assistant.md). When the agent must not be able to see certain files, restrict what the host can access or give it a sanitized workspace. No additional policy helper or write gate is planned for this release.
+
+**Known QA failures:** In the adoption replay against `5039a6b` plus the reporting patch, Claude listed source and test directories before checking their nested `.gitignore` files. In the excluded-manifest case, it skipped `.git/info/exclude` and reported that policy was resolved. Neither excluded-manifest control read `package.json`. That's a separate result, not a pass for policy order. The earlier Claude `/new` policy-preparation miss wasn't rerun in this replay.
+
+**Release hold remains.** Record these ordering failures as unresolved. Release review must explicitly decide whether to accept them under the trusted-assistant model; this decision neither changes their verdicts nor authorizes publication.

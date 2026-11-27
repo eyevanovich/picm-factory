@@ -99,12 +99,12 @@ test("release zip is self-contained outside the checkout with explicit-only comm
     if (mode === "adopt") {
       assert.match(text, /Persisted adoption status: evidence-backed value \/ unknown/);
       assert.doesNotMatch(text, /Inferred profile, routing source, and adoption status/);
-      assert.match(text, /Report-only limits writes, not coding inspection/);
+      assert.match(text, /Report-only means no edits; documentation-only evidence means no session retrospective/);
       const source = "shared/picm-factory/references/adoption-guide.md";
       const procedure = rebaseInstructionLinks(readFileSync(join(extracted, source), "utf8").trim(), source, "${CLAUDE_PLUGIN_ROOT}");
       assert.equal(text.split(procedure).length - 1, 1);
-      assert.match(text, /source contents[\s\S]*test contents[\s\S]*check definitions/);
-      assert.match(text, /Incomplete.*blocked or uninspected required checks/s);
+      assert.match(text, /source contents, a representative test body, and the authoritative check definition/);
+      assert.match(text, /required read or comparison is blocked or unperformed, say coverage is incomplete/);
       assert.doesNotMatch(text, /coding-maintenance-rubric\.md|redundancy-review\.md/);
       assert.match(readFileSync(join(extracted, "shared/picm-factory/references/coding-adoption-guide.md"), "utf8"), /Optional elaboration/);
     }
