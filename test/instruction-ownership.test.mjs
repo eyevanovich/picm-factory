@@ -52,10 +52,10 @@ test("coding onboarding delivers its ordered inspection directly to both hosts",
   const steps = [
     ["Prepare eligible inspection", [/projected settings status/, /policy.*before.*expanding/i, /Skip unrelated\/generated\/dependency trees and history/]],
     ["Inspect the existing setup", [/all declared roots within eligible scope/, /excluded\/blocked coverage/, /manifest-level internal dependencies/, /mapped local contexts/, /meaning and applicability/, /unique constraints/]],
-    ["Exercise context gathering", [/source contents/, /test contents/, /check definitions/, /materially different boundary when ownership or verification contracts differ/, /not check execution/]],
+    ["Exercise context gathering", [/source contents/, /representative test body/, /authoritative check definition/, /materially different boundary when ownership or verification contracts differ/, /Check execution is separately agreed validation/]],
     ["Assess and propose", [/supporting.*evidence/i, /smallest complete/, /consolidation/, /preserv/, /Keep private fixtures, local configuration, and sensitive findings out/]],
     ["Apply approved changes", [/conversational sign-off/, /unrelated/, /material departures/, /Cancellation/]],
-    ["Verify and report", [/affected routes/, /preserved/, /native.*loading/, /checks.*weren't run/]],
+    ["Verify and report", [/affected routes/, /preserved/, /native.*loading/, /Report inspection and routing separately/]],
   ];
   for (const hostFile of ["pi/HOST.md", "claude-code/HOST.md"]) {
     const output = composeModeInstructions({ mode: "adopt", hostFile });
@@ -69,12 +69,13 @@ test("coding onboarding delivers its ordered inspection directly to both hosts",
       assert.ok(sections[index].startsWith(heading), heading);
       for (const requirement of requirements) assert.match(sections[index], requirement);
     });
-    assert.match(procedure, /Report-only limits writes, not coding inspection/);
+    assert.match(procedure, /Report-only means no edits; documentation-only evidence means no session retrospective/);
     assert.match(procedure, /Strict examination/);
     assert.doesNotMatch(procedure, /\]\([^)]*\.md/);
     assert.doesNotMatch(output, /coding-maintenance-rubric\.md|redundancy-review\.md/);
-    assert.match(output, /Incomplete.*blocked or uninspected required checks/s);
-    assert.match(output, /Ready.*required coding inspection is complete/s);
+    assert.match(output, /required read or comparison is blocked or unperformed, say coverage is incomplete/);
+    assert.match(output, /\*\*Changes and validation:\*\*.*state whether checks ran/);
+    assert.match(output, /adoption\.status:.*adopted.*only with adequate visible routing and completed required inspection\/verification/);
     assert.match(output, /Persisted adoption status: evidence-backed value \/ unknown/);
   }
 });

@@ -51,7 +51,7 @@ test("coding onboarding is an inline branch for explicit, selected, and hybrid a
   assert.ok(branch >= 0 && branch < guide.indexOf("## Read-first orientation"));
   assert.match(guide.slice(0, branch), /explicit `coding`, selected Coding Repository adoption, or hybrid codebase mapping/);
   assert.match(guide, /shortcut skips classification, not inspection/);
-  assert.match(guide, /Report-only limits writes, not coding inspection/);
+  assert.match(guide, /Report-only means no edits; documentation-only evidence means no session retrospective/);
   assert.match(guide, /initial Strict examination/);
   assert.match(guide, /no separate maintenance pass, optimization interview, or supporting-guide load is required/);
   assert.match(guide, /map\/depth questionnaire/);

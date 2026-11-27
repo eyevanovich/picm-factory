@@ -98,9 +98,12 @@ test("creation retains minimal architecture, source preservation and write-time 
   ]) assert.match(creation, requirement);
 });
 
-test("adoption readiness is visible routing, never metadata or ambiguous dead status", () => {
+test("adoption reports inspection and visible routing separately from persisted status", () => {
   const adopt = read("references/adoption-guide.md");
-  for (const label of ["Scanned only", "Needs routing before adoption", "Ready", "Ready with warnings"]) assert.ok(adopt.includes(label));
+  assert.match(adopt, /\*\*Inspection:\*\*.*source.*test.*check definition/);
+  assert.match(adopt, /\*\*Routing:\*\*.*separately from inspection coverage/);
+  assert.match(adopt, /coverage is incomplete.*missing.*evidence/);
+  assert.doesNotMatch(adopt, /Ready with warnings|Needs routing before adoption/);
   assert.match(adopt, /adoption.status:.*adopted.*only with adequate visible routing/);
   assert.match(adopt, /Metadata never replaces the route map/);
   assert.match(adopt, /both exist, identify cooperation\/conflicts/);

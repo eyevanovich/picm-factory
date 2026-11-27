@@ -23,7 +23,7 @@ Baseline: commit `700879b` (`fix: add redundancy checks`). This map was recorded
 | Path-specific first-run artifact/review/handoff; preserve gaps and durable-vs-one-off lessons | Interview, profiles, coding guide | Profile first-run sections; conditional specialist guide |
 | Specialist JSON receipt, unique inputs and availability, reviewed artifact equals next source; existing recipe edits agreed | Profiles | Specialist guide reached by the Specialist Folder profile |
 | Adequate/partial/placeholder/conflicting routing; canonical AGENTS, proposed legacy migration, no shim | Adopt mode/guide | Adoption guide |
-| Ready/Ready with warnings/Needs routing/Scanned only; adequate visible routing before adopted metadata | Adopt mode/guide | Adoption guide and coding readiness |
+| Ready/Ready with warnings/Needs routing/Scanned only; adequate visible routing before adopted metadata | Adopt mode/guide | Adoption guide reports inspection and routing separately instead of a readiness badge; adequate routing still precedes adopted metadata |
 | Optional inventory/report/metadata; minimal compatibility/stronger routing/scanned-only and optional initial maintenance | Adoption guide | Adoption guide |
 | Coding shortcut skips classification only; root/distributed/recommend, additive/curated, initial Strict baseline | Adoption guides | Coding adoption guide with mandatory coding rubric |
 | Evidence-backed maps, optional non-obvious impact/status, no ownership/import/dead-code overclaims | Coding adoption, profiles/templates | Coding adoption and map/boundary templates |

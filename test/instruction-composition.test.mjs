@@ -42,10 +42,10 @@ test("each mode includes its contract, host rules, primary procedure, and requir
       if (mode === "adopt") {
         assert.match(output, /Persisted adoption status: evidence-backed value \/ unknown/);
         assert.doesNotMatch(output, /Inferred profile, routing source, and adoption status/);
-        assert.match(output, /Report-only limits writes, not coding inspection/);
+        assert.match(output, /Report-only means no edits; documentation-only evidence means no session retrospective/);
         assert.match(output, /^## Coding onboarding$/m);
-        assert.match(output, /source contents[\s\S]*test contents[\s\S]*check definitions/);
-        assert.match(output, /Incomplete.*blocked or uninspected required checks/s);
+        assert.match(output, /source contents, a representative test body, and the authoritative check definition/);
+        assert.match(output, /required read or comparison is blocked or unperformed, say coverage is incomplete/);
         assert.doesNotMatch(output, /coding-maintenance-rubric\.md|redundancy-review\.md/);
       }
       if (mode === "optimize") {

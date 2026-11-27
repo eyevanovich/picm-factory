@@ -42,7 +42,7 @@ test("adoption delivers the same core inspection for regular, coding, and report
     assert.equal([...prompt.matchAll(/^## Coding onboarding$/gm)].length, 1);
     assert.ok(prompt.indexOf("### Workspace-read preparation") < prompt.indexOf("## Coding onboarding"));
     assert.ok(prompt.indexOf("### 3. Exercise context gathering") < prompt.indexOf("### 4. Assess and propose"));
-    assert.match(prompt, /Report-only limits writes, not coding inspection/);
+    assert.match(prompt, /Report-only means no edits; documentation-only evidence means no session retrospective/);
     assert.match(prompt, /initial Strict examination/);
     assert.doesNotMatch(prompt, /One-run depth:|coding-maintenance-rubric\.md/);
     if (args) assert.ok(prompt.endsWith(`User arguments: ${args}`));

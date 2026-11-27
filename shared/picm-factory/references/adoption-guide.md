@@ -8,7 +8,7 @@ For sensitive non-Git material, recommend storage/sharing review and exact `.git
 
 ## Coding onboarding
 
-Use one default inspection path, not an upfront profile/map/depth questionnaire. Recommend from repository evidence; ask only about consequential uncertainty or choices. Report-only limits writes, not coding inspection. The steps here include the initial Strict examination; no separate maintenance pass, optimization interview, or supporting-guide load is required for the coding examination.
+Use one default inspection path, not an upfront profile/map/depth questionnaire. Recommend from repository evidence; ask only about consequential uncertainty or choices. These steps are the initial Strict examination; no separate maintenance pass, optimization interview, or supporting-guide load is required.
 
 ### 1. Prepare eligible inspection
 
@@ -22,9 +22,11 @@ Compare instructions and pointers within and across inspected documents by meani
 
 ### 3. Exercise context gathering
 
-Choose a representative visible coding task, or ask when none is apparent. Follow root routing through the map/equivalent and relevant local context to the owner. Read relevant source contents, representative test contents, and authoritative check definitions, not just filenames. Recover the entry/public surface, constraints, adjacent dependencies, and generated/security/migration/coordination boundaries. Walk more than one materially different boundary when ownership or verification contracts differ.
+Choose a representative visible coding task, or ask when none is apparent. Follow root routing through the map/equivalent and relevant local context to the owner. For each walk, read eligible source contents, a representative test body, and the authoritative check definition. A path, import list, or documentation pointer alone doesn't complete the walk. Walk more than one materially different boundary when ownership or verification contracts differ.
 
-Distinguish a followed route from independently discovered context. Identify the diff/check review surface and cross-boundary effects or unknowns. Definition inspection is not check execution; running checks is separately agreed validation, not a prerequisite for this assessment.
+Report-only means no edits; documentation-only evidence means no session retrospective unless separately requested. Both still include these coding reads. A request not to run checks still allows reading their definitions unless those paths are explicitly out of scope. Respect exclusions; record each missing read as a gap rather than substituting a pointer or executing the check.
+
+Distinguish a followed route from independently discovered context. Recover the entry/public surface, constraints, adjacent dependencies, and generated/security/migration/coordination boundaries. Identify the diff/check review surface and cross-boundary effects or unknowns. Check execution is separately agreed validation.
 
 ### 4. Assess and propose
 
@@ -44,7 +46,7 @@ Cancellation stops future work; issued operations may finish. Retain and report 
 
 Recheck affected routes, pointer targets, preserved instructions, and migration effects. Verify native instruction loading before calling migration complete; unsupported or unverified loading remains a limitation, not authority to change host settings.
 
-Report named inspected paths/boundaries, evidence, omissions, changes, and actual validation. State when checks weren't run. Apply the readiness criteria below; a safe stop isn't completed inspection. Tell the user to state a normal coding task and review the resulting diff/check evidence; following routes and gathering context remain the agent's job. Offer optional initial maintenance after successful adoption, without requiring it or running it automatically. Recommend revisiting context after first real coding use or changes to boundaries, manifests, commands, or architecture guidance.
+Report inspection and routing separately using the result guidance below. Tell the user to state a normal coding task and review the resulting diff/check evidence; following routes and gathering context remain the agent's job. Offer optional initial maintenance after successful adoption, without requiring it or running it automatically. Recommend revisiting context after first real use or changes to boundaries, manifests, commands, or architecture guidance.
 
 ## Instruction-file migration
 
@@ -57,27 +59,19 @@ Report named inspected paths/boundaries, evidence, omissions, changes, and actua
 
 Mention `CLAUDE.md` only to explain or carry out an existing-file migration. Generate no import shim. Verify the host can load the resulting `AGENTS.md`; unsupported versions/settings are a setup limitation, not a successful migration.
 
-## Readiness and result
+## Report inspection and routing
 
-Adequate visible routing identifies purpose, core read-first context, common task starts, meaningful local boundaries, relevant privacy/coding rules, and `.picm/` exclusion from normal work. Classify it as **adequate**, **partial**, **placeholder/unrelated**, or **conflicting/risky**.
+- **Inspection:** Name the paths and boundaries actually inspected. For each coding walk, name the source, representative test, and check definition read, or state what's missing. If a required read or comparison is blocked or unperformed, say coverage is incomplete and identify the missing evidence.
+- **Routing:** Describe which tasks the visible instructions support, separately from inspection coverage. Cite the controlling pointer or name the first missing or conflicting link. Distinguish what the instructions led to from what you found independently. Keep unverified parts unknown.
+- **Changes and validation:** Distinguish proposals from applied changes, note what was preserved, and state whether checks ran and migration loading was verified, where applicable. Include `Persisted adoption status: evidence-backed value / unknown` when relevant. Saving a report or config is an edit.
 
-For coding, adequate routing also reaches the map/equivalent, relevant local context, owner, entry/public surface, and verification definitions without whole-repo scanning, with generated/security boundaries visible. Map presence alone isn't successful routing.
+Use these findings instead of an overall readiness badge. A completed inspection can still find routing that is partial, placeholder/unrelated, or conflicting/risky. Adequate routing identifies purpose, core read-first context, common task starts, meaningful boundaries, relevant privacy/coding rules, and `.picm/` exclusion from normal work. Coding routes must reach the map or equivalent, relevant local context, owner, entry/public surface, and check definitions without whole-repo scanning, with generated/security boundaries visible. Map presence alone isn't enough.
 
-| Outcome | Meaning |
-| --- | --- |
-| **Incomplete** | There are blocked or uninspected required checks; state the missing evidence, not readiness wording. |
-| **Scanned only** | Inspection finished, but full adoption wasn't selected or completed. |
-| **Needs routing before adoption** | Inspection finished; routing is absent, partial, placeholder, conflicting, or unsafe. |
-| **Ready** | Adequate visible routing exists or was added; required coding inspection is complete and any required migration/loading verification is resolved. |
-| **Ready with warnings** | Ready criteria hold; only non-blocking improvements remain. |
-
-Distinguish a complete assessment finding broken routing from completed adoption. Requested changes must be applied and verified before reporting adoption complete. Set `adoption.status: "adopted"` only with adequate visible routing and completed required inspection/verification. Metadata never replaces the route map. Preserve persisted-status uncertainty; don't open raw config to settle it.
-
-Keep the result concise: profile/routing source, coding shape when relevant, what works, supported shortcomings, inspection limits, preserved material, proposed/actual changes, and next steps. Include `Persisted adoption status: evidence-backed value / unknown` when relevant. Saving a report or config is an edit.
+Don't report adoption complete for a report-only scan, while required inspection is incomplete, or before requested changes and any required migration/loading verification are done. Set `adoption.status: "adopted"` only with adequate visible routing and completed required inspection/verification. Metadata never replaces the route map. Preserve persisted-status uncertainty; don't open raw config to settle it.
 
 ## Read-first orientation for other workspaces
 
-After successful projected settings status and path eligibility, inspect relevant routing/context: `AGENTS.md`, `CONTEXT.md`, `REFERENCES.md`, identity/rules/examples, references, workflows, handoffs, and stages. Use the migration and readiness criteria above. Where routing needs work, offer minimal compatibility, stronger ICM routing, or scanned-only reporting. For a complex workspace, offer a representative path-to-role-to-rationale inventory; classification informs proposals, never migration authority.
+After successful projected settings status and path eligibility, inspect relevant routing/context: `AGENTS.md`, `CONTEXT.md`, `REFERENCES.md`, identity/rules/examples, references, workflows, handoffs, and stages. Use the migration and reporting guidance above. Where routing needs work, offer minimal compatibility, stronger ICM routing, or a report without changes. For a complex workspace, offer a representative path-to-role-to-rationale inventory; classification informs proposals, never migration authority.
 
 Recommend concise root routing, local contracts, stable-reference/working-artifact separation, reviewable outputs, and handoffs retaining gaps, uncertainty, and next action. Preserve custom layouts that route clearly. Profile-specific first-run guidance lives in [layout profiles](layout-profiles.md). Completion includes an optional initial maintenance offer after successful adoption; adoption is complete without accepting or running that pass.
 
