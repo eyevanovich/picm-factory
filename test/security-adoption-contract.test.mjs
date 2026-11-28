@@ -23,6 +23,10 @@ test("shared and standalone privacy boundaries apply before model-visible disclo
     assert.match(text, /safe link resolution/);
     assert.match(text, /effective global ignore-policy source using native configuration resolution and precedence/);
     assert.match(text, /newly applicable policy before expanding scope/);
+    assert.match(text, /immediate children of one eligible directory/);
+    assert.match(text, /same local invocation/);
+    assert.match(text, /git check-ignore --no-index -q --/);
+    assert.match(text, /don't fall back to a raw listing/i);
   }
   const skill = read(`${base}/CONTRACT.md`);
   assert.match(skill, /sanitizing after disclosure is too late/);
